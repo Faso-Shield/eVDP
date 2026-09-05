@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Créer un compte{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<h1>Créer un compte chercheur</h1>
+<p class="muted">Un compte vous permet de suivre vos signalements, d'échanger avec le
+CSIRT et de participer aux programmes Bug Bounty.</p>
+
+<div class="card">
+  <div class="card-body">
+    {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="form-grid">
+        {% for field in form %}
+          {% if field.name != "accept_policy" %}{% include "partials/form_field.html" %}{% endif %}
+        {% endfor %}
+      </div>
+      <div class="checkbox-field">
+        {{ form.accept_policy }}
+        <label for="{{ form.accept_policy.id_for_label }}">{{ form.accept_policy.label }}
+          (<a href="{% url 'core:disclosure_policy' %}" target="_blank" rel="noopener">lire la politique</a>)</label>
+      </div>
+      {{ form.accept_policy.errors }}
+      <button class="btn btn-accent" type="submit">Créer mon compte</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

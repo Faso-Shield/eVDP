@@ -1,0 +1,275 @@
+# =============================================================================
+# eVDP - Plateforme nationale de divulgation coordonnee de vulnerabilites
+# Projet CYBER-DEF 2
+#
+# Seul Nginx est expose. PostgreSQL, Redis et MinIO restent sur le reseau
+# interne et ne sont joignables que par les services applicatifs.
+#
+#   docker compose up -d
+#   docker compose run --rm evdp-web seed
+# =============================================================================
+
+x-app-env: &app-env
+  DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.prod}
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY est obligatoire, voir .env.example}
+  DEBUG: ${DEBUG:-False}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,evdp-web,evdp-nginx}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost,http://127.0.0.1}
+  SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-False}
+  SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-0}
+  POSTGRES_DB: ${POSTGRES_DB:-evdp}
+  POSTGRES_USER: ${POSTGRES_USER:-evdp}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est obligatoire}
+  POSTGRES_HOST: evdp-db
+  POSTGRES_PORT: "5432"
+  REDIS_URL: redis://evdp-redis:6379/0
+  REDIS_HOST: evdp-redis
+  REDIS_PORT: "6379"
+  USE_S3: ${USE_S3:-True}
+  MINIO_ENDPOINT: http://evdp-minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-evdp-minio}
+  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
+  MINIO_BUCKET: ${MINIO_BUCKET:-evdp-attachments}
+  EMAIL_HOST: evdp-mailpit
+  EMAIL_PORT: "1025"
+  EMAIL_USE_TLS: "False"
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-eVDP <no-reply@evdp.bf>}
+  SITE_BASE_URL: ${SITE_BASE_URL:-}
+  EVDP_NATIONAL_TEAM: ${EVDP_NATIONAL_TEAM:-ANSSI-BF / CSIRT National}
+  EVDP_CONTACT_EMAIL: ${EVDP_CONTACT_EMAIL:-vdp@anssi.bf}
+  EVDP_DEFAULT_CURRENCY: ${EVDP_DEFAULT_CURRENCY:-XOF}
+  PGP_PUBLIC_KEY: ${PGP_PUBLIC_KEY:-}
+  PGP_FINGERPRINT: ${PGP_FINGERPRINT:-}
+  CLAMAV_HOST: ${CLAMAV_HOST:-}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  TIME_ZONE: ${TIME_ZONE:-Africa/Ouagadougou}
+
+x-app-base: &app-base
+  build:
+    context: .
+    dockerfile: docker/web/Dockerfile
+  image: evdp-app:latest
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment: *app-env
+  networks:
+    - evdp-backend
+  depends_on:
+    evdp-db:
+      condition: service_healthy
+    evdp-redis:
+      condition: service_healthy
+
+services:
+  # ---------------------------------------------------------------- donnees
+  evdp-db:
+    image: postgres:16.4-alpine
+    container_name: evdp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-evdp}
+      POSTGRES_USER: ${POSTGRES_USER:-evdp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est obligatoire}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - evdp-db-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-extensions.sql:/docker-entrypoint-initdb.d/10-extensions.sql:ro
+    networks:
+      - evdp-backend
+    # Aucun port publie : la base n'est jamais joignable depuis l'exterieur.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-evdp} -d ${POSTGRES_DB:-evdp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  evdp-redis:
+    image: redis:7.4-alpine
+    container_name: evdp-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+    volumes:
+      - evdp-redis-data:/data
+    networks:
+      - evdp-backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+
+  evdp-minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    container_name: evdp-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-evdp-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+    volumes:
+      - evdp-minio-data:/data
+    networks:
+      - evdp-backend
+    # MVP : MinIO n'est pas expose publiquement. La console est accessible
+    # uniquement en local via docker-compose.dev.yml.
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  evdp-minio-init:
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    container_name: evdp-minio-init
+    depends_on:
+      evdp-minio:
+        condition: service_healthy
+    environment:
+      MINIO_ENDPOINT: http://evdp-minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-evdp-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
+      MINIO_BUCKET: ${MINIO_BUCKET:-evdp-attachments}
+    volumes:
+      - ./docker/minio/init.sh:/init.sh:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
+    networks:
+      - evdp-backend
+    restart: "no"
+
+  evdp-mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: evdp-mailpit
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: "1000"
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    networks:
+      - evdp-backend
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 192m
+
+  # ------------------------------------------------------------ application
+  evdp-web:
+    <<: *app-base
+    container_name: evdp-web
+    command: ["web"]
+    volumes:
+      - evdp-static:/app/staticfiles
+      - evdp-media:/app/media
+    depends_on:
+      evdp-db:
+        condition: service_healthy
+      evdp-redis:
+        condition: service_healthy
+      evdp-minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  evdp-worker:
+    <<: *app-base
+    container_name: evdp-worker
+    command: ["worker"]
+    volumes:
+      - evdp-media:/app/media
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  evdp-beat:
+    <<: *app-base
+    container_name: evdp-beat
+    command: ["beat"]
+    healthcheck:
+      # Le pidfile existe ET le processus qu'il designe est vivant.
+      # (l'image slim ne fournit ni pgrep ni ps)
+      test: ["CMD-SHELL", "kill -0 $$(cat /tmp/celerybeat.pid) 2>/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+
+  # --------------------------------------------------------------- frontal
+  evdp-nginx:
+    image: nginx:1.27-alpine
+    container_name: evdp-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - evdp-static:/app/staticfiles:ro
+    networks:
+      - evdp-backend
+      - evdp-frontend
+    depends_on:
+      evdp-web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 192m
+
+networks:
+  evdp-backend:
+    driver: bridge
+    internal: false
+  evdp-frontend:
+    driver: bridge
+
+volumes:
+  evdp-db-data:
+  evdp-redis-data:
+  evdp-minio-data:
+  evdp-static:
+  evdp-media:

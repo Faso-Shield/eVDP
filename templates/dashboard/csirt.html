@@ -1,0 +1,139 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Tableau de bord CSIRT{% endblock %}
+
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Tableau de bord CSIRT</h1>
+  <div class="btn-row">
+    <a class="btn btn-sm btn-outline" href="{% url 'coordination:kanban' %}">Kanban</a>
+    <a class="btn btn-sm btn-outline" href="{% url 'dashboard:export_cases_csv' %}">Export CSV</a>
+  </div>
+</div>
+
+<div class="grid grid-4 mb-2">
+  <div class="stat"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">Total rapports</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.new }}</div><div class="stat-label">Nouveaux</div></div>
+  <div class="stat warning"><div class="stat-value">{{ stats.in_triage }}</div><div class="stat-label">En triage</div></div>
+  <div class="stat ok"><div class="stat-value">{{ stats.validated }}</div><div class="stat-label">Validés</div></div>
+</div>
+
+<div class="grid grid-4 mb-2">
+  <div class="stat critical"><div class="stat-value">{{ stats.critical }}</div><div class="stat-label">Critiques</div></div>
+  <div class="stat warning"><div class="stat-value">{{ stats.high }}</div><div class="stat-label">Élevées</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.medium }}</div><div class="stat-label">Moyennes</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.low }}</div><div class="stat-label">Faibles</div></div>
+</div>
+
+<div class="grid grid-4 mb-3">
+  <div class="stat"><div class="stat-value">{{ stats.duplicates }}</div><div class="stat-label">Doublons</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.rejected }}</div><div class="stat-label">Rejetés</div></div>
+  <div class="stat critical"><div class="stat-value">{{ stats.sla_breached }}</div><div class="stat-label">SLA dépassés</div></div>
+  <div class="stat ok"><div class="stat-value">{{ advisories_published }}</div><div class="stat-label">Advisories publiés</div></div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Rapports par mois</h2></div>
+    <div class="card-body">
+      {% if charts.per_month %}
+        <div class="spark">
+          {% for point in charts.per_month %}
+            <div class="spark-bar" style="height: {% widthratio point.value max_month 100 %}%" title="{{ point.label }}: {{ point.value }}"></div>
+          {% endfor %}
+        </div>
+        <div class="spark-labels">
+          {% for point in charts.per_month %}<span>{{ point.label }}</span>{% endfor %}
+        </div>
+      {% else %}<p class="muted">Pas encore de données.</p>{% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Répartition par sévérité</h2></div>
+    <div class="card-body">
+      {% include "partials/bar_chart.html" with rows=charts.severity max_value=stats.total %}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Vulnérabilités par secteur</h2></div>
+    <div class="card-body">
+      {% include "partials/bar_chart.html" with rows=charts.sector max_value=stats.total %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Types de vulnérabilités</h2></div>
+    <div class="card-body">
+      {% include "partials/bar_chart.html" with rows=charts.types max_value=stats.total %}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-3">
+  <div class="card">
+    <div class="card-header"><h2>Organisations les plus affectées</h2></div>
+    <div class="card-body small">
+      {% for row in top_organizations %}
+        <div class="flex-between" style="padding:.25rem 0;border-bottom:1px solid var(--border)">
+          <span>{{ row.organization__acronym|default:row.organization__name|truncatechars:26 }}</span>
+          <strong class="mono">{{ row.total }}</strong>
+        </div>
+      {% empty %}<p class="muted">Aucune donnée.</p>{% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>CWE les plus fréquentes</h2></div>
+    <div class="card-body small">
+      {% for row in charts.cwe %}
+        <div class="flex-between" style="padding:.25rem 0;border-bottom:1px solid var(--border)">
+          <span class="mono">{{ row.cwe__code }}</span>
+          <strong class="mono">{{ row.total }}</strong>
+        </div>
+      {% empty %}<p class="muted">Aucune donnée.</p>{% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Indicateurs</h2></div>
+    <div class="card-body small">
+      <div class="flex-between"><span>Délai moyen de remédiation</span>
+        <strong>{% if average_remediation %}{{ average_remediation }} j{% else %}—{% endif %}</strong></div>
+      <div class="flex-between"><span>Taux de validation</span><strong>{{ stats.validation_rate }} %</strong></div>
+      <div class="flex-between"><span>Chercheurs actifs</span><strong>{{ active_researchers }}</strong></div>
+      <div class="flex-between"><span>Dossiers ouverts</span><strong>{{ stats.open }}</strong></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Derniers signalements</h2></div>
+    <div class="card-body table-wrap">
+      <table class="table">
+        <thead><tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>Statut</th><th>Organisation</th><th>Créé</th></tr></thead>
+        <tbody>
+          {% for case in recent %}{% include "partials/case_row.html" %}{% empty %}
+          <tr><td colspan="6" class="muted">Aucun signalement.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>SLA dépassés</h2></div>
+    <div class="card-body small">
+      {% for case in overdue %}
+        <div class="flex-between" style="padding:.35rem 0;border-bottom:1px solid var(--border)">
+          <a href="{{ case.get_absolute_url }}" class="mono">{{ case.case_id }}</a>
+          <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
+        </div>
+      {% empty %}<p class="muted">Aucun dépassement.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

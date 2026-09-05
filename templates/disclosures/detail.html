@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% load evdp_tags %}
+{% block title %}{{ advisory.advisory_id }}{% endblock %}
+
+{% block content %}
+{% if is_preview %}
+<div class="notice">
+  <strong>Prévisualisation.</strong> Cet advisory n'est pas encore publié.
+  Il n'est visible que des rédacteurs habilités.
+</div>
+{% endif %}
+
+{% if advisory.status == "RETRACTED" %}
+<div class="notice">
+  <strong>Advisory retiré.</strong> {{ advisory.retracted_reason }}
+</div>
+{% endif %}
+
+<div class="grid" style="grid-template-columns:2fr 1fr">
+  <div>
+    <span class="mono muted">{{ advisory.advisory_id }}</span>
+    <h1>{{ advisory.title }}</h1>
+    <div class="flex mb-2">
+      <span class="badge {{ advisory.severity|severity_class }}">{{ advisory.get_severity_display }}</span>
+      {% if advisory.cvss_score %}<span class="pill">CVSS {{ advisory.cvss_score }}</span>{% endif %}
+      {% if advisory.cve %}<span class="pill">{{ advisory.cve.cve_id }}</span>{% endif %}
+      {% if advisory.cwe %}<span class="pill">{{ advisory.cwe.code }}</span>{% endif %}
+      {% if advisory.published_at %}<span class="pill">Publié le {{ advisory.published_at|date:"d/m/Y" }}</span>{% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Résumé</h2></div>
+      <div class="card-body prose">{{ advisory.summary|markdown }}</div>
+    </div>
+
+    {% if advisory.description %}
+    <div class="card">
+      <div class="card-header"><h2>Description</h2></div>
+      <div class="card-body prose">{{ advisory.description|markdown }}</div>
+    </div>
+    {% endif %}
+
+    {% if advisory.impact %}
+    <div class="card">
+      <div class="card-header"><h2>Impact</h2></div>
+      <div class="card-body prose">{{ advisory.impact|markdown }}</div>
+    </div>
+    {% endif %}
+
+    {% if advisory.solution %}
+    <div class="card">
+      <div class="card-header"><h2>Solution</h2></div>
+      <div class="card-body prose">{{ advisory.solution|markdown }}</div>
+    </div>
+    {% endif %}
+
+    {% if advisory.workaround %}
+    <div class="card">
+      <div class="card-header"><h2>Contournement</h2></div>
+      <div class="card-body prose">{{ advisory.workaround|markdown }}</div>
+    </div>
+    {% endif %}
+
+    {% if timeline %}
+    <div class="card">
+      <div class="card-header"><h2>Chronologie</h2></div>
+      <div class="card-body">
+        <ul class="timeline">
+          {% for entry in timeline %}
+            <li>
+              <div class="tl-date">{{ entry.happened_on|date:"d/m/Y" }}</div>
+              <div class="tl-label">{{ entry.label }}</div>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if references %}
+    <div class="card">
+      <div class="card-header"><h2>Références</h2></div>
+      <div class="card-body">
+        <ul>
+          {% for reference in references %}
+            <li><a href="{{ reference.url }}" rel="noopener nofollow" target="_blank">{{ reference.title }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <aside>
+    <div class="card">
+      <div class="card-header"><h3>Informations</h3></div>
+      <div class="card-body small">
+        <dl class="dl-inline">
+          <dt>Organisation</dt>
+          <dd>{% if advisory.organization %}<a href="{% url 'organizations:detail' advisory.organization.slug %}">{{ advisory.organization.name }}</a>{% else %}—{% endif %}</dd>
+          <dt>Produit</dt><dd>{{ advisory.product|default:"—" }}</dd>
+          <dt>Versions affectées</dt><dd>{{ advisory.affected_versions|default:"—" }}</dd>
+          <dt>Versions corrigées</dt><dd>{{ advisory.fixed_versions|default:"—" }}</dd>
+          <dt>Vecteur CVSS</dt><dd class="mono" style="word-break:break-all">{{ advisory.cvss_vector|default:"—" }}</dd>
+          <dt>Crédit</dt><dd>{{ advisory.credit|default:"—" }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>Signaler une vulnérabilité</h3></div>
+      <div class="card-body small">
+        <p>Vous avez identifié une faille sur un service public ?</p>
+        <a class="btn btn-sm btn-accent" href="{% url 'reports:submit' %}">Signaler</a>
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}

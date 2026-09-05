@@ -1,0 +1,27 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Mes programmes{% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Programmes gérés</h1>
+  <a class="btn btn-accent" href="{% url 'programs:create' %}">Créer un programme</a>
+</div>
+<div class="card"><div class="card-body table-wrap">
+  <table class="table">
+    <thead><tr><th>Nom</th><th>Type</th><th>Organisation</th><th>Statut</th><th>Cases</th><th></th></tr></thead>
+    <tbody>
+    {% for program in programs %}
+      <tr>
+        <td><a href="{% url 'programs:manage' program.slug %}">{{ program.name }}</a></td>
+        <td class="small">{{ program.get_program_type_display }}</td>
+        <td class="small">{% firstof program.organization.acronym program.organization.name %}</td>
+        <td><span class="status">{{ program.get_status_display }}</span></td>
+        <td class="mono small">{{ program.cases.count }}</td>
+        <td><a class="btn btn-sm btn-outline" href="{% url 'programs:manage' program.slug %}">Gérer</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="muted">Aucun programme.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endblock %}

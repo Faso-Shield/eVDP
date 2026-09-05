@@ -1,0 +1,130 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Récompense {{ bounty.case.case_id }}{% endblock %}
+
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <div>
+    <span class="mono muted">{{ bounty.case.case_id }}</span>
+    <h1 class="mb-0">Récompense — {{ bounty.display_amount }}</h1>
+  </div>
+  <div class="flex">
+    <span class="badge {{ bounty.severity|severity_class }}">{{ bounty.get_severity_display }}</span>
+    <span class="status">{{ bounty.get_status_display }}</span>
+  </div>
+</div>
+
+{% if not within_policy %}
+<div class="notice">
+  <strong>Montant hors matrice.</strong> Le montant retenu ne correspond pas au
+  palier défini pour cette sévérité dans le programme. La décision reste possible
+  mais elle est explicitement journalisée.
+</div>
+{% endif %}
+
+<div class="grid" style="grid-template-columns:2fr 1fr">
+  <div>
+    <div class="card">
+      <div class="card-header"><h2>Proposition</h2></div>
+      <div class="card-body">
+        <dl class="dl-inline">
+          <dt>Dossier</dt><dd><a href="{{ bounty.case.get_absolute_url }}">{{ bounty.case.title }}</a></dd>
+          <dt>Programme</dt><dd>{{ bounty.program.name|default:"—" }}</dd>
+          <dt>Chercheur</dt><dd>{{ bounty.researcher.display_name|default:"—" }}</dd>
+          <dt>Montant proposé</dt><dd class="mono">{{ bounty.proposed_amount|floatformat:0 }} {{ bounty.currency }}</dd>
+          <dt>Montant approuvé</dt><dd class="mono">{% if bounty.approved_amount %}{{ bounty.approved_amount|floatformat:0 }} {{ bounty.currency }}{% else %}—{% endif %}</dd>
+          <dt>Proposé par</dt><dd>{{ bounty.proposed_by.display_name|default:"—" }}</dd>
+          <dt>Décidé par</dt><dd>{{ bounty.decided_by.display_name|default:"—" }}</dd>
+        </dl>
+        {% if bounty.justification %}<div class="prose">{{ bounty.justification|markdown }}</div>{% endif %}
+        {% if bounty.decision_note %}
+          <h3>Note de décision</h3>
+          <div class="prose">{{ bounty.decision_note|markdown }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Revues</h2></div>
+      <div class="card-body">
+        {% for review in reviews %}
+          <div class="msg">
+            <div class="msg-head">
+              <span class="msg-author">{{ review.reviewer.display_name|default:"—" }}</span>
+              <span>{{ review.get_decision_display }} · {{ review.created_at|date:"d/m/Y H:i" }}</span>
+            </div>
+            {% if review.suggested_amount %}<div class="small">Montant suggéré : {{ review.suggested_amount|floatformat:0 }} {{ bounty.currency }}</div>{% endif %}
+            <div class="msg-body">{{ review.comment }}</div>
+          </div>
+        {% empty %}<p class="muted">Aucune revue enregistrée.</p>{% endfor %}
+
+        <form method="post" action="{% url 'bounty:review' bounty.id %}" class="mt-2">
+          {% csrf_token %}
+          <div class="form-grid">{% for field in review_form %}{% include "partials/form_field.html" %}{% endfor %}</div>
+          <button class="btn btn-outline" type="submit">Enregistrer l'avis</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Versements</h2></div>
+      <div class="card-body">
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Montant</th><th>Moyen</th><th>Référence</th><th>Statut</th><th>Enregistré par</th><th>Date</th></tr></thead>
+            <tbody>
+            {% for payment in payments %}
+              <tr>
+                <td class="mono">{{ payment.amount|floatformat:0 }} {{ payment.currency }}</td>
+                <td class="small">{{ payment.get_method_display }}</td>
+                <td class="small">{{ payment.reference|default:"—" }}</td>
+                <td><span class="status">{{ payment.get_status_display }}</span></td>
+                <td class="small">{{ payment.recorded_by.display_name|default:"—" }}</td>
+                <td class="small">{{ payment.created_at|date:"d/m/Y" }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="muted">Aucun versement enregistré.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    {% if can_approve and not bounty.is_final %}
+    <div class="card">
+      <div class="card-header"><h3>Décision</h3></div>
+      <div class="card-body">
+        <form method="post" action="{% url 'bounty:approve' bounty.id %}" class="mb-2">
+          {% csrf_token %}
+          {% for field in decision_form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-accent btn-block" type="submit">Approuver</button>
+        </form>
+        <form method="post" action="{% url 'bounty:reject' bounty.id %}">
+          {% csrf_token %}
+          <input type="hidden" name="note" value="Rejet apres revue">
+          <button class="btn btn-danger btn-block" type="submit">Rejeter</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if can_pay and bounty.status == "APPROVED" %}
+    <div class="card">
+      <div class="card-header"><h3>Enregistrer un versement</h3></div>
+      <div class="card-body">
+        <form method="post" action="{% url 'bounty:payment' bounty.id %}">
+          {% csrf_token %}
+          {% for field in payment_form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-block" type="submit">Enregistrer</button>
+        </form>
+        <p class="small muted mt-1">Trace comptable uniquement : aucun paiement réel
+        n'est exécuté par eVDP.</p>
+      </div>
+    </div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

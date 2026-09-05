@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% load evdp_tags %}
+{% block title %}{{ program.name }}{% endblock %}
+
+{% block content %}
+<div class="flex-between mb-2">
+  <div>
+    <h1 class="mb-0">{{ program.name }}</h1>
+    <p class="muted mb-0">{{ program.organization.name }} — {{ program.get_program_type_display }}</p>
+  </div>
+  <div class="btn-row">
+    <a class="btn btn-accent" href="{% url 'reports:submit' %}?program={{ program.slug }}">Signaler une vulnérabilité</a>
+    {% if can_manage %}<a class="btn btn-outline" href="{% url 'programs:manage' program.slug %}">Gérer</a>{% endif %}
+  </div>
+</div>
+
+<div class="flex mb-2">
+  <span class="status {% if program.is_open %}status-done{% else %}status-closed{% endif %}">{{ program.get_status_display }}</span>
+  <span class="pill">{{ program.get_confidentiality_display }}</span>
+  {% if program.starts_on %}<span class="pill">Depuis le {{ program.starts_on|date:"d/m/Y" }}</span>{% endif %}
+  {% if program.ends_on %}<span class="pill">Jusqu'au {{ program.ends_on|date:"d/m/Y" }}</span>{% endif %}
+  <span class="pill">Divulgation à {{ program.disclosure_delay_days }} jours</span>
+</div>
+
+<div class="grid" style="grid-template-columns:2fr 1fr">
+  <div>
+    <div class="card">
+      <div class="card-header"><h2>Description</h2></div>
+      <div class="card-body prose">{{ program.description|markdown }}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Périmètre</h2></div>
+      <div class="card-body">
+        <h3>Dans le périmètre</h3>
+        <ul class="scope-list">
+          {% for scope in in_scope %}
+            <li>
+              <strong class="mono">{{ scope.identifier }}</strong>
+              <span class="pill">{{ scope.get_target_type_display }}</span>
+              <span class="pill">{{ scope.get_priority_display }}</span>
+              {% if scope.description %}<div class="small muted">{{ scope.description }}</div>{% endif %}
+            </li>
+          {% empty %}<li class="muted">Aucune cible déclarée.</li>{% endfor %}
+        </ul>
+
+        <h3 class="mt-2">Hors périmètre</h3>
+        <ul class="scope-list">
+          {% for scope in out_of_scope %}
+            <li class="out"><strong class="mono">{{ scope.identifier }}</strong>
+              {% if scope.description %}<div class="small">{{ scope.description }}</div>{% endif %}</li>
+          {% empty %}<li class="muted">Aucune exclusion spécifique déclarée.</li>{% endfor %}
+        </ul>
+        {% if program.out_of_scope_notes %}
+          <div class="prose mt-2">{{ program.out_of_scope_notes|markdown }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if program.rules %}
+    <div class="card">
+      <div class="card-header"><h2>Règles de test</h2></div>
+      <div class="card-body prose">{{ program.rules|markdown }}</div>
+    </div>
+    {% endif %}
+
+    {% if program.safe_harbor %}
+    <div class="card">
+      <div class="card-header"><h2>Safe Harbor</h2></div>
+      <div class="card-body prose">{{ program.safe_harbor|markdown }}</div>
+    </div>
+    {% endif %}
+
+    {% if program.eligibility %}
+    <div class="card">
+      <div class="card-header"><h2>Conditions de participation</h2></div>
+      <div class="card-body prose">{{ program.eligibility|markdown }}</div>
+    </div>
+    {% endif %}
+
+    {% if program.disclosure_policy %}
+    <div class="card">
+      <div class="card-header"><h2>Politique de divulgation du programme</h2></div>
+      <div class="card-body prose">{{ program.disclosure_policy|markdown }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <aside>
+    {% if reward_tiers %}
+    <div class="card">
+      <div class="card-header"><h3>Matrice de récompenses</h3></div>
+      <div class="card-body">
+        <table class="table">
+          <thead><tr><th>Sévérité</th><th class="text-right">Montant</th></tr></thead>
+          <tbody>
+          {% for tier in reward_tiers %}
+            <tr>
+              <td><span class="badge {{ tier.severity|severity_class }}">{{ tier.get_severity_display }}</span></td>
+              <td class="text-right mono small">{{ tier.min_amount|floatformat:0 }} – {{ tier.max_amount|floatformat:0 }} {{ reward_policy.currency }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <p class="small muted">Montants indicatifs. Le montant final est arrêté après
+        validation technique et revue.</p>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header"><h3>Contact</h3></div>
+      <div class="card-body small">
+        <dl class="dl-inline">
+          <dt>Organisation</dt>
+          <dd><a href="{% url 'organizations:detail' program.organization.slug %}">{{ program.organization.name }}</a></dd>
+          {% if program.contact_email %}<dt>Email</dt><dd>{{ program.contact_email }}</dd>{% endif %}
+          <dt>Signalements anonymes</dt>
+          <dd>{{ program.allows_anonymous_reports|yesno:"Acceptés,Non acceptés" }}</dd>
+        </dl>
+        {% if program.pgp_public_key %}
+          <p class="small muted">Une clé PGP est publiée pour ce programme.</p>
+          <pre style="max-height:150px;overflow:auto;font-size:.62rem">{{ program.pgp_public_key }}</pre>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if rules %}
+    <div class="card">
+      <div class="card-header"><h3>Règles</h3></div>
+      <div class="card-body small">
+        {% for rule in rules %}
+          <div style="padding:.35rem 0;border-bottom:1px solid var(--border)">
+            <span class="pill">{{ rule.get_kind_display }}</span>
+            <strong>{{ rule.title }}</strong>
+            {% if rule.body %}<div class="muted">{{ rule.body }}</div>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

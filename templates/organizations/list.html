@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Organisations{% endblock %}
+{% block content %}
+<h1>Organisations participantes</h1>
+<p class="muted">Ces entités acceptent de recevoir des signalements via eVDP.</p>
+
+<form method="get" class="filters mb-2">
+  <div class="form-field" style="min-width:280px">
+    <label for="q">Rechercher</label>
+    <input type="search" name="q" id="q" value="{{ query }}">
+  </div>
+  <button class="btn" type="submit">Rechercher</button>
+</form>
+
+<div class="grid grid-3">
+  {% for organization in page_obj %}
+  <div class="card">
+    <div class="card-body">
+      <h3 style="font-size:1rem">{{ organization.name }}</h3>
+      <p class="small muted">{{ organization.get_organization_type_display }} — {{ organization.get_sector_display }}</p>
+      {% if organization.domain %}<p class="mono small">{{ organization.domain }}</p>{% endif %}
+      <a class="btn btn-sm btn-outline" href="{% url 'organizations:detail' organization.slug %}">Consulter</a>
+    </div>
+  </div>
+  {% empty %}
+  <p class="muted">Aucune organisation référencée.</p>
+  {% endfor %}
+</div>
+{% include "partials/pagination.html" %}
+{% endblock %}

@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% load evdp_tags %}
+{% block title %}Signaler une vulnérabilité{% endblock %}
+
+{% block content %}
+<h1>Signaler une vulnérabilité</h1>
+<p class="muted">
+  Ce formulaire est le canal officiel de signalement. Votre rapport est
+  <strong>privé par défaut</strong> et ne sera jamais publié automatiquement.
+</p>
+
+{% if program %}
+<div class="notice notice-secure">
+  Signalement rattaché au programme <strong>{{ program.name }}</strong>
+  ({{ program.get_program_type_display }}) — {{ program.organization.name }}.
+  <a href="{% url 'programs:detail' program.slug %}">Consulter le périmètre et les règles</a>.
+</div>
+{% endif %}
+
+{% if not user.is_authenticated %}
+<div class="notice">
+  Vous n'êtes pas connecté. Vous pouvez signaler sans compte, mais un compte
+  vous permet de suivre le traitement et d'échanger avec le CSIRT.
+  <a href="{% url 'accounts:register' %}">Créer un compte</a> ·
+  <a href="{% url 'accounts:login' %}">Se connecter</a>
+</div>
+{% endif %}
+
+<div class="grid" style="grid-template-columns: 2fr 1fr">
+  <div>
+    <form method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+
+      <div class="card">
+        <div class="card-header"><h2>Identification</h2></div>
+        <div class="card-body">
+          {% include "partials/form_field.html" with field=form.title %}
+          <div class="form-grid">
+            {% include "partials/form_field.html" with field=form.program %}
+            {% include "partials/form_field.html" with field=form.affected_organization %}
+            {% include "partials/form_field.html" with field=form.affected_organization_name %}
+            {% include "partials/form_field.html" with field=form.product %}
+          </div>
+          {% include "partials/form_field.html" with field=form.target_url %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Qualification technique</h2></div>
+        <div class="card-body">
+          <div class="form-grid">
+            {% include "partials/form_field.html" with field=form.vulnerability_type %}
+            {% include "partials/form_field.html" with field=form.cwe %}
+            {% include "partials/form_field.html" with field=form.reported_severity %}
+            {% include "partials/form_field.html" with field=form.cvss_vector %}
+            {% include "partials/form_field.html" with field=form.affected_version %}
+            {% include "partials/form_field.html" with field=form.fixed_version %}
+            {% include "partials/form_field.html" with field=form.environment %}
+            {% include "partials/form_field.html" with field=form.external_reference %}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Description</h2>
+          <span class="pill">Markdown accepté</span>
+        </div>
+        <div class="card-body">
+          {% include "partials/form_field.html" with field=form.description %}
+          {% include "partials/form_field.html" with field=form.steps_to_reproduce %}
+          {% include "partials/form_field.html" with field=form.impact %}
+          {% include "partials/form_field.html" with field=form.proof_of_concept %}
+          {% include "partials/form_field.html" with field=form.recommendations %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Pièces jointes</h2></div>
+        <div class="card-body">
+          <div class="form-field">
+            <label for="attachments">Fichiers (5 maximum)</label>
+            <input type="file" name="attachments" id="attachments" multiple>
+            <div class="help">
+              Captures, traces, PoC. Les exécutables et scripts sont refusés.
+              Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier.
+              Chaque fichier est stocké sous un nom aléatoire, hashé en SHA-256 et
+              accessible uniquement aux personnes habilitées sur le dossier.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Confidentialité et identité</h2></div>
+        <div class="card-body">
+          {% if form.contact_email %}
+            {% include "partials/form_field.html" with field=form.contact_email %}
+          {% endif %}
+          <div class="checkbox-field">{{ form.is_anonymous }}<label for="{{ form.is_anonymous.id_for_label }}">{{ form.is_anonymous.label }}</label></div>
+          <div class="checkbox-field">{{ form.wants_credit }}<label for="{{ form.wants_credit.id_for_label }}">{{ form.wants_credit.label }}</label></div>
+          <div class="checkbox-field">{{ form.requests_cve }}<label for="{{ form.requests_cve.id_for_label }}">{{ form.requests_cve.label }}</label></div>
+          {% include "partials/form_field.html" with field=form.pgp_payload %}
+          <div class="checkbox-field">
+            {{ form.accept_policy }}
+            <label for="{{ form.accept_policy.id_for_label }}">{{ form.accept_policy.label }}
+              (<a href="{% url 'core:disclosure_policy' %}" target="_blank" rel="noopener">lire</a>)</label>
+          </div>
+          {{ form.accept_policy.errors }}
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-accent btn-lg" type="submit">Envoyer le signalement</button>
+        <a class="btn btn-outline" href="{% url 'core:home' %}">Annuler</a>
+      </div>
+    </form>
+  </div>
+
+  <aside>
+    <div class="card">
+      <div class="card-header"><h3>Engagements</h3></div>
+      <div class="card-body small">
+        <ul style="padding-left:1.1rem">
+          <li>Accusé de réception sous <strong>72 heures</strong>.</li>
+          <li>Premier triage sous <strong>5 jours ouvrés</strong>.</li>
+          <li>Divulgation coordonnée par défaut à <strong>90 jours</strong>.</li>
+          <li>Aucun rapport n'est publié sans coordination préalable.</li>
+          <li>Safe Harbor pour toute recherche de bonne foi conforme à la politique.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Extrait de la politique</h3></div>
+      <div class="card-body prose small">{{ policy_excerpt }}</div>
+      <div class="card-footer"><a href="{% url 'core:disclosure_policy' %}">Lire la politique complète</a></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Signalement chiffré</h3></div>
+      <div class="card-body small">
+        <p>Pour un contenu très sensible, chiffrez-le avec la clé publique nationale
+        et collez le bloc PGP dans le champ prévu.</p>
+        <a class="btn btn-sm btn-outline" href="{% url 'core:pgp_key' %}">Clé publique PGP</a>
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}

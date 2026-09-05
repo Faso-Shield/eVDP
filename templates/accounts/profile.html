@@ -1,0 +1,104 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Mon profil{% endblock %}
+
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Mon profil</h1>
+  <span class="pill">Rôle : {{ user.get_role_display }}</span>
+</div>
+
+{% if not user.email_verified %}
+<div class="notice">
+  <strong>Adresse email non vérifiée.</strong>
+  Certaines actions restent limitées tant que votre adresse n'est pas confirmée.
+  <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>.
+</div>
+{% endif %}
+
+<form method="post" novalidate>
+  {% csrf_token %}
+  <div class="card">
+    <div class="card-header"><h2>Identité et sécurité</h2></div>
+    <div class="card-body">
+      <div class="form-grid">
+        {% for field in user_form %}{% include "partials/form_field.html" %}{% endfor %}
+      </div>
+      <p class="small muted">
+        eVDP ne stocke jamais de clé privée. Ne collez ici que votre clé publique
+        armurée (bloc <code>BEGIN PGP PUBLIC KEY BLOCK</code>).
+      </p>
+    </div>
+  </div>
+
+  {% if profile_form %}
+  <div class="card">
+    <div class="card-header"><h2>Profil chercheur</h2></div>
+    <div class="card-body">
+      <div class="form-grid">
+        {% for field in profile_form %}
+          {% if field.name != "is_public_profile" %}{% include "partials/form_field.html" %}{% endif %}
+        {% endfor %}
+      </div>
+      <div class="checkbox-field">
+        {{ profile_form.is_public_profile }}
+        <label for="{{ profile_form.is_public_profile.id_for_label }}">{{ profile_form.is_public_profile.label }}</label>
+      </div>
+      <p class="small muted">
+        Votre choix de visibilité est respecté partout : annuaire public, crédit
+        dans les advisories, statistiques. Le mode « Anonyme » n'expose jamais votre identité.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="btn-row">
+    <button class="btn btn-accent" type="submit">Enregistrer</button>
+    <a class="btn btn-outline" href="{% url 'accounts:change_password' %}">Changer de mot de passe</a>
+  </div>
+</form>
+
+{% if researcher_profile %}
+<div class="card mt-3">
+  <div class="card-header"><h2>Ma réputation</h2></div>
+  <div class="card-body">
+    <div class="grid grid-4">
+      <div class="stat"><div class="stat-value">{{ researcher_profile.reputation }}</div><div class="stat-label">Points</div></div>
+      <div class="stat"><div class="stat-value">{{ researcher_profile.reports_submitted }}</div><div class="stat-label">Rapports soumis</div></div>
+      <div class="stat ok"><div class="stat-value">{{ researcher_profile.reports_validated }}</div><div class="stat-label">Validés</div></div>
+      <div class="stat critical"><div class="stat-value">{{ researcher_profile.critical_reports }}</div><div class="stat-label">Critiques</div></div>
+    </div>
+    <p class="small muted mt-2">
+      La réputation est calculée automatiquement à partir des décisions de
+      l'équipe de coordination. Elle n'est modifiable par aucun chercheur.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header"><h2>Clés d'API</h2></div>
+  <div class="card-body">
+    {% if api_keys %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Libellé</th><th>Préfixe</th><th>Dernière utilisation</th><th>Expiration</th></tr></thead>
+          <tbody>
+          {% for key in api_keys %}
+            <tr>
+              <td>{{ key.label }}</td>
+              <td class="mono">{{ key.prefix }}…</td>
+              <td class="small">{{ key.last_used_at|date:"d/m/Y H:i"|default:"—" }}</td>
+              <td class="small">{{ key.expires_at|date:"d/m/Y"|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">Aucune clé d'API active. Les clés sont créées par un administrateur
+      (commande <code>manage.py create_api_key</code>) et affichées une seule fois.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load evdp_tags %}
+{% block title %}{{ organization.name }}{% endblock %}
+{% block content %}
+<h1>{{ organization.name }}</h1>
+<div class="flex mb-2">
+  <span class="pill">{{ organization.get_organization_type_display }}</span>
+  <span class="pill">{{ organization.get_sector_display }}</span>
+  {% if organization.domain %}<span class="pill mono">{{ organization.domain }}</span>{% endif %}
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Présentation</h2></div>
+    <div class="card-body prose">
+      {{ organization.description|markdown }}
+      {% if organization.website %}<p><a href="{{ organization.website }}" rel="noopener nofollow" target="_blank">Site officiel</a></p>{% endif %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>Programmes</h2></div>
+    <div class="card-body">
+      {% for program in programs %}
+        <div class="flex-between" style="padding:.4rem 0;border-bottom:1px solid var(--border)">
+          <a href="{% url 'programs:detail' program.slug %}">{{ program.name }}</a>
+          <span class="pill">{{ program.get_program_type_display }}</span>
+        </div>
+      {% empty %}<p class="muted">Aucun programme public.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Advisories publiés</h2></div>
+  <div class="card-body">
+    {% for advisory in advisories %}
+      <div class="flex-between" style="padding:.4rem 0;border-bottom:1px solid var(--border)">
+        <a href="{{ advisory.get_absolute_url }}">{{ advisory.advisory_id }} — {{ advisory.title }}</a>
+        <span class="badge {{ advisory.severity|severity_class }}">{{ advisory.get_severity_display }}</span>
+      </div>
+    {% empty %}<p class="muted">Aucun advisory publié.</p>{% endfor %}
+  </div>
+</div>
+{% endblock %}

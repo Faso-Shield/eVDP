@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Signalement enregistré{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<div class="card" style="margin-top:2rem">
+  <div class="card-body text-center">
+    <h1>Signalement enregistré</h1>
+    {% if case_id %}
+      <p>Votre signalement a été enregistré sous la référence :</p>
+      <p class="mono" style="font-size:1.6rem;font-weight:700;color:var(--evdp-navy)">{{ case_id }}</p>
+      <p class="muted">Conservez cette référence. Elle vous sera demandée lors de tout échange
+      avec l'équipe de coordination.</p>
+    {% else %}
+      <p>Votre signalement a bien été transmis à l'équipe de coordination.</p>
+    {% endif %}
+    <div class="notice notice-secure text-left mt-2">
+      <strong>Ce qui va se passer.</strong> L'équipe accuse réception sous 72 heures,
+      qualifie la vulnérabilité, puis contacte l'organisation affectée. Votre rapport
+      reste privé : il ne sera jamais publié automatiquement.
+    </div>
+    <div class="btn-row" style="justify-content:center">
+      <a class="btn" href="{% url 'core:home' %}">Retour à l'accueil</a>
+      <a class="btn btn-outline" href="{% url 'accounts:register' %}">Créer un compte pour suivre le dossier</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

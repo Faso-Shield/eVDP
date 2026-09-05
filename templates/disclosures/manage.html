@@ -1,0 +1,105 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}{{ advisory.advisory_id }}{% endblock %}
+
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <div>
+    <span class="mono muted">{{ advisory.advisory_id }}</span>
+    <h1 class="mb-0">{{ advisory.title }}</h1>
+  </div>
+  <div class="flex">
+    <span class="status">{{ advisory.get_status_display }}</span>
+    <a class="btn btn-sm btn-outline" href="{{ advisory.get_absolute_url }}">Prévisualiser</a>
+  </div>
+</div>
+
+<div class="notice">
+  <strong>Principe de publication assainie.</strong> Cet advisory est un document
+  public : il ne doit contenir aucune preuve de concept, aucune étape de
+  reproduction exploitable ni aucune URL sensible du dossier privé.
+  {% if advisory.case %}Dossier source : <span class="mono">{{ advisory.case.case_id }}</span>.{% endif %}
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="card">
+    <div class="card-header"><h2>Contenu de l'advisory</h2></div>
+    <div class="card-body">
+      <div class="form-grid">{% for field in form %}{% include "partials/form_field.html" %}{% endfor %}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Chronologie publique</h2></div>
+    <div class="card-body">
+      {{ formset.management_form }}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Date</th><th>Étape</th><th>Ordre</th><th>Suppr.</th></tr></thead>
+          <tbody>
+          {% for entry_form in formset %}
+            <tr>
+              {{ entry_form.id }}
+              <td>{{ entry_form.happened_on }}</td>
+              <td>{{ entry_form.label }}</td>
+              <td>{{ entry_form.position }}</td>
+              <td>{{ entry_form.DELETE }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="btn-row mb-3">
+    <button class="btn btn-accent" type="submit">Enregistrer</button>
+  </div>
+</form>
+
+<div class="card">
+  <div class="card-header"><h2>Cycle de vie</h2></div>
+  <div class="card-body">
+    <div class="btn-row">
+      <form method="post" action="{% url 'disclosures:transition' advisory.advisory_id %}">
+        {% csrf_token %}
+        <div class="filters">
+          <div class="form-field">
+            <label for="target_status">Nouveau statut</label>
+            <select name="target_status" id="target_status">
+              {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <button class="btn btn-outline" type="submit">Appliquer</button>
+        </div>
+      </form>
+    </div>
+
+    {% if can_publish %}
+    <hr>
+    <div class="btn-row">
+      <form method="post" action="{% url 'disclosures:publish' advisory.advisory_id %}">
+        {% csrf_token %}
+        <button class="btn btn-accent" type="submit">Publier l'advisory</button>
+      </form>
+      {% if advisory.status == "PUBLISHED" %}
+      <form method="post" action="{% url 'disclosures:retract' advisory.advisory_id %}" class="filters">
+        {% csrf_token %}
+        <div class="form-field">
+          <label for="reason">Motif de retrait</label>
+          <input type="text" name="reason" id="reason" required>
+        </div>
+        <button class="btn btn-danger" type="submit">Retirer</button>
+      </form>
+      {% endif %}
+    </div>
+    <p class="small muted mt-1">La publication est irréversible hors retrait explicite
+    et journalisé.</p>
+    {% else %}
+    <p class="small muted">Votre rôle ne permet pas de publier. Un coordinateur national
+    doit valider la publication.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

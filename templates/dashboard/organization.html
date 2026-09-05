@@ -1,0 +1,87 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Espace organisation{% endblock %}
+
+{% block dashboard_content %}
+<h1>Espace organisation / DSI</h1>
+<div class="flex mb-2">
+  {% for organization in organizations %}
+    <span class="pill">{{ organization.acronym|default:organization.name }}</span>
+  {% empty %}
+    <span class="pill">Aucune organisation rattachée</span>
+  {% endfor %}
+</div>
+
+<div class="notice notice-secure">
+  Votre périmètre est strictement limité aux vulnérabilités concernant vos
+  organisations de rattachement.
+</div>
+
+<div class="grid grid-4 mb-2">
+  <div class="stat"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">Vulnérabilités reçues</div></div>
+  <div class="stat warning"><div class="stat-value">{{ stats.open }}</div><div class="stat-label">Ouvertes</div></div>
+  <div class="stat critical"><div class="stat-value">{{ stats.critical }}</div><div class="stat-label">Critiques</div></div>
+  <div class="stat critical"><div class="stat-value">{{ stats.sla_breached }}</div><div class="stat-label">SLA dépassés</div></div>
+</div>
+
+<div class="grid grid-4 mb-2">
+  <div class="stat ok"><div class="stat-value">{{ stats.validated }}</div><div class="stat-label">Validées</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.in_remediation }}</div><div class="stat-label">En remédiation</div></div>
+  <div class="stat ok"><div class="stat-value">{{ stats.published }}</div><div class="stat-label">Publiées</div></div>
+  <div class="stat"><div class="stat-value">{{ members }}</div><div class="stat-label">Utilisateurs</div></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Dossiers de mon périmètre</h2>
+    <a class="btn btn-sm btn-outline" href="{% url 'coordination:case_list' %}">Tout voir</a>
+  </div>
+  <div class="card-body table-wrap">
+    <table class="table">
+      <thead><tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>Statut</th><th>Organisation</th><th>Créé</th></tr></thead>
+      <tbody>
+        {% for case in cases %}{% include "partials/case_row.html" %}{% empty %}
+        <tr><td colspan="6" class="muted">Aucune vulnérabilité signalée.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Échéances dépassées</h2></div>
+    <div class="card-body">
+      {% for case in overdue %}
+        <div class="flex-between" style="padding:.4rem 0;border-bottom:1px solid var(--border)">
+          <a href="{{ case.get_absolute_url }}" class="mono small">{{ case.case_id }}</a>
+          <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
+        </div>
+      {% empty %}<p class="muted">Aucun dépassement. Bonne posture.</p>{% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Mes programmes</h2>
+      <a class="btn btn-sm btn-outline" href="{% url 'programs:my_programs' %}">Gérer</a>
+    </div>
+    <div class="card-body">
+      {% for program in programs %}
+        <div class="flex-between" style="padding:.4rem 0;border-bottom:1px solid var(--border)">
+          <a href="{% url 'programs:manage' program.slug %}">{{ program.name|truncatechars:40 }}</a>
+          <span class="status">{{ program.get_status_display }}</span>
+        </div>
+      {% empty %}<p class="muted">Aucun programme déclaré.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Advisories publiés</h2></div>
+  <div class="card-body">
+    {% for advisory in advisories %}
+      <div><a href="{{ advisory.get_absolute_url }}">{{ advisory.advisory_id }}</a> — {{ advisory.title }}</div>
+    {% empty %}<p class="muted">Aucun advisory publié concernant vos organisations.</p>{% endfor %}
+  </div>
+</div>
+{% endblock %}

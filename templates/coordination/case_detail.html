@@ -1,0 +1,333 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags humanize %}
+{% block title %}{{ case.case_id }}{% endblock %}
+
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <div>
+    <span class="mono muted">{{ case.case_id }}</span>
+    <h1 class="mb-0">{{ case.title }}</h1>
+    <div class="flex mt-1">
+      <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
+      <span class="status">{{ case.get_status_display }}</span>
+      <span class="pill">{{ case.get_workflow_display }}</span>
+      {% if case.cvss_score %}<span class="pill">CVSS {{ case.cvss_score }}</span>{% endif %}
+      {% if case.cwe %}<span class="pill">{{ case.cwe.code }}</span>{% endif %}
+      {% if case.cve %}<span class="pill">{{ case.cve.cve_id }}</span>{% endif %}
+      <span class="pill">Priorité {{ case.priority_score }}</span>
+    </div>
+  </div>
+  <div class="btn-row">
+    {% if user.is_national or user.is_organization_user %}
+      <a class="btn btn-sm btn-outline" href="{% url 'dashboard:export_case_pdf' case.case_id %}">Export PDF</a>
+    {% endif %}
+    {% if can_manage %}
+      <a class="btn btn-sm btn-accent" href="{% url 'disclosures:create_from_case' case.case_id %}">Rédiger un advisory</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if case.status == "DUPLICATE" %}
+<div class="notice">
+  <strong>Votre rapport a été identifié comme doublon.</strong>
+  Une vulnérabilité identique était déjà suivie par l'équipe de coordination.
+  {% if show_duplicate_origin %}
+    <br>Dossier original (visible par la coordination uniquement) :
+    <a href="{{ case.duplicate_of.get_absolute_url }}" class="mono">{{ case.duplicate_of.case_id }}</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if case.report.is_pgp_encrypted %}
+<div class="notice notice-secure">
+  <strong>Rapport chiffré PGP.</strong> Le contenu sensible est stocké sous forme
+  de bloc chiffré. eVDP ne détient aucune clé privée : le déchiffrement s'effectue
+  hors ligne par l'équipe destinataire.
+</div>
+{% endif %}
+
+<div class="grid" style="grid-template-columns: 2fr 1fr">
+  <div>
+    <div class="card">
+      <div class="card-header"><h2>Rapport</h2><span class="pill">Privé</span></div>
+      <div class="card-body prose">
+        <h3>Description</h3>
+        {{ report.description|markdown }}
+        {% if report.steps_to_reproduce %}<h3>Étapes de reproduction</h3>{{ report.steps_to_reproduce|markdown }}{% endif %}
+        {% if report.impact %}<h3>Impact</h3>{{ report.impact|markdown }}{% endif %}
+        {% if report.proof_of_concept %}<h3>Preuve de concept</h3>{{ report.proof_of_concept|markdown }}{% endif %}
+        {% if report.recommendations %}<h3>Recommandations</h3>{{ report.recommendations|markdown }}{% endif %}
+        {% if report.pgp_payload %}
+          <h3>Bloc PGP chiffré</h3>
+          <pre>{{ report.pgp_payload }}</pre>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Messagerie sécurisée</h2>
+        <span class="pill">{{ messages_list|length }} message(s)</span>
+      </div>
+      <div class="card-body">
+        {% for message in messages_list %}
+          <div class="msg {% if message.confidentiality == 'INTERNAL' %}msg-internal{% elif message.confidentiality == 'RESTRICTED' %}msg-restricted{% endif %} {% if message.is_system %}msg-system{% endif %}">
+            <div class="msg-head">
+              <span class="msg-author">{{ message.author.display_name|default:"Système eVDP" }}</span>
+              <span>
+                {% if message.confidentiality != "PARTICIPANTS" %}
+                  <span class="pill">{{ message.get_confidentiality_display }}</span>
+                {% endif %}
+                {{ message.created_at|date:"d/m/Y H:i" }}
+              </span>
+            </div>
+            <div class="msg-body prose">{{ message.body|markdown }}</div>
+            {% if message.attachments.exists %}
+              <div class="small mt-1">
+                {% for attachment in message.attachments.all %}
+                  <a href="{% url 'attachments:download' attachment.id %}">{{ attachment.original_filename }}</a>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        {% empty %}
+          <p class="muted">Aucun message pour le moment.</p>
+        {% endfor %}
+
+        <form method="post" action="{% url 'coordination:post_message' case.case_id %}" class="mt-2">
+          {% csrf_token %}
+          {% for field in message_form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-accent" type="submit">Publier le message</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Pièces jointes</h2>
+        <span class="pill">{{ attachments|length }}</span>
+      </div>
+      <div class="card-body">
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Fichier</th><th>Taille</th><th>SHA-256</th><th>Analyse</th><th>Déposé par</th><th></th></tr></thead>
+            <tbody>
+            {% for attachment in attachments %}
+              <tr>
+                <td>{{ attachment.original_filename }}</td>
+                <td class="small nowrap">{{ attachment.human_size }}</td>
+                <td class="mono small">{{ attachment.sha256|slice:":16" }}…</td>
+                <td class="small">
+                  <span class="status {% if attachment.scan_status == 'INFECTED' %}status-rejected{% elif attachment.scan_status == 'CLEAN' %}status-done{% endif %}">
+                    {{ attachment.get_scan_status_display }}</span>
+                </td>
+                <td class="small">{{ attachment.uploaded_by.display_name|default:"—" }}</td>
+                <td>
+                  {% if attachment.is_downloadable %}
+                    <a class="btn btn-sm btn-outline" href="{% url 'attachments:download' attachment.id %}">Télécharger</a>
+                  {% else %}
+                    <span class="badge sev-critical">Bloqué</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="muted">Aucune pièce jointe.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" action="{% url 'coordination:upload_attachment' case.case_id %}" class="mt-2">
+          {% csrf_token %}
+          <div class="filters">
+            {% for field in upload_form %}{% include "partials/form_field.html" %}{% endfor %}
+            <button class="btn btn-outline" type="submit">Téléverser</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <div class="card-header"><h3>Dossier</h3></div>
+      <div class="card-body">
+        <dl class="dl-inline">
+          <dt>Déclarant</dt><dd>{{ report.reporter_display }}</dd>
+          <dt>Organisation</dt><dd>{% firstof case.organization.name report.affected_organization_name "Non déterminée" %}</dd>
+          <dt>Produit</dt><dd>{{ case.product|default:"—" }}</dd>
+          <dt>Type</dt><dd>{{ case.get_vulnerability_type_display }}</dd>
+          <dt>Programme</dt><dd>{% if case.program %}<a href="{% url 'programs:detail' case.program.slug %}">{{ case.program.name }}</a>{% else %}—{% endif %}</dd>
+          <dt>Analyste</dt><dd>{{ case.assignee.display_name|default:"Non assigné" }}</dd>
+          <dt>Créé le</dt><dd>{{ case.created_at|date:"d/m/Y H:i" }}</dd>
+          <dt>Divulgation prévue</dt><dd>{{ case.disclosure_date|date:"d/m/Y"|default:"Non planifiée" }}</dd>
+        </dl>
+        {% if case.tags %}<div class="flex">{% for tag in case.tags %}<span class="pill">{{ tag }}</span>{% endfor %}</div>{% endif %}
+      </div>
+    </div>
+
+    {% if cvss_breakdown %}
+    <div class="card">
+      <div class="card-header"><h3>CVSS {{ case.cvss_score }}</h3></div>
+      <div class="card-body small">
+        <p class="mono" style="word-break:break-all">{{ case.cvss_vector }}</p>
+        {% for metric in cvss_breakdown %}
+          <div class="flex-between"><span class="muted">{{ metric.label }}</span><strong>{{ metric.value_label }}</strong></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header"><h3>Échéances SLA</h3></div>
+      <div class="card-body small">
+        {% for event in sla_events %}
+          <div class="flex-between" style="padding:.3rem 0;border-bottom:1px solid var(--border)">
+            <span>{{ event.get_kind_display }}</span>
+            <span class="status {% if event.state == 'BREACHED' %}status-rejected{% elif event.state == 'MET' %}status-done{% elif event.state == 'APPROACHING' %}status-progress{% endif %}">
+              {{ event.get_state_display }}</span>
+          </div>
+          <div class="muted" style="margin-bottom:.4rem">Échéance : {{ event.due_at|date:"d/m/Y H:i" }}</div>
+        {% empty %}
+          <p class="muted">Aucune échéance active.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>Chronologie</h3></div>
+      <div class="card-body">
+        <ul class="timeline">
+          {% for event in timeline %}
+            <li>
+              <div class="tl-date">{{ event.occurred_at|date:"d/m/Y H:i" }}</div>
+              <div class="tl-label">{{ event.label }}</div>
+              {% if event.actor %}<div class="small muted">{{ event.actor.display_name }}</div>{% endif %}
+            </li>
+          {% empty %}
+            <li><div class="tl-label muted">Aucun évènement.</div></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>Participants</h3></div>
+      <div class="card-body small">
+        {% for participant in participants %}
+          <div class="flex-between">
+            <span>{{ participant.user.display_name }}</span>
+            <span class="pill">{{ participant.get_participant_role_display }}</span>
+          </div>
+        {% empty %}<p class="muted">Aucun participant.</p>{% endfor %}
+      </div>
+    </div>
+
+    {% if bounty %}
+    <div class="card">
+      <div class="card-header"><h3>Récompense</h3></div>
+      <div class="card-body small">
+        <div class="flex-between"><span>Montant</span><strong>{{ bounty.display_amount }}</strong></div>
+        <div class="flex-between"><span>Statut</span><span class="status">{{ bounty.get_status_display }}</span></div>
+        <a class="btn btn-sm btn-outline mt-1" href="{% url 'bounty:detail' bounty.id %}">Ouvrir</a>
+      </div>
+    </div>
+    {% elif case.is_bug_bounty and can_manage %}
+    <div class="card">
+      <div class="card-header"><h3>Récompense</h3></div>
+      <div class="card-body small">
+        <p class="muted">Aucune récompense proposée.</p>
+        <a class="btn btn-sm btn-accent" href="{% url 'bounty:propose' case.case_id %}">Proposer une récompense</a>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if status_form %}
+    <div class="card">
+      <div class="card-header"><h3>Changer le statut</h3></div>
+      <div class="card-body">
+        {% if allowed_targets %}
+          <form method="post" action="{% url 'coordination:change_status' case.case_id %}">
+            {% csrf_token %}
+            {% for field in status_form %}{% include "partials/form_field.html" %}{% endfor %}
+            <button class="btn btn-block" type="submit">Appliquer</button>
+          </form>
+        {% else %}
+          <p class="muted small">Aucune transition possible depuis cet état.</p>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if triage_form %}
+    <div class="card">
+      <div class="card-header"><h3>Qualification</h3></div>
+      <div class="card-body">
+        <form method="post" action="{% url 'coordination:triage' case.case_id %}">
+          {% csrf_token %}
+          {% for field in triage_form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-block" type="submit">Enregistrer</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if assignment_form %}
+    <div class="card">
+      <div class="card-header"><h3>Assignation</h3></div>
+      <div class="card-body">
+        <form method="post" action="{% url 'coordination:assign' case.case_id %}">
+          {% csrf_token %}
+          {% for field in assignment_form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-block btn-outline" type="submit">Assigner</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if duplicate_form %}
+    <div class="card">
+      <div class="card-header"><h3>Marquer comme doublon</h3></div>
+      <div class="card-body">
+        <form method="post" action="{% url 'coordination:mark_duplicate' case.case_id %}">
+          {% csrf_token %}
+          {% for field in duplicate_form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-block btn-outline" type="submit">Marquer</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if disclosure_form %}
+    <div class="card">
+      <div class="card-header"><h3>Divulgation & CVE</h3></div>
+      <div class="card-body">
+        <form method="post" action="{% url 'coordination:set_disclosure' case.case_id %}" class="mb-2">
+          {% csrf_token %}
+          {% for field in disclosure_form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-block btn-outline" type="submit">Planifier</button>
+        </form>
+        <form method="post" action="{% url 'coordination:link_cve' case.case_id %}">
+          {% csrf_token %}
+          {% for field in cve_form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-block btn-outline" type="submit">Associer un CVE</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header"><h3>Historique des statuts</h3></div>
+      <div class="card-body small">
+        {% for entry in status_history %}
+          <div style="padding:.25rem 0;border-bottom:1px solid var(--border)">
+            <span class="muted mono">{{ entry.created_at|date:"d/m/Y H:i" }}</span><br>
+            {{ entry.from_status|default:"—" }} → <strong>{{ entry.to_status }}</strong>
+            {% if entry.actor %}<span class="muted">par {{ entry.actor.display_name }}</span>{% endif %}
+          </div>
+        {% empty %}<p class="muted">Aucun changement enregistré.</p>{% endfor %}
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}

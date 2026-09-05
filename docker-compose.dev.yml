@@ -1,0 +1,59 @@
+# =============================================================================
+# Surcouche de developpement.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Elle expose les interfaces d'administration UNIQUEMENT sur la boucle locale
+# (127.0.0.1) : elles ne doivent jamais etre joignables depuis le reseau.
+# =============================================================================
+
+x-dev-env: &dev-env
+  DJANGO_SETTINGS_MODULE: config.settings.dev
+  DEBUG: "True"
+  ALLOWED_HOSTS: "*"
+  SECURE_SSL_REDIRECT: "False"
+  SECURE_HSTS_SECONDS: "0"
+  LOG_FORMAT: simple
+  LOG_LEVEL: DEBUG
+
+services:
+  evdp-web:
+    environment: *dev-env
+    volumes:
+      # Rechargement du code sans reconstruction de l'image.
+      - .:/app
+      - evdp-static:/app/staticfiles
+      - evdp-media:/app/media
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  evdp-worker:
+    environment: *dev-env
+    volumes:
+      - .:/app
+      - evdp-media:/app/media
+
+  evdp-beat:
+    environment: *dev-env
+    volumes:
+      - .:/app
+
+  # Interface de consultation des emails de developpement.
+  evdp-mailpit:
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  # Console MinIO, strictement locale.
+  evdp-minio:
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+
+  # Base exposee en local pour l'inspection avec psql / DBeaver.
+  evdp-db:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  evdp-redis:
+    ports:
+      - "127.0.0.1:6379:6379"

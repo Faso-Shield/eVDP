@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Politique de divulgation{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<h1>Politique de divulgation coordonnée</h1>
+<p class="muted">{{ EVDP.NATIONAL_TEAM }} — {{ PROJECT_CODE }}</p>
+
+<div class="card"><div class="card-body prose">{{ body }}</div></div>
+
+<div class="card">
+  <div class="card-header"><h2>Chiffrement PGP</h2></div>
+  <div class="card-body">
+    {% if pgp_key %}
+      <p>Pour un signalement particulièrement sensible, chiffrez son contenu avec la clé publique nationale.</p>
+      {% if pgp_fingerprint %}<p class="mono small">Empreinte : {{ pgp_fingerprint }}</p>{% endif %}
+      <a class="btn btn-outline" href="{% url 'core:pgp_key' %}">Télécharger la clé publique</a>
+    {% else %}
+      <p class="muted">Aucune clé publique nationale n'est publiée sur cette instance.
+      Définissez la variable d'environnement <code>PGP_PUBLIC_KEY</code> pour l'activer.</p>
+    {% endif %}
+    <p class="small muted mt-2">eVDP ne détient aucune clé privée. Les blocs chiffrés
+    sont stockés tels quels et déchiffrés hors ligne par l'équipe destinataire.</p>
+  </div>
+</div>
+
+<div class="btn-row">
+  <a class="btn btn-accent" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>
+</div>
+{% endblock %}

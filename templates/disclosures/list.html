@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load evdp_tags %}
+{% block title %}Advisories{% endblock %}
+{% block content %}
+<h1>Advisories publiés</h1>
+<p class="muted">Chaque advisory est une représentation assainie d'un dossier privé,
+publiée après coordination avec l'organisation affectée.</p>
+
+<form method="get" class="filters mb-2">
+  <div class="form-field" style="min-width:280px">
+    <label for="q">Rechercher</label>
+    <input type="search" name="q" id="q" value="{{ query }}">
+  </div>
+  <div class="form-field">
+    <label for="severity">Sévérité</label>
+    <select name="severity" id="severity">
+      <option value="">Toutes</option>
+      {% for value, label in severities %}
+        <option value="{{ value }}" {% if selected_severity == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn" type="submit">Filtrer</button>
+</form>
+
+<div class="card"><div class="card-body table-wrap">
+  <table class="table">
+    <thead><tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>CVSS</th><th>CVE</th><th>Organisation</th><th>Publié</th></tr></thead>
+    <tbody>
+    {% for advisory in page_obj %}
+      <tr>
+        <td class="mono nowrap"><a href="{{ advisory.get_absolute_url }}">{{ advisory.advisory_id }}</a></td>
+        <td>{{ advisory.title }}</td>
+        <td><span class="badge {{ advisory.severity|severity_class }}">{{ advisory.get_severity_display }}</span></td>
+        <td class="mono small">{{ advisory.cvss_score|default:"—" }}</td>
+        <td class="mono small">{{ advisory.cve.cve_id|default:"—" }}</td>
+        <td class="small">{% firstof advisory.organization.acronym advisory.organization.name "—" %}</td>
+        <td class="small nowrap">{{ advisory.published_at|date:"d/m/Y" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="muted">Aucun advisory publié.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

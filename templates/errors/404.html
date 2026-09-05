@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Page introuvable{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<h1>404 — Ressource introuvable</h1>
+<p>La page ou le dossier demandé n'existe pas, ou vous n'êtes pas autorisé à y accéder.</p>
+<a class="btn" href="{% url 'core:home' %}">Retour à l'accueil</a>
+{% endblock %}

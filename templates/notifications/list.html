@@ -1,0 +1,24 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Notifications{% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Notifications</h1>
+  <form method="post" action="{% url 'notifications:mark_all_read' %}">
+    {% csrf_token %}<button class="btn btn-sm btn-outline">Tout marquer comme lu</button>
+  </form>
+</div>
+<div class="card"><div class="card-body">
+  {% for notification in page_obj %}
+    <div class="flex-between" style="padding:.6rem 0;border-bottom:1px solid var(--border);{% if not notification.read_at %}background:var(--evdp-accent-light){% endif %}">
+      <div>
+        <a href="{% url 'notifications:mark_read' notification.id %}"><strong>{{ notification.title }}</strong></a>
+        {% if notification.body %}<div class="small muted">{{ notification.body }}</div>{% endif %}
+      </div>
+      <span class="small muted nowrap">{{ notification.created_at|date:"d/m/Y H:i" }}</span>
+    </div>
+  {% empty %}
+    <p class="muted">Aucune notification.</p>
+  {% endfor %}
+</div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

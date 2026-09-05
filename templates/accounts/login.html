@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Connexion{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<div class="card" style="max-width:480px;margin:2rem auto">
+  <div class="card-header"><h1 style="font-size:1.4rem">Connexion à {{ PLATFORM_NAME }}</h1></div>
+  <div class="card-body">
+    {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+      <button class="btn btn-block" type="submit">Se connecter</button>
+    </form>
+    <p class="small mt-2">
+      <a href="{% url 'accounts:password_reset' %}">Mot de passe oublié ?</a> ·
+      <a href="{% url 'accounts:register' %}">Créer un compte chercheur</a>
+    </p>
+  </div>
+</div>
+<p class="text-center small muted">Les tentatives de connexion sont limitées et journalisées.</p>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Recherche{% endblock %}
+{% block dashboard_content %}
+<h1>Recherche globale</h1>
+<div class="card"><div class="card-body">
+  <form method="get" class="filters">
+    <div class="form-field" style="flex:1;min-width:320px">
+      <label for="q">Identifiant EVDP, titre, CVE, CWE, organisation, chercheur, programme</label>
+      <input type="search" name="q" id="q" value="{{ query }}" placeholder="EVDP-2026-000001, CVE-2026-1234, XSS…">
+    </div>
+    <button class="btn" type="submit">Rechercher</button>
+  </form>
+</div></div>
+
+{% if query %}
+<p class="muted small">{{ total }} résultat(s) dans votre périmètre autorisé.</p>
+
+<div class="card">
+  <div class="card-header"><h2>Dossiers</h2></div>
+  <div class="card-body table-wrap">
+    <table class="table">
+      <thead><tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>Statut</th><th>Organisation</th><th>Créé</th></tr></thead>
+      <tbody>
+        {% for case in cases %}{% include "partials/case_row.html" %}{% empty %}
+        <tr><td colspan="6" class="muted">Aucun dossier.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Advisories</h2></div>
+    <div class="card-body">
+      {% for advisory in advisories %}
+        <div><a href="{{ advisory.get_absolute_url }}">{{ advisory.advisory_id }}</a> — {{ advisory.title|truncatechars:60 }}</div>
+      {% empty %}<p class="muted">Aucun advisory.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>Programmes</h2></div>
+    <div class="card-body">
+      {% for program in programs %}
+        <div><a href="{% url 'programs:detail' program.slug %}">{{ program.name }}</a></div>
+      {% empty %}<p class="muted">Aucun programme.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% load evdp_tags %}
+
+{% block title %}Accueil{% endblock %}
+
+{% block hero %}
+<section class="hero">
+  <div class="container">
+    <h1>Vous avez découvert une vulnérabilité ?</h1>
+    <p class="lead">
+      {{ PLATFORM_NAME }} est le point national de confiance permettant de signaler,
+      de manière sécurisée et juridiquement encadrée, une vulnérabilité affectant
+      un service public ou une infrastructure numérique burkinabè.
+    </p>
+    <div class="btn-row mt-2">
+      <a class="btn btn-accent btn-lg" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>
+      <a class="btn btn-outline btn-lg" href="{% url 'programs:list' %}">Voir les programmes Bug Bounty</a>
+      <a class="btn btn-outline btn-lg" href="{% url 'disclosures:advisory_list' %}">Voir les advisories</a>
+      <a class="btn btn-outline btn-lg" href="{% url 'core:disclosure_policy' %}">Politique de divulgation</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-4 mb-3">
+  <div class="stat"><div class="stat-value">{{ stats.cases }}</div><div class="stat-label">Signalements traités</div></div>
+  <div class="stat ok"><div class="stat-value">{{ stats.advisories }}</div><div class="stat-label">Advisories publiés</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.programs }}</div><div class="stat-label">Programmes actifs</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.researchers }}</div><div class="stat-label">Chercheurs inscrits</div></div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Comment ça marche ?</h2></div>
+  <div class="card-body">
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div><h3>Signaler</h3>
+        <p class="small muted">Vous décrivez la vulnérabilité via le formulaire sécurisé ou l'API. Le rapport est privé dès la première seconde.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div><h3>Analyser</h3>
+        <p class="small muted">Le CSIRT accuse réception sous 72 h, qualifie la faille (CVSS, CWE) et détermine sa criticité.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div><h3>Coordonner</h3>
+        <p class="small muted">L'organisation affectée est contactée. Les échanges se déroulent dans une messagerie chiffrée en transit et cloisonnée.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div><h3>Corriger</h3>
+        <p class="small muted">La remédiation est suivie avec des échéances SLA. Le correctif est vérifié avec le chercheur.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div><h3>Publier</h3>
+        <p class="small muted">Un advisory assaini est publié après coordination, en créditant le chercheur selon son choix.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header">
+      <h2>Derniers advisories</h2>
+      <a class="btn btn-sm btn-outline" href="{% url 'disclosures:advisory_list' %}">Tout voir</a>
+    </div>
+    <div class="card-body">
+      {% for advisory in advisories %}
+        <div class="flex-between" style="padding:.5rem 0;border-bottom:1px solid var(--border)">
+          <div>
+            <a href="{{ advisory.get_absolute_url }}"><strong>{{ advisory.advisory_id }}</strong></a>
+            <div class="small muted">{{ advisory.title }}</div>
+          </div>
+          <span class="badge {{ advisory.severity|severity_class }}">{{ advisory.get_severity_display }}</span>
+        </div>
+      {% empty %}
+        <p class="muted">Aucun advisory publié pour le moment.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Programmes ouverts</h2>
+      <a class="btn btn-sm btn-outline" href="{% url 'programs:list' %}">Tout voir</a>
+    </div>
+    <div class="card-body">
+      {% for program in programs %}
+        <div class="flex-between" style="padding:.5rem 0;border-bottom:1px solid var(--border)">
+          <div>
+            <a href="{% url 'programs:detail' program.slug %}"><strong>{{ program.name }}</strong></a>
+            <div class="small muted">{{ program.organization.name }}</div>
+          </div>
+          <span class="pill">{{ program.get_program_type_display }}</span>
+        </div>
+      {% empty %}
+        <p class="muted">Aucun programme public actif.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="notice notice-secure mt-2">
+  <strong>Confidentialité.</strong> Tous les rapports sont privés par défaut et ne
+  deviennent jamais publics automatiquement. Seule une version assainie (advisory)
+  peut être publiée, après coordination avec l'organisation affectée.
+  Une clé PGP nationale est disponible pour chiffrer les signalements les plus sensibles.
+</div>
+{% endblock %}

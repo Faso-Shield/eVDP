@@ -1,0 +1,14 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Nouveau programme{% endblock %}
+{% block dashboard_content %}
+<h1>{% if creating %}Créer un programme{% else %}Modifier le programme{% endif %}</h1>
+<div class="card"><div class="card-body">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    <div class="form-grid">
+      {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+    </div>
+    <button class="btn btn-accent" type="submit">Enregistrer</button>
+  </form>
+</div></div>
+{% endblock %}

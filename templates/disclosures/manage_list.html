@@ -1,0 +1,30 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Advisories (rédaction){% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Rédaction des advisories</h1>
+  <a class="btn btn-accent" href="{% url 'disclosures:create' %}">Nouvel advisory</a>
+</div>
+<div class="card"><div class="card-body table-wrap">
+  <table class="table">
+    <thead><tr><th>Identifiant</th><th>Titre</th><th>Statut</th><th>Sévérité</th><th>Dossier</th><th>Publié</th><th></th></tr></thead>
+    <tbody>
+    {% for advisory in page_obj %}
+      <tr>
+        <td class="mono nowrap">{{ advisory.advisory_id }}</td>
+        <td>{{ advisory.title|truncatechars:60 }}</td>
+        <td><span class="status">{{ advisory.get_status_display }}</span></td>
+        <td><span class="badge {{ advisory.severity|severity_class }}">{{ advisory.get_severity_display }}</span></td>
+        <td class="mono small">{{ advisory.case.case_id|default:"—" }}</td>
+        <td class="small">{{ advisory.published_at|date:"d/m/Y"|default:"—" }}</td>
+        <td><a class="btn btn-sm btn-outline" href="{% url 'disclosures:manage' advisory.advisory_id %}">Ouvrir</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="muted">Aucun advisory.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

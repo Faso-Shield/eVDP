@@ -1,0 +1,23 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Proposer une récompense{% endblock %}
+{% block dashboard_content %}
+<h1>Proposer une récompense</h1>
+<p class="muted">Dossier <span class="mono">{{ case.case_id }}</span> — {{ case.title }}</p>
+
+<div class="notice">
+  Montant suggéré par la matrice du programme pour une sévérité
+  <strong>{{ case.get_severity_display }}</strong> :
+  <strong>{{ suggested|floatformat:0 }} {{ currency }}</strong>.
+  Ce montant provient de la configuration du programme, jamais du code.
+</div>
+
+<div class="card"><div class="card-body">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+    <button class="btn btn-accent" type="submit">Proposer</button>
+    <a class="btn btn-outline" href="{{ case.get_absolute_url }}">Annuler</a>
+  </form>
+</div></div>
+{% endblock %}

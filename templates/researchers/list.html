@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Chercheurs{% endblock %}
+{% block content %}
+<h1>Chercheurs en sécurité</h1>
+<p class="muted">Seuls les profils dont le titulaire a explicitement choisi la
+publication apparaissent ici. Le mode anonyme n'est jamais exposé.</p>
+
+<div class="grid grid-3">
+  {% for profile in page_obj %}
+  <div class="card">
+    <div class="card-body">
+      <h3 style="font-size:1rem">{{ profile.public_identity }}</h3>
+      <p class="small muted">{{ profile.country }}{% if profile.affiliation %} — {{ profile.affiliation }}{% endif %}</p>
+      <div class="flex">
+        <span class="pill">{{ profile.reputation }} points</span>
+        <span class="pill">{{ profile.reports_validated }} validé(s)</span>
+      </div>
+      <a class="btn btn-sm btn-outline mt-1" href="{% url 'researchers:detail' profile.slug %}">Profil</a>
+    </div>
+  </div>
+  {% empty %}
+  <p class="muted">Aucun profil public.</p>
+  {% endfor %}
+</div>
+{% include "partials/pagination.html" %}
+{% endblock %}

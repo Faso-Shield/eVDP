@@ -1,0 +1,29 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Kanban{% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Tableau Kanban</h1>
+  <a class="btn btn-sm btn-outline" href="{% url 'coordination:case_list' %}">Vue liste</a>
+</div>
+
+<div class="kanban">
+  {% for column in board %}
+  <div class="kanban-col">
+    <h3>{{ column.label }} <span class="pill">{{ column.count }}</span></h3>
+    {% for case in column.cases %}
+      <a class="kanban-card {{ case.severity|severity_class }}-border" href="{{ case.get_absolute_url }}">
+        <span class="kc-id">{{ case.case_id }}</span>
+        <div><strong>{{ case.title|truncatechars:56 }}</strong></div>
+        <div class="flex" style="gap:.3rem;margin-top:.35rem">
+          <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
+          {% if case.organization %}<span class="pill">{% firstof case.organization.acronym case.organization.name %}</span>{% endif %}
+        </div>
+      </a>
+    {% empty %}
+      <p class="muted small">Aucun dossier.</p>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

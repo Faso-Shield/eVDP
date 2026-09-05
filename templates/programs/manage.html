@@ -1,0 +1,97 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Gérer {{ program.name }}{% endblock %}
+
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">{{ program.name }}</h1>
+  <a class="btn btn-sm btn-outline" href="{% url 'programs:detail' program.slug %}">Voir la fiche publique</a>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="card">
+    <div class="card-header"><h2>Paramètres du programme</h2></div>
+    <div class="card-body">
+      <div class="form-grid">
+        {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% if tier_formset %}
+  <div class="card">
+    <div class="card-header">
+      <h2>Matrice de récompenses</h2>
+      <span class="pill">Montants configurables</span>
+    </div>
+    <div class="card-body">
+      {{ tier_formset.management_form }}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Sévérité</th><th>Minimum</th><th>Maximum</th><th>Description</th><th>Suppr.</th></tr></thead>
+          <tbody>
+          {% for tier_form in tier_formset %}
+            <tr>
+              {{ tier_form.id }}
+              <td>{{ tier_form.severity }}</td>
+              <td>{{ tier_form.min_amount }}</td>
+              <td>{{ tier_form.max_amount }}</td>
+              <td>{{ tier_form.description }}</td>
+              <td>{{ tier_form.DELETE }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="small muted">Devise : {{ reward_policy.currency }}. Aucun montant
+      n'est codé en dur dans l'application.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="btn-row mb-3">
+    <button class="btn btn-accent" type="submit">Enregistrer</button>
+  </div>
+</form>
+
+<div class="card">
+  <div class="card-header"><h2>Périmètre</h2></div>
+  <div class="card-body">
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Portée</th><th>Cible</th><th>Type</th><th>Priorité</th><th>Environnement</th><th></th></tr></thead>
+        <tbody>
+        {% for scope in scopes %}
+          <tr>
+            <td><span class="status {% if scope.in_scope %}status-done{% else %}status-rejected{% endif %}">
+              {{ scope.in_scope|yesno:"Dans le périmètre,Hors périmètre" }}</span></td>
+            <td class="mono">{{ scope.identifier }}</td>
+            <td class="small">{{ scope.get_target_type_display }}</td>
+            <td class="small">{{ scope.get_priority_display }}</td>
+            <td class="small">{{ scope.environment|default:"—" }}</td>
+            <td>
+              <form method="post" action="{% url 'programs:scope_delete' program.slug scope.id %}">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-danger" type="submit">Retirer</button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted">Aucune cible déclarée.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-2">Ajouter une cible</h3>
+    <form method="post" action="{% url 'programs:scope_add' program.slug %}">
+      {% csrf_token %}
+      <div class="form-grid">
+        {% for field in scope_form %}{% include "partials/form_field.html" %}{% endfor %}
+      </div>
+      <button class="btn btn-outline" type="submit">Ajouter au périmètre</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

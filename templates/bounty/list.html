@@ -1,0 +1,30 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Récompenses{% endblock %}
+{% block dashboard_content %}
+<h1>Récompenses Bug Bounty</h1>
+<p class="muted small">Aucun flux financier n'est déclenché par la plateforme :
+seule la trace comptable du versement est enregistrée.</p>
+
+<div class="card"><div class="card-body table-wrap">
+  <table class="table">
+    <thead><tr><th>Dossier</th><th>Chercheur</th><th>Sévérité</th><th>Proposé</th><th>Approuvé</th><th>Statut</th><th></th></tr></thead>
+    <tbody>
+    {% for bounty in page_obj %}
+      <tr>
+        <td class="mono nowrap"><a href="{{ bounty.case.get_absolute_url }}">{{ bounty.case.case_id }}</a></td>
+        <td class="small">{{ bounty.researcher.display_name|default:"—" }}</td>
+        <td><span class="badge {{ bounty.severity|severity_class }}">{{ bounty.get_severity_display }}</span></td>
+        <td class="mono small">{{ bounty.proposed_amount|floatformat:0 }} {{ bounty.currency }}</td>
+        <td class="mono small">{% if bounty.approved_amount %}{{ bounty.approved_amount|floatformat:0 }} {{ bounty.currency }}{% else %}—{% endif %}</td>
+        <td><span class="status">{{ bounty.get_status_display }}</span></td>
+        <td><a class="btn btn-sm btn-outline" href="{% url 'bounty:detail' bounty.id %}">Ouvrir</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="muted">Aucune récompense dans votre périmètre.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

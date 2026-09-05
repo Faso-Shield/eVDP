@@ -1,0 +1,16 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Nouvel advisory{% endblock %}
+{% block dashboard_content %}
+<h1>Nouvel advisory</h1>
+<div class="notice">
+  Un advisory ne doit contenir aucune information sensible du dossier privé :
+  ni preuve de concept, ni étapes de reproduction, ni URL exploitable.
+</div>
+<div class="card"><div class="card-body">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    <div class="form-grid">{% for field in form %}{% include "partials/form_field.html" %}{% endfor %}</div>
+    <button class="btn btn-accent" type="submit">Créer le brouillon</button>
+  </form>
+</div></div>
+{% endblock %}

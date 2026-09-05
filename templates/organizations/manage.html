@@ -1,0 +1,58 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}{{ organization.name }}{% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">{{ organization.name }}</h1>
+  <a class="btn btn-sm btn-outline" href="{% url 'organizations:detail' organization.slug %}">Fiche publique</a>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Paramètres</h2></div>
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="form-grid">{% for field in form %}{% include "partials/form_field.html" %}{% endfor %}</div>
+      <button class="btn btn-accent" type="submit">Enregistrer</button>
+    </form>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Membres</h2></div>
+    <div class="card-body small">
+      {% for member in members %}
+        <div class="flex-between" style="padding:.3rem 0;border-bottom:1px solid var(--border)">
+          <span>{{ member.user.display_name }} <span class="muted">({{ member.user.email }})</span></span>
+          <span class="pill">{{ member.get_membership_role_display }}</span>
+        </div>
+      {% empty %}<p class="muted">Aucun membre. Ajoutez-les via l'administration Django.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>Contacts sécurité</h2></div>
+    <div class="card-body small">
+      {% for contact in contacts %}
+        <div style="padding:.3rem 0;border-bottom:1px solid var(--border)">
+          <strong>{{ contact.name }}</strong> — {{ contact.email }}
+          {% if contact.is_primary %}<span class="pill">Principal</span>{% endif %}
+        </div>
+      {% empty %}<p class="muted">Aucun contact déclaré.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Dossiers récents</h2></div>
+  <div class="card-body table-wrap">
+    <table class="table">
+      <thead><tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>Statut</th><th>Organisation</th><th>Créé</th></tr></thead>
+      <tbody>
+        {% for case in cases %}{% include "partials/case_row.html" %}{% empty %}
+        <tr><td colspan="6" class="muted">Aucun dossier.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

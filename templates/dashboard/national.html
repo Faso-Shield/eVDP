@@ -1,0 +1,115 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Posture nationale{% endblock %}
+
+{% block dashboard_content %}
+<h1>Posture nationale de vulnérabilités</h1>
+<p class="muted">{{ EVDP.NATIONAL_TEAM }} — vue agrégée réservée aux administrateurs nationaux.</p>
+
+<div class="notice">
+  Cette vue présente des indicateurs agrégés. Aucune information permettant
+  d'identifier une infrastructure sensible n'y figure et elle n'est jamais exposée
+  publiquement.
+</div>
+
+<div class="grid grid-4 mb-2">
+  <div class="stat"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">Vulnérabilités traitées</div></div>
+  <div class="stat warning"><div class="stat-value">{{ stats.open }}</div><div class="stat-label">Dossiers ouverts</div></div>
+  <div class="stat critical"><div class="stat-value">{{ stats.critical }}</div><div class="stat-label">Critiques</div></div>
+  <div class="stat critical"><div class="stat-value">{{ stats.sla_breached }}</div><div class="stat-label">SLA dépassés</div></div>
+</div>
+
+<div class="grid grid-4 mb-2">
+  <div class="stat"><div class="stat-value">{{ organizations_total }}</div><div class="stat-label">Organisations référencées</div></div>
+  <div class="stat"><div class="stat-value">{{ organizations_affected }}</div><div class="stat-label">Organisations affectées</div></div>
+  <div class="stat"><div class="stat-value">{{ researchers_total }}</div><div class="stat-label">Chercheurs</div></div>
+  <div class="stat ok"><div class="stat-value">{{ advisories_published }}</div><div class="stat-label">Advisories publiés</div></div>
+</div>
+
+<div class="grid grid-4 mb-3">
+  <div class="stat"><div class="stat-value">{{ programs_vdp }}</div><div class="stat-label">Programmes VDP</div></div>
+  <div class="stat"><div class="stat-value">{{ programs_bounty }}</div><div class="stat-label">Programmes Bug Bounty</div></div>
+  <div class="stat"><div class="stat-value">{{ cve_count }}</div><div class="stat-label">CVE référencés</div></div>
+  <div class="stat ok"><div class="stat-value">{{ rewards_total|money }}</div><div class="stat-label">Récompenses versées ({{ EVDP.DEFAULT_CURRENCY }})</div></div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Tendance sur 24 mois</h2></div>
+    <div class="card-body">
+      {% if charts.per_month %}
+        <div class="spark">
+          {% for point in charts.per_month %}
+            <div class="spark-bar" style="height: {% widthratio point.value max_month 100 %}%" title="{{ point.label }}: {{ point.value }}"></div>
+          {% endfor %}
+        </div>
+        <div class="spark-labels">{% for point in charts.per_month %}<span>{{ point.label }}</span>{% endfor %}</div>
+      {% else %}<p class="muted">Pas encore de données.</p>{% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Criticité</h2></div>
+    <div class="card-body">
+      {% include "partials/bar_chart.html" with rows=charts.severity max_value=stats.total %}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Exposition par secteur</h2></div>
+    <div class="card-body">
+      {% include "partials/bar_chart.html" with rows=charts.sector max_value=stats.total %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Nature des vulnérabilités</h2></div>
+    <div class="card-body">
+      {% include "partials/bar_chart.html" with rows=charts.types max_value=stats.total %}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Délais de correction</h2></div>
+    <div class="card-body small">
+      <div class="flex-between"><span>Délai moyen de remédiation</span>
+        <strong>{% if average_remediation %}{{ average_remediation }} jours{% else %}—{% endif %}</strong></div>
+      <div class="flex-between"><span>Taux de validation</span><strong>{{ stats.validation_rate }} %</strong></div>
+      <div class="flex-between"><span>Dossiers en remédiation</span><strong>{{ stats.in_remediation }}</strong></div>
+      <div class="flex-between"><span>Récompenses versées</span><strong>{{ rewards_count }}</strong></div>
+      <p class="muted mt-2">Une carte du Burkina Faso par région est prévue dans une
+      version ultérieure (données de localisation déjà collectées au niveau des
+      organisations).</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Administrations les plus affectées</h2></div>
+    <div class="card-body small">
+      {% for row in top_organizations %}
+        <div class="flex-between" style="padding:.25rem 0;border-bottom:1px solid var(--border)">
+          <span>{{ row.organization__acronym|default:row.organization__name|truncatechars:30 }}</span>
+          <strong class="mono">{{ row.total }}</strong>
+        </div>
+      {% empty %}<p class="muted">Aucune donnée.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Risques : dossiers en dépassement</h2></div>
+  <div class="card-body table-wrap">
+    <table class="table">
+      <thead><tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>Statut</th><th>Organisation</th><th>Créé</th></tr></thead>
+      <tbody>
+        {% for case in overdue %}{% include "partials/case_row.html" %}{% empty %}
+        <tr><td colspan="6" class="muted">Aucun dépassement d'échéance.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

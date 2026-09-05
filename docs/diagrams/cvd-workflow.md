@@ -1,0 +1,78 @@
+# Diagramme — Workflow CVD (programme VDP)
+
+```mermaid
+stateDiagram-v2
+    [*] --> SUBMITTED : soumission
+
+    SUBMITTED --> RECEIVED
+    SUBMITTED --> TRIAGE
+    RECEIVED --> ACKNOWLEDGED : accusé de réception (SLA 72 h)
+    RECEIVED --> TRIAGE
+    ACKNOWLEDGED --> TRIAGE : SLA 5 jours
+
+    TRIAGE --> NEEDS_INFORMATION
+    TRIAGE --> VALIDATED
+    TRIAGE --> DUPLICATE
+    TRIAGE --> REJECTED
+    TRIAGE --> OUT_OF_SCOPE
+    TRIAGE --> NOT_APPLICABLE
+    TRIAGE --> INFORMATIVE
+
+    NEEDS_INFORMATION --> TRIAGE : réponse du déclarant
+    NEEDS_INFORMATION --> REJECTED
+
+    VALIDATED --> IN_PROGRESS
+    VALIDATED --> VENDOR_CONTACTED
+    VALIDATED --> NEEDS_INFORMATION
+    VALIDATED --> DUPLICATE
+
+    IN_PROGRESS --> VENDOR_CONTACTED
+    IN_PROGRESS --> REMEDIATION
+
+    VENDOR_CONTACTED --> VENDOR_ACKNOWLEDGED : SLA 7 jours
+    VENDOR_CONTACTED --> REMEDIATION
+    VENDOR_CONTACTED --> DISCLOSURE_SCHEDULED : pas de réponse
+    VENDOR_ACKNOWLEDGED --> REMEDIATION
+
+    REMEDIATION --> FIX_AVAILABLE : SLA 30/60/90 j
+    REMEDIATION --> DISCLOSURE_SCHEDULED
+    FIX_AVAILABLE --> VERIFICATION
+    VERIFICATION --> FIX_VERIFIED
+    VERIFICATION --> REMEDIATION : correctif insuffisant
+
+    FIX_VERIFIED --> DISCLOSURE_SCHEDULED
+    FIX_VERIFIED --> CLOSED
+    DISCLOSURE_SCHEDULED --> PUBLISHED : advisory publié
+    DISCLOSURE_SCHEDULED --> CLOSED
+    PUBLISHED --> CLOSED
+    INFORMATIVE --> CLOSED
+
+    DUPLICATE --> [*]
+    REJECTED --> [*]
+    OUT_OF_SCOPE --> [*]
+    NOT_APPLICABLE --> [*]
+    CLOSED --> [*]
+```
+
+## Capacités RBAC exigées
+
+| Transition cible | Capacité |
+|------------------|----------|
+| `VALIDATED`, `REJECTED`, `DUPLICATE`, `OUT_OF_SCOPE`, `NOT_APPLICABLE`, `INFORMATIVE` | `TRIAGE_CASE` |
+| `PUBLISHED` | `PUBLISH_ADVISORY` |
+| Toutes les autres | `CHANGE_CASE_STATUS` |
+
+Toute transition absente de ce diagramme est refusée par
+`apps/coordination/workflow.py` et le refus est journalisé.
+
+## Colonnes Kanban
+
+| Colonne | États regroupés |
+|---------|-----------------|
+| Soumis | `SUBMITTED`, `RECEIVED`, `ACKNOWLEDGED` |
+| Triage | `TRIAGE`, `NEEDS_INFORMATION` |
+| Validé | `VALIDATED`, `SEVERITY_ASSIGNED`, `BOUNTY_REVIEW`, `REWARD_APPROVED` |
+| Remédiation | `IN_PROGRESS`, `VENDOR_CONTACTED`, `VENDOR_ACKNOWLEDGED`, `REMEDIATION`, `FIX_AVAILABLE` |
+| Vérification | `VERIFICATION`, `FIX_VERIFIED` |
+| Divulgation | `DISCLOSURE_SCHEDULED`, `PUBLISHED` |
+| Clos | `CLOSED`, `REJECTED`, `DUPLICATE`, `OUT_OF_SCOPE`, `NOT_APPLICABLE`, `INFORMATIVE` |

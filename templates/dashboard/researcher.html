@@ -1,0 +1,86 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Mon espace chercheur{% endblock %}
+
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Mon espace chercheur</h1>
+  <a class="btn btn-accent" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>
+</div>
+
+{% if not user.email_verified %}
+<div class="notice">
+  <strong>Adresse email non vérifiée.</strong>
+  <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>.
+</div>
+{% endif %}
+
+<div class="grid grid-4 mb-2">
+  <div class="stat"><div class="stat-value">{{ case_count }}</div><div class="stat-label">Rapports soumis</div></div>
+  <div class="stat ok"><div class="stat-value">{{ profile.reports_validated|default:0 }}</div><div class="stat-label">Validés</div></div>
+  <div class="stat critical"><div class="stat-value">{{ profile.critical_reports|default:0 }}</div><div class="stat-label">Critiques</div></div>
+  <div class="stat"><div class="stat-value">{{ profile.reputation|default:0 }}</div><div class="stat-label">Réputation</div></div>
+</div>
+
+<div class="grid grid-3 mb-2">
+  <div class="stat ok"><div class="stat-value">{{ rewards_total|money }}</div><div class="stat-label">Récompenses versées ({{ EVDP.DEFAULT_CURRENCY }})</div></div>
+  <div class="stat warning"><div class="stat-value">{{ rewards_pending }}</div><div class="stat-label">Récompenses en cours</div></div>
+  <div class="stat"><div class="stat-value">{{ profile.validation_rate|default:0 }}%</div><div class="stat-label">Taux de validation</div></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Mes rapports</h2>
+    <a class="btn btn-sm btn-outline" href="{% url 'coordination:case_list' %}">Tout voir</a>
+  </div>
+  <div class="card-body table-wrap">
+    <table class="table">
+      <thead><tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>Statut</th><th>Organisation</th><th>Créé</th></tr></thead>
+      <tbody>
+        {% for case in cases %}{% include "partials/case_row.html" %}{% empty %}
+        <tr><td colspan="6" class="muted">Aucun rapport soumis pour le moment.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2>Mes récompenses</h2></div>
+    <div class="card-body">
+      {% for bounty in bounties %}
+        <div class="flex-between" style="padding:.4rem 0;border-bottom:1px solid var(--border)">
+          <a href="{% url 'bounty:detail' bounty.id %}" class="mono small">{{ bounty.case.case_id }}</a>
+          <span>{{ bounty.display_amount }} <span class="status">{{ bounty.get_status_display }}</span></span>
+        </div>
+      {% empty %}<p class="muted">Aucune récompense pour l'instant.</p>{% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Programmes ouverts</h2>
+      <a class="btn btn-sm btn-outline" href="{% url 'programs:list' %}">Tout voir</a>
+    </div>
+    <div class="card-body">
+      {% for program in programs %}
+        <div class="flex-between" style="padding:.4rem 0;border-bottom:1px solid var(--border)">
+          <a href="{% url 'programs:detail' program.slug %}">{{ program.name|truncatechars:40 }}</a>
+          <span class="pill">{{ program.get_program_type_display }}</span>
+        </div>
+      {% empty %}<p class="muted">Aucun programme ouvert.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+{% if advisories %}
+<div class="card">
+  <div class="card-header"><h2>Advisories me créditant</h2></div>
+  <div class="card-body">
+    {% for advisory in advisories %}
+      <div><a href="{{ advisory.get_absolute_url }}">{{ advisory.advisory_id }}</a> — {{ advisory.title }}</div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

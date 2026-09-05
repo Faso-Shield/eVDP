@@ -1,0 +1,50 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Journal d'audit{% endblock %}
+{% block dashboard_content %}
+<h1>Journal d'audit</h1>
+<p class="muted small">Les entrées sont immuables : elles ne peuvent être ni modifiées ni supprimées.</p>
+
+<div class="card"><div class="card-body">
+  <form method="get" class="filters">
+    <div class="form-field">
+      <label for="action">Action</label>
+      <select name="action" id="action">
+        <option value="">Toutes</option>
+        {% for value, label in actions %}
+          <option value="{{ value }}" {% if filters.action == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-field">
+      <label for="actor">Acteur</label>
+      <input type="text" name="actor" id="actor" value="{{ filters.actor|default:'' }}">
+    </div>
+    <div class="form-field">
+      <label for="object">Objet</label>
+      <input type="text" name="object" id="object" value="{{ filters.object|default:'' }}">
+    </div>
+    <button class="btn" type="submit">Filtrer</button>
+  </form>
+</div></div>
+
+<div class="card"><div class="card-body table-wrap">
+  <table class="table">
+    <thead><tr><th>Horodatage</th><th>Acteur</th><th>Action</th><th>Objet</th><th>Résultat</th><th>IP</th></tr></thead>
+    <tbody>
+    {% for entry in page_obj %}
+      <tr>
+        <td class="mono small nowrap">{{ entry.timestamp|date:"d/m/Y H:i:s" }}</td>
+        <td class="small">{{ entry.actor_label|default:"anonyme" }}</td>
+        <td><span class="status">{{ entry.get_action_display }}</span></td>
+        <td class="small">{{ entry.object_repr|truncatechars:60 }}</td>
+        <td class="small">{{ entry.get_result_display }}</td>
+        <td class="mono small">{{ entry.ip_address|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="muted">Aucune entrée.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

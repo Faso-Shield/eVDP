@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load evdp_tags %}
+{% block title %}{{ profile.public_identity }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<h1>{{ profile.public_identity }}</h1>
+<p class="muted">{{ profile.country }}{% if profile.affiliation %} — {{ profile.affiliation }}{% endif %}</p>
+
+<div class="grid grid-4 mb-2">
+  <div class="stat"><div class="stat-value">{{ profile.reputation }}</div><div class="stat-label">Réputation</div></div>
+  <div class="stat"><div class="stat-value">{{ profile.reports_submitted }}</div><div class="stat-label">Rapports</div></div>
+  <div class="stat ok"><div class="stat-value">{{ profile.reports_validated }}</div><div class="stat-label">Validés</div></div>
+  <div class="stat critical"><div class="stat-value">{{ profile.critical_reports }}</div><div class="stat-label">Critiques</div></div>
+</div>
+
+{% if profile.biography %}
+<div class="card"><div class="card-body prose">{{ profile.biography|markdown }}</div></div>
+{% endif %}
+
+{% if profile.website %}
+<p><a href="{{ profile.website }}" rel="noopener nofollow" target="_blank">{{ profile.website }}</a></p>
+{% endif %}
+{% endblock %}

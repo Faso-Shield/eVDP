@@ -1,0 +1,48 @@
+# --- Secrets : ne jamais commiter -------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.asc
+!docker/nginx/certs/.gitkeep
+secrets/
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.Python
+
+# --- Django ------------------------------------------------------------------
+*.sqlite3
+*.sqlite3-journal
+media/
+staticfiles/
+.pytest-media/
+
+# --- Tests et qualite --------------------------------------------------------
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+bandit-report.json
+
+# --- Outils / OS -------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Sauvegardes -------------------------------------------------------------
+backups/
+*.dump
+*.sql.gz

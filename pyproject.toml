@@ -1,0 +1,100 @@
+[project]
+name = "evdp"
+version = "1.0.0"
+description = "Plateforme nationale de divulgation coordonnee de vulnerabilites et de Bug Bounty (CYBER-DEF 2)"
+requires-python = ">=3.12"
+
+# -----------------------------------------------------------------------------
+# Ruff
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 95
+target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "**/migrations/*",
+    "staticfiles",
+    "media",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "UP",   # pyupgrade
+    "DJ",   # flake8-django
+    "S",    # bandit
+    "T20",  # print oublies
+]
+ignore = [
+    "E501",   # longueur geree par black
+    "S101",   # assert : legitime dans les tests
+    "B008",   # appels dans les valeurs par defaut (courant en Django)
+    "DJ001",  # null=True sur CharField : utilise volontairement pour les FK optionnelles
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "S311"]
+"config/settings/*" = ["F403", "F405", "S105"]
+"apps/*/migrations/*" = ["E501"]
+"apps/core/management/commands/seed_demo.py" = ["T20", "S105", "S106"]
+"scripts/*" = ["T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
+
+# -----------------------------------------------------------------------------
+# Black
+# -----------------------------------------------------------------------------
+[tool.black]
+line-length = 95
+target-version = ["py312"]
+extend-exclude = '''
+(
+  /migrations/
+  | /staticfiles/
+  | /media/
+)
+'''
+
+# -----------------------------------------------------------------------------
+# Pytest
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+# -----------------------------------------------------------------------------
+# Coverage
+# -----------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["apps"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/__init__.py",
+    "*/apps.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+# -----------------------------------------------------------------------------
+# Bandit
+# -----------------------------------------------------------------------------
+[tool.bandit]
+exclude_dirs = ["tests", "venv", ".venv", "migrations"]
+skips = ["B101"]

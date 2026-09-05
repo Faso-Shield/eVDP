@@ -1,0 +1,53 @@
+# =============================================================================
+# eVDP - normalisation des fins de ligne
+#
+# Les scripts et fichiers de configuration consommes par les conteneurs Linux
+# DOIVENT rester en LF : un CRLF sur un script shell provoque l'erreur
+# "/bin/sh^M: bad interpreter" et rend l'image indemarrable.
+# =============================================================================
+
+# Detection automatique par defaut, normalisation LF dans le depot.
+* text=auto eol=lf
+
+# --- Fichiers executes dans les conteneurs (LF obligatoire) ------------------
+*.sh              text eol=lf
+Dockerfile        text eol=lf
+*.dockerfile      text eol=lf
+docker/**         text eol=lf
+scripts/**        text eol=lf
+*.conf            text eol=lf
+*.inc             text eol=lf
+*.sql             text eol=lf
+*.yml             text eol=lf
+*.yaml            text eol=lf
+.env.example      text eol=lf
+
+# --- Code et gabarits --------------------------------------------------------
+*.py              text eol=lf
+*.html            text eol=lf
+*.css             text eol=lf
+*.js              text eol=lf
+*.json            text eol=lf
+*.md              text eol=lf
+*.txt             text eol=lf
+*.toml            text eol=lf
+*.ini             text eol=lf
+*.cfg             text eol=lf
+
+# --- Binaires : aucune conversion --------------------------------------------
+*.png             binary
+*.jpg             binary
+*.jpeg            binary
+*.gif             binary
+*.webp            binary
+*.pdf             binary
+*.ico             binary
+*.woff            binary
+*.woff2           binary
+*.zip             binary
+*.gz              binary
+
+# --- Bit executable sur les scripts ------------------------------------------
+# Git sous Windows ne conserve pas les permissions : le Dockerfile applique
+# explicitement chmod +x sur l'entrypoint, et docs/backup.md rappelle
+# "chmod +x scripts/*.sh" avant la premiere utilisation.
