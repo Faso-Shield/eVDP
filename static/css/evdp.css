@@ -86,9 +86,9 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 1.4rem 0; }
   /* Verrouillage complet sur plaque claire. Le mot et la baseline du logo sont
      en bleu nuit : poses nus sur la navbar ils disparaitraient. Le nom et la
      signature sont portes par l'image, d'ou l'alt et non un texte a cote. */
-  height: 57px; width: auto; flex: none; display: block;
+  height: 90px; width: auto; flex: none; display: block;
 }
-@media (max-width: 700px) { .brand-lockup { height: 46px; } }
+@media (max-width: 700px) { .brand-lockup { height: 66px; } }
 
 .nav-links { display: flex; gap: .2rem; margin-left: auto; align-items: center; flex-wrap: wrap; }
 .nav-links a {

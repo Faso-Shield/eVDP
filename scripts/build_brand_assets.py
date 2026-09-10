@@ -69,17 +69,22 @@ def embleme(lock: Image.Image) -> Image.Image:
 
 
 def plaque(lock: Image.Image, hauteur_logo: int, pad: float = 0.10,
-           fond=TUILE_FOND) -> Image.Image:
+           extra_droite: float = 0.0, fond=TUILE_FOND) -> Image.Image:
     """Verrouillage complet sur une plaque claire, pour la barre de navigation.
 
     Le mot et la baseline sont en bleu nuit : poses nus sur le bleu
     institutionnel ils disparaissent. La plaque restitue le fond clair pour
     lequel le logo a ete dessine, sans retoucher l'oeuvre.
+
+    `extra_droite`, exprime en fraction de la hauteur du logo, allonge la
+    plaque vers la droite. C'est la seule facon d'elargir la marque sans
+    deformer le dessin, dont les proportions sont celles du master.
     """
     k = hauteur_logo / lock.height
     redim = lock.resize((round(lock.width * k), hauteur_logo), Image.LANCZOS)
     mx, my = round(hauteur_logo * pad * 1.2), round(hauteur_logo * pad)
-    largeur, hauteur = redim.width + 2 * mx, redim.height + 2 * my
+    mx_droite = mx + round(hauteur_logo * extra_droite)
+    largeur, hauteur = redim.width + mx + mx_droite, redim.height + 2 * my
 
     canevas = Image.new("RGBA", (largeur, hauteur), (0, 0, 0, 0))
     masque = Image.new("L", (largeur * 4, hauteur * 4), 0)
@@ -131,8 +136,10 @@ def main() -> None:
         ("logo-mark.png", reduire(em, 512)),
         # Fonds sombres et icones : sur tuile claire.
         ("logo-mark-tile.png", tuile(em, 256)),
-        # Barre de navigation : logo complet, rendu en 3x pour les ecrans HiDPI.
-        ("logo-evdp-tile.png", plaque(lock, 144)),
+        # Barre de navigation : logo complet, rendu en 2x pour les ecrans HiDPI.
+        # La plaque est allongee vers la droite : seule maniere d'elargir la
+        # marque sans etirer le dessin.
+        ("logo-evdp-tile.png", plaque(lock, 150, extra_droite=0.30)),
         ("favicon-32.png", tuile(em, 32)),
         ("favicon-192.png", tuile(em, 192)),
         ("logo-512.png", tuile(em, 512)),
