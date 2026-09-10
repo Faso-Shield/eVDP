@@ -79,23 +79,16 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 1.4rem 0; }
 .topbar a { color: #cbd9e6; }
 
 .navbar { background: var(--evdp-navy); color: var(--text-inverse); box-shadow: var(--shadow-sm); }
-.navbar-inner { display: flex; align-items: center; gap: 1.4rem; padding: .5rem 0; flex-wrap: wrap; }
+.navbar-inner { display: flex; align-items: center; gap: 1.4rem; padding: .65rem 0; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: .65rem; color: #fff; }
 .brand:hover { text-decoration: none; }
 .brand-lockup {
   /* Verrouillage complet sur plaque claire. Le mot et la baseline du logo sont
      en bleu nuit : poses nus sur la navbar ils disparaitraient. Le nom et la
-     signature sont portes par l'image, d'ou l'alt et non un texte a cote.
-
-     168 px est la hauteur minimale pour que la baseline du logo soit lisible :
-     elle occupe 6,3 % du verrouillage, soit environ 9,5 px a cette echelle.
-     C'est cette contrainte qui fixe la hauteur de la barre de navigation. */
-  height: 168px; width: auto; flex: none; display: block;
+     signature sont portes par l'image, d'ou l'alt et non un texte a cote. */
+  height: 57px; width: auto; flex: none; display: block;
 }
-/* Sous 1000 px la baseline ne peut plus etre lisible sans manger l'ecran :
-   on privilegie alors une barre compacte. */
-@media (max-width: 1000px) { .brand-lockup { height: 104px; } }
-@media (max-width: 700px) { .brand-lockup { height: 72px; } }
+@media (max-width: 700px) { .brand-lockup { height: 46px; } }
 
 .nav-links { display: flex; gap: .2rem; margin-left: auto; align-items: center; flex-wrap: wrap; }
 .nav-links a {
