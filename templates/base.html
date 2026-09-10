@@ -7,7 +7,10 @@
   <title>{% block title %}{{ PLATFORM_NAME }}{% endblock %} — {{ PLATFORM_NAME }}</title>
   <meta name="description" content="{{ PLATFORM_TAGLINE }}">
   <link rel="stylesheet" href="{% static 'css/evdp.css' %}">
-  <link rel="icon" href="{% static 'img/favicon.svg' %}" type="image/svg+xml">
+  <link rel="icon" href="{% static 'img/favicon-32.png' %}" type="image/png" sizes="32x32">
+  <link rel="icon" href="{% static 'img/favicon-192.png' %}" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="{% static 'img/apple-touch-icon.png' %}" sizes="180x180">
+  <meta name="theme-color" content="#0b2a4a">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -21,7 +24,8 @@
 <header class="navbar">
   <div class="container navbar-inner">
     <a class="brand" href="{% url 'core:home' %}">
-      <span class="brand-mark" aria-hidden="true">eV</span>
+      <img class="brand-mark" src="{% static 'img/logo-mark-tile.png' %}" alt=""
+           width="256" height="256">
       <span>
         <span class="brand-name">{{ PLATFORM_NAME }}</span>
         <span class="brand-tag">{{ PLATFORM_TAGLINE }}</span>
