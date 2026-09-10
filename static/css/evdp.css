@@ -221,7 +221,11 @@ input:focus, select:focus, textarea:focus {
 .checkbox-field { display: flex; gap: .5rem; align-items: flex-start; margin-bottom: .8rem; }
 .checkbox-field input { width: auto; margin-top: .25rem; }
 .checkbox-field label { font-weight: 500; color: var(--text); margin: 0; }
-.required { color: var(--evdp-red); }
+.required {
+  color: var(--evdp-red); font-weight: 700; margin-left: .18em;
+  text-decoration: none; border: 0; cursor: help;
+}
+.form-legend { font-size: .82rem; color: var(--text-muted); margin: 0 0 1rem; }
 
 .filters { display: flex; gap: .7rem; flex-wrap: wrap; align-items: flex-end; }
 .filters .form-field { margin-bottom: 0; min-width: 165px; }

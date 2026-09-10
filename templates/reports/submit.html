@@ -30,6 +30,10 @@
   <div>
     <form method="post" enctype="multipart/form-data" novalidate>
       {% csrf_token %}
+      <p class="form-legend">
+        Les champs suivis d'une <abbr class="required" title="Champ obligatoire">*</abbr>
+        sont obligatoires. Les autres accelerent le triage sans etre exiges.
+      </p>
       {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
 
       <div class="card">
@@ -41,6 +45,12 @@
             {% include "partials/form_field.html" with field=form.affected_organization %}
             {% include "partials/form_field.html" with field=form.affected_organization_name %}
             {% include "partials/form_field.html" with field=form.product %}
+          </div>
+          <div class="help">
+            <abbr class="required" title="Champ obligatoire">*</abbr>
+            Renseignez au moins l'un de ces trois champs : le programme, l'organisation
+            affectee, ou son nom si elle n'est pas dans la liste. Sans cela, le
+            signalement ne peut pas etre oriente.
           </div>
           {% include "partials/form_field.html" with field=form.target_url %}
         </div>
@@ -104,7 +114,7 @@
           {% include "partials/form_field.html" with field=form.pgp_payload %}
           <div class="checkbox-field">
             {{ form.accept_policy }}
-            <label for="{{ form.accept_policy.id_for_label }}">{{ form.accept_policy.label }}
+            <label for="{{ form.accept_policy.id_for_label }}">{{ form.accept_policy.label }}<abbr class="required" title="Champ obligatoire">*</abbr>
               (<a href="{% url 'core:disclosure_policy' %}" target="_blank" rel="noopener">lire</a>)</label>
           </div>
           {{ form.accept_policy.errors }}
