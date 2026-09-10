@@ -139,7 +139,7 @@ def main() -> None:
         # Barre de navigation : logo complet, rendu en 2x pour les ecrans HiDPI.
         # La plaque est allongee vers la droite : seule maniere d'elargir la
         # marque sans etirer le dessin.
-        ("logo-evdp-tile.png", plaque(lock, 133, extra_droite=0.55)),
+        ("logo-evdp-tile.png", plaque(lock, 133, extra_droite=0.40)),
         ("favicon-32.png", tuile(em, 32)),
         ("favicon-192.png", tuile(em, 192)),
         ("logo-512.png", tuile(em, 512)),
