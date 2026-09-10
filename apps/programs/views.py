@@ -58,6 +58,10 @@ def program_detail(request, slug):
             ),
             "reward_scopes": reward_policy.scopes_with_tiers() if reward_policy else [],
             "can_manage": _can_manage(request.user, program),
+            # Annonce des l'arrivee sur la page si le visiteur ne remplit pas
+            # les conditions, plutot que de le laisser rediger un rapport pour
+            # se le voir refuser a l'envoi.
+            "refus_participation": program.reporter_rejection(request.user),
         },
     )
 

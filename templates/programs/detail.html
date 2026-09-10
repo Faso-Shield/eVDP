@@ -20,7 +20,25 @@
   {% if program.starts_on %}<span class="pill">Depuis le {{ program.starts_on|date:"d/m/Y" }}</span>{% endif %}
   {% if program.ends_on %}<span class="pill">Jusqu'au {{ program.ends_on|date:"d/m/Y" }}</span>{% endif %}
   <span class="pill">Divulgation à {{ program.disclosure_delay_days }} jours</span>
+  {% if program.requires_verified_email %}
+    <span class="pill pill-requirement" title="Un compte dont l'adresse email a été vérifiée est exigé pour participer">Compte vérifié requis</span>
+  {% endif %}
+  {% if not program.allows_anonymous_reports %}
+    <span class="pill pill-requirement">Signalement anonyme refusé</span>
+  {% endif %}
 </div>
+
+{% if refus_participation %}
+  <div class="notice">
+    {{ refus_participation }}
+    {% if user.is_authenticated and not user.email_verified %}
+      <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
+    {% elif not user.is_authenticated %}
+      <a href="{% url 'accounts:login' %}">Se connecter</a> ·
+      <a href="{% url 'accounts:register' %}">Créer un compte</a>
+    {% endif %}
+  </div>
+{% endif %}
 
 <div class="grid" style="grid-template-columns:2fr 1fr">
   <div>

@@ -17,6 +17,14 @@
 </div>
 {% endif %}
 
+{% if user.is_authenticated and not user.email_verified %}
+<div class="notice">
+  Votre adresse email n'est pas encore vérifiée. Les programmes qui exigent un
+  compte vérifié — la plupart des Bug Bounty — refuseront votre signalement.
+  <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
+</div>
+{% endif %}
+
 {% if not user.is_authenticated %}
 <div class="notice">
   Vous n'êtes pas connecté. Vous pouvez signaler sans compte, mais un compte

@@ -167,6 +167,63 @@ class Program(BaseModel):
     def is_public(self):
         return self.confidentiality == ConfidentialityLevel.PUBLIC and self.is_open
 
+    def reporter_rejection(self, reporter=None, is_anonymous=False):
+        """Motif de refus du declarant, None s'il est admis a participer.
+
+        Deux conditions distinctes, a ne pas confondre :
+
+        - `allows_anonymous_reports` decide si l'on peut signaler **sans
+          compte**. C'est la promesse d'un VDP, et elle est preservee.
+        - `requires_verified_email` ne concerne que les declarants **avec
+          compte** : leur adresse doit avoir ete verifiee.
+
+        Un Bug Bounty impose les deux quoi qu'il arrive : on ne recompense
+        pas quelqu'un qu'on ne peut ni identifier ni joindre de facon sure.
+
+        Le message est destine au declarant : il dit quoi faire.
+        """
+        identifie = reporter is not None and getattr(reporter, "is_authenticated", False)
+
+        if not identifie or is_anonymous:
+            # Sans compte, aucune adresse ne peut avoir ete verifiee.
+            if self.is_bug_bounty:
+                return (
+                    "Un Bug Bounty ne peut recompenser qu'un chercheur identifie. "
+                    "Connectez-vous avec un compte dont l'adresse email est verifiee."
+                )
+            if not self.allows_anonymous_reports:
+                return (
+                    "Ce programme n'accepte pas les signalements anonymes. "
+                    "Connectez-vous pour y participer."
+                )
+            return None
+
+        if (self.requires_verified_email or self.is_bug_bounty) and not reporter.email_verified:
+            return (
+                "Ce programme exige une adresse email verifiee. "
+                "Verifiez votre adresse depuis votre profil pour y participer."
+            )
+        return None
+
+    def clean(self):
+        """Un Bug Bounty ne se configure pas sans identification du chercheur."""
+        if self.is_bug_bounty:
+            if self.allows_anonymous_reports:
+                raise ValidationError(
+                    {
+                        "allows_anonymous_reports": "Un Bug Bounty ne peut pas "
+                        "accepter de signalement anonyme : la recompense doit "
+                        "pouvoir etre versee a un chercheur identifie."
+                    }
+                )
+            if not self.requires_verified_email:
+                raise ValidationError(
+                    {
+                        "requires_verified_email": "Un Bug Bounty exige une "
+                        "adresse email verifiee."
+                    }
+                )
+
     def in_scope_targets(self):
         return self.scopes.filter(in_scope=True, is_active=True)
 

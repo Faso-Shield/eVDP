@@ -5,6 +5,7 @@ rapport, ouvre le Case correspondant, initialise la chronologie, les
 participants, les SLA et notifie les parties prenantes.
 """
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -54,6 +55,17 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
     """
     if reporter is not None and reporter.is_authenticated:
         report.reporter = reporter
+
+    # Conditions d'acces du programme. Controlees ici et non seulement dans le
+    # formulaire : ce service est le point d'entree commun au web, a l'API et
+    # a l'import CSAF, et la regle doit valoir pour les trois.
+    if report.program_id is not None:
+        motif = report.program.reporter_rejection(
+            report.reporter, is_anonymous=report.is_anonymous
+        )
+        if motif:
+            raise ValidationError({"program": motif})
+
     report.source = source
     report.status = ReportStatus.SUBMITTED
     report.submitted_at = timezone.now()

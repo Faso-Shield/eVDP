@@ -89,6 +89,38 @@ Chaque cible est décrite indépendamment.
 
 ---
 
+## 4 bis. Conditions de participation
+
+Un Bug Bounty ne peut récompenser qu'un chercheur **identifié et joignable de
+façon sûre**. Deux conditions en découlent, appliquées à la soumission :
+
+- **Compte obligatoire** — un Bug Bounty n'accepte jamais de signalement
+  anonyme, contrairement à un VDP.
+- **Adresse email vérifiée** — le compte doit avoir confirmé son adresse via
+  le lien reçu à l'inscription.
+
+Ces deux conditions sont **structurelles** pour un Bug Bounty : le modèle
+refuse d'enregistrer un programme de ce type qui les désactiverait. Pour les
+autres types de programme, `requires_verified_email` reste une politique
+librement configurable, et le signalement anonyme demeure possible quand
+`allows_anonymous_reports` est actif.
+
+Ne pas confondre les deux réglages :
+
+| Réglage | Porte sur |
+|---------|-----------|
+| `allows_anonymous_reports` | le droit de signaler **sans compte** |
+| `requires_verified_email` | les déclarants **avec compte**, dont l'adresse doit être vérifiée |
+
+Le contrôle est fait dans `submit_report`, point d'entrée commun au formulaire
+web, à l'API et à l'import CSAF. Un second contrôle à la proposition de
+récompense couvre le cas d'un programme devenu exigeant après coup.
+
+La page publique du programme annonce les conditions et, si le visiteur ne les
+remplit pas, le lui dit avant qu'il ne rédige son rapport.
+
+---
+
 ## 5. Matrice de récompenses
 
 Configurée par programme, dans **Gérer le programme → Matrice de récompenses**.

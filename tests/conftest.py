@@ -189,6 +189,7 @@ def bounty_program(db, organization, sla_policy):
         confidentiality=ConfidentialityLevel.PUBLIC,
         sla_policy=sla_policy,
         starts_on=timezone.localdate(),
+        allows_anonymous_reports=False,
     )
     policy = RewardPolicy.objects.create(program=program, currency="XOF")
     for severity, minimum, maximum in [

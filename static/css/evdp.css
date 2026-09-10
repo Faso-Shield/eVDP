@@ -234,6 +234,12 @@ input:focus, select:focus, textarea:focus {
   border-color: rgba(13, 122, 95, .35); font-variant-numeric: tabular-nums;
 }
 .reward-scope { border-top: 1px solid var(--border); padding-top: .6rem; margin-top: .6rem; }
+
+/* Condition d'acces a un programme : se distingue des pilules descriptives,
+   car elle conditionne le droit de participer et non une caracteristique. */
+.pill-requirement {
+  background: #fff8e6; color: #6f5208; border-color: #ecdcae; font-weight: 600;
+}
 .reward-scope .table { margin-bottom: 0; }
 
 .filters { display: flex; gap: .7rem; flex-wrap: wrap; align-items: flex-end; }

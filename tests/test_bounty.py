@@ -251,3 +251,110 @@ def test_tier_rejects_out_of_scope_asset(bounty_program):
     )
     with pytest.raises(ValidationError, match="hors perimetre"):
         tier.full_clean()
+
+
+# ------------------------------------------- acces reserve aux comptes verifies
+def test_unverified_researcher_cannot_join_bounty_program(
+    bounty_program, bounty_researcher, organization
+):
+    """Un Bug Bounty exigeant un email verifie refuse la soumission."""
+    from apps.reports.services import submit_report
+
+    from .conftest import build_report
+
+    bounty_researcher.email_verified = False
+    bounty_researcher.save(update_fields=["email_verified"])
+
+    with pytest.raises(ValidationError, match="adresse email verifiee"):
+        submit_report(
+            build_report(bounty_researcher, organization, bounty_program),
+            reporter=bounty_researcher,
+        )
+
+
+def test_anonymous_report_refused_when_verification_required(
+    bounty_program, organization
+):
+    """Sans compte, aucune adresse n'est verifiee : le programme refuse."""
+    from apps.reports.services import submit_report
+
+    from .conftest import build_report
+
+    report = build_report(None, organization, bounty_program)
+    report.reporter = None
+    report.is_anonymous = True
+    with pytest.raises(ValidationError, match="chercheur identifie"):
+        submit_report(report)
+
+
+def test_verified_researcher_is_admitted(bounty_program, bounty_researcher, organization):
+    """Le cas nominal reste inchange : un compte verifie passe."""
+    from apps.reports.services import submit_report
+
+    from .conftest import build_report
+
+    case = submit_report(
+        build_report(bounty_researcher, organization, bounty_program),
+        reporter=bounty_researcher,
+    )
+    assert case.program_id == bounty_program.id
+
+
+def test_vdp_may_waive_the_verification_requirement(
+    vdp_program, researcher_a, organization
+):
+    """Hors Bug Bounty, l'exigence reste une politique propre au programme."""
+    from apps.reports.services import submit_report
+
+    from .conftest import build_report
+
+    vdp_program.requires_verified_email = False
+    vdp_program.save(update_fields=["requires_verified_email"])
+    researcher_a.email_verified = False
+    researcher_a.save(update_fields=["email_verified"])
+
+    case = submit_report(
+        build_report(researcher_a, organization, vdp_program), reporter=researcher_a
+    )
+    assert case.program_id == vdp_program.id
+
+
+def test_anonymous_vdp_report_still_accepted(vdp_program, organization):
+    """Le signalement anonyme reste possible sur un VDP qui l'autorise.
+
+    C'est une promesse centrale de la plateforme : la verification d'adresse
+    ne doit pas la supprimer par effet de bord.
+    """
+    from apps.reports.services import submit_report
+
+    from .conftest import build_report
+
+    assert vdp_program.allows_anonymous_reports
+    assert vdp_program.requires_verified_email, "defaut du modele"
+
+    report = build_report(None, organization, vdp_program)
+    report.reporter = None
+    report.is_anonymous = True
+    case = submit_report(report)
+    assert case.program_id == vdp_program.id
+
+
+def test_bug_bounty_cannot_be_configured_without_identification(bounty_program):
+    """Invariant : pas de recompense sans chercheur identifie et verifie."""
+    bounty_program.allows_anonymous_reports = True
+    with pytest.raises(ValidationError, match="signalement anonyme"):
+        bounty_program.full_clean()
+
+    bounty_program.allows_anonymous_reports = False
+    bounty_program.requires_verified_email = False
+    with pytest.raises(ValidationError, match="adresse email verifiee"):
+        bounty_program.full_clean()
+
+
+def test_bounty_refused_to_unverified_researcher(bounty_case, analyst):
+    """Second garde-fou : le programme a pu devenir exigeant apres coup."""
+    bounty_case.reporter.email_verified = False
+    bounty_case.reporter.save(update_fields=["email_verified"])
+
+    with pytest.raises(ValidationError, match="verifie son adresse email"):
+        propose_bounty(bounty_case, analyst, amount=Decimal("100000"))

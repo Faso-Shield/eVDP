@@ -172,6 +172,10 @@ class VulnerabilityReportForm(forms.ModelForm):
 
         if program is not None and not program.is_open:
             self.add_error("program", "Ce programme n'accepte plus de soumissions.")
+        if program is not None:
+            motif = program.reporter_rejection(self.user, is_anonymous=bool(anonymous))
+            if motif:
+                self.add_error("program", motif)
         return cleaned
 
     def save(self, commit=True):

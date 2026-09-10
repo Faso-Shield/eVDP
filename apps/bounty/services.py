@@ -53,6 +53,14 @@ def propose_bounty(case, actor, amount=None, justification="", request=None):
         raise ValidationError(
             "Aucun chercheur identifie : impossible d'attribuer une recompense."
         )
+    # Second controle, apres celui de la soumission : le programme a pu
+    # devenir exigeant depuis, et une recompense ne doit jamais partir vers
+    # une adresse dont personne n'a prouve le controle.
+    if case.program.requires_verified_email and not case.reporter.email_verified:
+        raise ValidationError(
+            "Le chercheur n'a pas verifie son adresse email : aucune recompense "
+            "ne peut lui etre attribuee sur ce programme."
+        )
 
     default_amount, currency = suggested_amount(case)
     amount = Decimal(amount) if amount is not None else default_amount
