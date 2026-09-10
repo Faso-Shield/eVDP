@@ -82,13 +82,13 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 1.4rem 0; }
 .navbar-inner { display: flex; align-items: center; gap: 1.4rem; padding: .65rem 0; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: .65rem; color: #fff; }
 .brand:hover { text-decoration: none; }
-.brand-mark {
-  /* Embleme sur tuile claire : le logo est concu pour fond clair (champ du
-     bouclier transparent, mot bleu nuit), il disparait pose nu sur la navbar. */
-  width: 42px; height: 42px; flex: none; display: block; border-radius: 9px;
+.brand-lockup {
+  /* Verrouillage complet sur plaque claire. Le mot et la baseline du logo sont
+     en bleu nuit : poses nus sur la navbar ils disparaitraient. Le nom et la
+     signature sont portes par l'image, d'ou l'alt et non un texte a cote. */
+  height: 57px; width: auto; flex: none; display: block;
 }
-.brand-name { font-size: 1.22rem; font-weight: 700; letter-spacing: .02em; }
-.brand-tag { font-size: .7rem; color: #a9c0d6; display: block; font-weight: 400; }
+@media (max-width: 700px) { .brand-lockup { height: 46px; } }
 
 .nav-links { display: flex; gap: .2rem; margin-left: auto; align-items: center; flex-wrap: wrap; }
 .nav-links a {

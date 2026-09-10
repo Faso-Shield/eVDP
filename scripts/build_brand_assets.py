@@ -68,6 +68,29 @@ def embleme(lock: Image.Image) -> Image.Image:
     return em.crop(em.getchannel("A").getbbox())
 
 
+def plaque(lock: Image.Image, hauteur_logo: int, pad: float = 0.10,
+           fond=TUILE_FOND) -> Image.Image:
+    """Verrouillage complet sur une plaque claire, pour la barre de navigation.
+
+    Le mot et la baseline sont en bleu nuit : poses nus sur le bleu
+    institutionnel ils disparaissent. La plaque restitue le fond clair pour
+    lequel le logo a ete dessine, sans retoucher l'oeuvre.
+    """
+    k = hauteur_logo / lock.height
+    redim = lock.resize((round(lock.width * k), hauteur_logo), Image.LANCZOS)
+    mx, my = round(hauteur_logo * pad * 1.2), round(hauteur_logo * pad)
+    largeur, hauteur = redim.width + 2 * mx, redim.height + 2 * my
+
+    canevas = Image.new("RGBA", (largeur, hauteur), (0, 0, 0, 0))
+    masque = Image.new("L", (largeur * 4, hauteur * 4), 0)
+    ImageDraw.Draw(masque).rounded_rectangle(
+        [0, 0, largeur * 4 - 1, hauteur * 4 - 1], radius=int(hauteur * 4 * 0.16), fill=255)
+    canevas.paste(Image.new("RGBA", (largeur, hauteur), fond), (0, 0),
+                  masque.resize((largeur, hauteur), Image.LANCZOS))
+    canevas.alpha_composite(redim, (mx, my))
+    return canevas
+
+
 def tuile(source: Image.Image, taille: int, rayon: float = 0.22,
           marge: float = 0.09, fond=TUILE_FOND) -> Image.Image:
     """Embleme centre sur une tuile claire. rayon=0 donne un carre plein."""
@@ -108,6 +131,8 @@ def main() -> None:
         ("logo-mark.png", reduire(em, 512)),
         # Fonds sombres et icones : sur tuile claire.
         ("logo-mark-tile.png", tuile(em, 256)),
+        # Barre de navigation : logo complet, rendu en 3x pour les ecrans HiDPI.
+        ("logo-evdp-tile.png", plaque(lock, 144)),
         ("favicon-32.png", tuile(em, 32)),
         ("favicon-192.png", tuile(em, 192)),
         ("logo-512.png", tuile(em, 512)),

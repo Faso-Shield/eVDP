@@ -24,12 +24,8 @@
 <header class="navbar">
   <div class="container navbar-inner">
     <a class="brand" href="{% url 'core:home' %}">
-      <img class="brand-mark" src="{% static 'img/logo-mark-tile.png' %}" alt=""
-           width="256" height="256">
-      <span>
-        <span class="brand-name">{{ PLATFORM_NAME }}</span>
-        <span class="brand-tag">{{ PLATFORM_TAGLINE }}</span>
-      </span>
+      <img class="brand-lockup" src="{% static 'img/logo-evdp-tile.png' %}"
+           alt="{{ PLATFORM_NAME }} — {{ PLATFORM_TAGLINE }}" width="406" height="172">
     </a>
     <nav class="nav-links" aria-label="Navigation principale">
       <a href="{% url 'reports:submit' %}">Signaler</a>

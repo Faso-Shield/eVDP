@@ -22,10 +22,20 @@ canal alpha, et pose sur tuile claire pour les fonds sombres.
 
 ## Regles d'emploi
 
+Le logo est dessine pour un fond clair : le champ du bouclier est transparent,
+le mot et la baseline sont en bleu nuit. Pose nu sur le bleu institutionnel, il
+perd son globe, son cadenas et son texte. Toutes les declinaisons destinees aux
+fonds sombres reposent donc sur une plaque ou une tuile claire, qui restitue ce
+fond sans retoucher l'oeuvre.
+
 - **Fonds clairs** : `logo-evdp.png` (verrouillage complet) ou `logo-mark.png`
   (embleme seul).
-- **Fonds sombres**, dont la barre de navigation : `logo-mark-tile.png`. Le logo
-  est concu pour fond clair — champ du bouclier transparent, mot en bleu nuit —
-  et disparait s'il est pose nu sur le bleu institutionnel.
-- Le verrouillage complet ne descend pas sous ~120 px de haut : en dessous, sa
-  baseline devient illisible. Utiliser l'embleme et composer le nom en HTML.
+- **Barre de navigation** : `logo-evdp-tile.png`, le verrouillage complet sur
+  plaque claire. C'est lui qui porte le nom et la signature de la plateforme :
+  aucun texte ne l'accompagne, l'attribut `alt` en tient lieu.
+- **Autres fonds sombres**, quand la place manque pour le verrouillage :
+  `logo-mark-tile.png`, l'embleme seul sur tuile.
+- La baseline occupe 6,3 % de la hauteur du verrouillage. A 57 px de haut, la
+  hauteur retenue dans la navbar, elle tombe a environ 4 px : elle est presente
+  et reconnaissable, mais ne se lit pas. La rendre lisible demanderait un logo
+  d'environ 145 px de haut, donc un en-tete nettement plus haut.
