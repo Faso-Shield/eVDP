@@ -238,6 +238,18 @@ class ProgramScope(BaseModel):
         marker = "IN" if self.in_scope else "OUT"
         return f"[{marker}] {self.identifier}"
 
+    def reward_range(self):
+        """Bornes propres a cet actif, None s'il suit la grille du programme."""
+        tiers = list(self.reward_tiers.all())
+        if not tiers:
+            return None
+        policy = getattr(self.program, "reward_policy", None)
+        return {
+            "currency": policy.currency if policy else "",
+            "min": min(t.min_amount for t in tiers),
+            "max": max(t.max_amount for t in tiers),
+        }
+
 
 class RuleKind(models.TextChoices):
     TESTING = "TESTING", "Regle de test"
@@ -286,13 +298,31 @@ class RewardPolicy(BaseModel):
     def __str__(self):
         return f"Recompenses - {self.program.name}"
 
-    def tier_for(self, severity):
-        return self.tiers.filter(severity=severity).first()
+    def tier_for(self, severity, scope=None):
+        """Palier applicable : celui de l'actif s'il existe, sinon le defaut.
 
-    def suggested_amount(self, severity):
-        """Montant propose par defaut : borne haute du palier."""
-        tier = self.tier_for(severity)
+        Un actif sans palier propre herite de la grille du programme. On ne
+        saisit donc une ligne par actif que la ou le montant doit differer,
+        au lieu de dupliquer toute la grille pour chaque cible.
+        """
+        if scope is not None:
+            specifique = self.tiers.filter(severity=severity, scope=scope).first()
+            if specifique is not None:
+                return specifique
+        return self.tiers.filter(severity=severity, scope__isnull=True).first()
+
+    def suggested_amount(self, severity, scope=None):
+        """Montant propose par defaut : borne haute du palier applicable."""
+        tier = self.tier_for(severity, scope)
         return tier.max_amount if tier else Decimal("0")
+
+    def scopes_with_tiers(self):
+        """Actifs dotes d'une grille propre, pour l'affichage public."""
+        return (
+            ProgramScope.objects.filter(reward_tiers__policy=self)
+            .distinct()
+            .prefetch_related("reward_tiers")
+        )
 
     def budget_consumed(self):
         from apps.bounty.models import Bounty, BountyStatus
@@ -306,6 +336,17 @@ class RewardPolicy(BaseModel):
 
 class RewardTier(BaseModel):
     policy = models.ForeignKey(RewardPolicy, on_delete=models.CASCADE, related_name="tiers")
+    scope = models.ForeignKey(
+        ProgramScope,
+        on_delete=models.CASCADE,
+        related_name="reward_tiers",
+        null=True,
+        blank=True,
+        help_text=(
+            "Vide : palier par defaut du programme. Renseigne : ce palier ne "
+            "vaut que pour cet actif et prime sur le defaut."
+        ),
+    )
     severity = models.CharField(max_length=16, choices=Severity.choices)
     min_amount = models.DecimalField(
         max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0"))]
@@ -317,19 +358,44 @@ class RewardTier(BaseModel):
 
     class Meta:
         db_table = "reward_tiers"
-        unique_together = [("policy", "severity")]
-        ordering = ["-max_amount"]
+        # Deux contraintes partielles plutot qu'un unique_together : sur
+        # PostgreSQL deux NULL sont distincts, un unique_together sur
+        # (policy, scope, severity) laisserait donc passer plusieurs paliers
+        # par defaut pour une meme severite.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["policy", "severity"],
+                condition=models.Q(scope__isnull=True),
+                name="uniq_reward_tier_defaut",
+            ),
+            models.UniqueConstraint(
+                fields=["policy", "scope", "severity"],
+                condition=models.Q(scope__isnull=False),
+                name="uniq_reward_tier_actif",
+            ),
+        ]
+        ordering = [models.F("scope__identifier").asc(nulls_first=True), "-max_amount"]
         verbose_name = "Palier de recompense"
         verbose_name_plural = "Paliers de recompense"
 
     def __str__(self):
-        return f"{self.severity}: {self.min_amount} - {self.max_amount}"
+        cible = self.scope.identifier if self.scope_id else "tous actifs"
+        return f"{self.severity} ({cible}): {self.min_amount} - {self.max_amount}"
 
     def clean(self):
         if self.max_amount < self.min_amount:
             raise ValidationError(
                 {"max_amount": "Le montant maximum doit etre superieur au minimum."}
             )
+        if self.scope_id and self.policy_id:
+            if self.scope.program_id != self.policy.program_id:
+                raise ValidationError(
+                    {"scope": "Cet actif appartient a un autre programme."}
+                )
+            if not self.scope.in_scope:
+                raise ValidationError(
+                    {"scope": "Un actif hors perimetre n'ouvre pas droit a recompense."}
+                )
 
     def contains(self, amount):
         return self.min_amount <= amount <= self.max_amount

@@ -49,7 +49,8 @@ Signaler  →  Analyser  →  Coordonner  →  Corriger  →  Publier
 ### Bug Bounty
 
 - Programmes avec périmètre structuré (in/out of scope, priorités P1–P4)
-- **Matrice de récompenses configurable** — aucun montant codé en dur
+- **Matrice de récompenses configurable** — aucun montant codé en dur,
+  montants ajustables par actif du périmètre
 - Cycle proposition → revue → approbation → versement
 - Séparation stricte des rôles : proposer ≠ approuver ≠ payer
 - Aucun flux financier réel n'est déclenché par la plateforme (MVP)
@@ -247,7 +248,7 @@ docker compose run --rm -e DB_ENGINE=postgres evdp-web \
 pytest --cov=apps --cov-report=term-missing
 ```
 
-**205 tests** couvrant l'authentification, le RBAC, le workflow CVD et Bug
+**210 tests** couvrant l'authentification, le RBAC, le workflow CVD et Bug
 Bounty, les doublons, les pièces jointes, les récompenses, les advisories,
 l'API, le journal d'audit, le calculateur CVSS et la sécurité applicative
 (XSS, CSRF, IDOR, élévation de privilèges, mass assignment, upload).

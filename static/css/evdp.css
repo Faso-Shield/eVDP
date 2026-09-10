@@ -227,6 +227,15 @@ input:focus, select:focus, textarea:focus {
 }
 .form-legend { font-size: .82rem; color: var(--text-muted); margin: 0 0 1rem; }
 
+/* Montant propre a un actif du perimetre : se distingue des pilules
+   descriptives (type de cible, priorite) qui l'entourent. */
+.pill-reward {
+  background: var(--evdp-accent-light); color: var(--evdp-accent);
+  border-color: rgba(13, 122, 95, .35); font-variant-numeric: tabular-nums;
+}
+.reward-scope { border-top: 1px solid var(--border); padding-top: .6rem; margin-top: .6rem; }
+.reward-scope .table { margin-bottom: 0; }
+
 .filters { display: flex; gap: .7rem; flex-wrap: wrap; align-items: flex-end; }
 .filters .form-field { margin-bottom: 0; min-width: 165px; }
 

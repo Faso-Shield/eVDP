@@ -120,6 +120,17 @@ class Case(BaseModel):
         on_delete=models.SET_NULL,
         related_name="cases",
     )
+    scope = models.ForeignKey(
+        "programs.ProgramScope",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cases",
+        help_text=(
+            "Actif du perimetre concerne, retenu au triage. Determine la "
+            "grille de recompense lorsqu'elle varie par actif."
+        ),
+    )
     title = models.CharField(max_length=200)
     reporter = models.ForeignKey(
         settings.AUTH_USER_MODEL,

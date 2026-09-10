@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from apps.accounts.models import User
 from apps.accounts.roles import NATIONAL_ROLES
 from apps.organizations.models import Organization, OrganizationStatus
+from apps.programs.models import ProgramScope
 from apps.vulnerabilities.constants import Severity
 from apps.vulnerabilities.cvss import CVSSError, base_score
 from apps.vulnerabilities.models import CVE, CWE
@@ -64,9 +65,20 @@ class StatusTransitionForm(forms.Form):
 
 
 class TriageForm(forms.Form):
-    """Qualification technique lors du triage."""
+    """Qualification technique lors du triage.
+
+    Le champ `scope` n'existe que pour un case rattache a un programme : il
+    designe l'actif du perimetre concerne, dont depend la grille de
+    recompense quand celle-ci varie par actif.
+    """
 
     severity = forms.ChoiceField(label="Severite retenue", choices=Severity.choices)
+    scope = forms.ModelChoiceField(
+        label="Actif du perimetre",
+        queryset=ProgramScope.objects.none(),
+        required=False,
+        help_text="Determine la grille de recompense lorsqu'elle varie par actif.",
+    )
     cvss_vector = forms.CharField(label="Vecteur CVSS v3.1", required=False)
     cwe = forms.ModelChoiceField(label="CWE", queryset=CWE.objects.all(), required=False)
     organization = forms.ModelChoiceField(
@@ -77,6 +89,16 @@ class TriageForm(forms.Form):
     tags = forms.CharField(
         label="Etiquettes", required=False, help_text="Separees par des virgules."
     )
+
+    def __init__(self, *args, case=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        program = getattr(case, "program", None)
+        if program is None:
+            # Un case hors programme n'a pas de perimetre : le champ
+            # n'aurait aucun choix a proposer.
+            del self.fields["scope"]
+        else:
+            self.fields["scope"].queryset = program.in_scope_targets()
 
     def clean_cvss_vector(self):
         vector = (self.cleaned_data.get("cvss_vector") or "").strip()

@@ -479,6 +479,19 @@ class Command(BaseCommand):
                     max_amount=Decimal(maximum),
                     description=description,
                 )
+            # Grille propre a un actif : l'API porte les donnees d'etat civil,
+            # une faille critique y vaut trois fois le tarif general. Les
+            # autres cibles restent sur la grille par defaut.
+            api = bounty.scopes.filter(identifier="api.services.gov.bf").first()
+            if api is not None:
+                RewardTier.objects.create(
+                    policy=policy,
+                    scope=api,
+                    severity=Severity.CRITICAL,
+                    min_amount=Decimal("2500000"),
+                    max_amount=Decimal("6000000"),
+                    description="Actif de production critique.",
+                )
 
         return {"vdp": vdp, "bounty": bounty}
 

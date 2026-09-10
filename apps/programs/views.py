@@ -46,11 +46,17 @@ def program_detail(request, slug):
         "programs/detail.html",
         {
             "program": program,
-            "in_scope": program.in_scope_targets(),
+            "in_scope": program.in_scope_targets().prefetch_related("reward_tiers"),
             "out_of_scope": program.out_of_scope_targets(),
             "rules": program.rule_items.all(),
             "reward_policy": reward_policy,
-            "reward_tiers": reward_policy.tiers.all() if reward_policy else [],
+            # La grille par defaut et les grilles propres a un actif sont
+            # presentees separement : melangees, on ne saurait plus quel
+            # montant s'applique a quoi.
+            "reward_tiers": (
+                reward_policy.tiers.filter(scope__isnull=True) if reward_policy else []
+            ),
+            "reward_scopes": reward_policy.scopes_with_tiers() if reward_policy else [],
             "can_manage": _can_manage(request.user, program),
         },
     )

@@ -41,9 +41,20 @@ def test_every_static_reference_exists():
 
 
 def test_expected_assets_are_present():
-    """Garde-fou explicite sur les ressources indispensables au rendu."""
+    """Garde-fou explicite sur les ressources indispensables au rendu.
+
+    Le logo est distribue en PNG et non en SVG : le master fourni par le
+    design est une image matricielle. Voir docs/brand/README.md.
+    """
     roots = _static_roots()
-    for reference in ["css/evdp.css", "js/htmx.min.js", "img/favicon.svg"]:
+    for reference in [
+        "css/evdp.css",
+        "js/htmx.min.js",
+        "img/favicon-32.png",
+        "img/favicon-192.png",
+        "img/apple-touch-icon.png",
+        "img/logo-evdp-tile.png",
+    ]:
         assert any(
             (root / reference).exists() for root in roots
         ), f"Ressource manquante : {reference}"

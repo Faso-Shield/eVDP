@@ -106,6 +106,28 @@ La devise est configurable (`XOF` par défaut). Un budget total peut être
 déclaré et son niveau de consommation est calculé à partir des récompenses
 approuvées et payées.
 
+### Montants variables par actif
+
+Un palier peut viser un **actif précis du périmètre** au lieu du programme
+entier. Une faille critique sur une API de production ne vaut pas la même
+chose que sur un site vitrine, et c'est le principal levier pour orienter
+l'effort des chercheurs vers ce qui compte.
+
+La résolution est simple : le palier propre à l'actif s'applique s'il existe,
+sinon celui du programme. On ne saisit donc une ligne par actif **que là où le
+montant doit différer**, au lieu de dupliquer toute la grille pour chaque
+cible.
+
+L'actif concerné est retenu **au triage**, dans le champ *Actif du périmètre*
+de la qualification. Sans actif retenu, la grille par défaut s'applique.
+
+Deux garde-fous à la saisie : un palier ne peut pas viser le périmètre d'un
+autre programme, ni une cible déclarée hors périmètre.
+
+La page publique du programme affiche les montants propres à chaque actif en
+regard de la cible concernée, et l'API les expose dans `reward_tiers` via le
+champ `scope` (vide pour la grille par défaut).
+
 ---
 
 ## 6. Cycle de vie d'une récompense

@@ -16,6 +16,7 @@ from apps.bounty.services import (
     suggested_amount,
 )
 from apps.coordination.services import set_severity
+from apps.programs.models import ProgramScope, RewardTier
 from apps.vulnerabilities.constants import Severity
 
 pytestmark = pytest.mark.django_db
@@ -174,3 +175,79 @@ def test_researcher_sees_own_bounty(client_for, bounty_case, analyst, bounty_res
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     client = client_for(bounty_researcher)
     assert client.get(f"/bounties/{bounty.pk}/").status_code == 200
+
+
+# -------------------------------------------------- recompense variable par actif
+def test_asset_tier_overrides_program_default(bounty_program):
+    """Un actif sensible peut valoir davantage que la grille generale."""
+    api = bounty_program.scopes.get(identifier="api.exemple.bf")
+    policy = bounty_program.reward_policy
+    RewardTier.objects.create(
+        policy=policy,
+        scope=api,
+        severity=Severity.CRITICAL,
+        min_amount=Decimal("2000000"),
+        max_amount=Decimal("5000000"),
+    )
+    assert policy.suggested_amount(Severity.CRITICAL) == Decimal("2000000")
+    assert policy.suggested_amount(Severity.CRITICAL, api) == Decimal("5000000")
+
+
+def test_asset_without_tier_falls_back_to_default(bounty_program):
+    """On ne saisit une ligne par actif que la ou le montant differe."""
+    vitrine = bounty_program.scopes.get(identifier="vitrine.exemple.bf")
+    policy = bounty_program.reward_policy
+    assert policy.suggested_amount(Severity.HIGH, vitrine) == Decimal("750000")
+
+
+def test_suggestion_follows_the_case_asset(bounty_case, coordinator):
+    """Le montant propose suit l'actif retenu au triage."""
+    api = bounty_case.program.scopes.get(identifier="api.exemple.bf")
+    RewardTier.objects.create(
+        policy=bounty_case.program.reward_policy,
+        scope=api,
+        severity=Severity.HIGH,
+        min_amount=Decimal("900000"),
+        max_amount=Decimal("1800000"),
+    )
+    set_severity(bounty_case, coordinator, severity=Severity.HIGH)
+
+    amount, _currency = suggested_amount(bounty_case)
+    assert amount == Decimal("750000"), "sans actif, la grille par defaut s'applique"
+
+    bounty_case.scope = api
+    bounty_case.save(update_fields=["scope"])
+    amount, _currency = suggested_amount(bounty_case)
+    assert amount == Decimal("1800000")
+
+
+def test_tier_rejects_asset_of_another_program(bounty_program, vdp_program):
+    """Un palier ne peut pas viser le perimetre d'un autre programme."""
+    etranger = ProgramScope.objects.create(
+        program=vdp_program, identifier="autre.exemple.bf"
+    )
+    tier = RewardTier(
+        policy=bounty_program.reward_policy,
+        scope=etranger,
+        severity=Severity.LOW,
+        min_amount=Decimal("0"),
+        max_amount=Decimal("1000"),
+    )
+    with pytest.raises(ValidationError, match="autre programme"):
+        tier.full_clean()
+
+
+def test_tier_rejects_out_of_scope_asset(bounty_program):
+    """Une cible exclue du perimetre n'ouvre pas droit a recompense."""
+    exclu = ProgramScope.objects.create(
+        program=bounty_program, identifier="shop.exemple.bf", in_scope=False
+    )
+    tier = RewardTier(
+        policy=bounty_program.reward_policy,
+        scope=exclu,
+        severity=Severity.LOW,
+        min_amount=Decimal("0"),
+        max_amount=Decimal("1000"),
+    )
+    with pytest.raises(ValidationError, match="hors perimetre"):
+        tier.full_clean()

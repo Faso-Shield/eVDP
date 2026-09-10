@@ -39,6 +39,13 @@
               <strong class="mono">{{ scope.identifier }}</strong>
               <span class="pill">{{ scope.get_target_type_display }}</span>
               <span class="pill">{{ scope.get_priority_display }}</span>
+              {% with bornes=scope.reward_range %}
+                {% if bornes %}
+                  <span class="pill pill-reward" title="Montants propres à cet actif">
+                    {{ bornes.min|floatformat:0 }} – {{ bornes.max|floatformat:0 }} {{ bornes.currency }}
+                  </span>
+                {% endif %}
+              {% endwith %}
               {% if scope.description %}<div class="small muted">{{ scope.description }}</div>{% endif %}
             </li>
           {% empty %}<li class="muted">Aucune cible déclarée.</li>{% endfor %}
@@ -89,7 +96,10 @@
   <aside>
     {% if reward_tiers %}
     <div class="card">
-      <div class="card-header"><h3>Matrice de récompenses</h3></div>
+      <div class="card-header">
+        <h3>Matrice de récompenses</h3>
+        {% if reward_scopes %}<span class="pill">Variable par actif</span>{% endif %}
+      </div>
       <div class="card-body">
         <table class="table">
           <thead><tr><th>Sévérité</th><th class="text-right">Montant</th></tr></thead>
@@ -102,6 +112,26 @@
           {% endfor %}
           </tbody>
         </table>
+        {% if reward_scopes %}
+          <h4 class="mt-2">Montants propres à un actif</h4>
+          <p class="small muted">Ces actifs dérogent à la grille ci-dessus ; tous les
+          autres la suivent.</p>
+          {% for scope in reward_scopes %}
+            <div class="reward-scope">
+              <div class="mono small">{{ scope.identifier }}</div>
+              <table class="table">
+                <tbody>
+                {% for tier in scope.reward_tiers.all %}
+                  <tr>
+                    <td><span class="badge {{ tier.severity|severity_class }}">{{ tier.get_severity_display }}</span></td>
+                    <td class="text-right mono small">{{ tier.min_amount|floatformat:0 }} – {{ tier.max_amount|floatformat:0 }} {{ reward_policy.currency }}</td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endfor %}
+        {% endif %}
         <p class="small muted">Montants indicatifs. Le montant final est arrêté après
         validation technique et revue.</p>
       </div>

@@ -26,12 +26,18 @@ from .models import (
 
 
 def suggested_amount(case):
-    """Montant suggere par la matrice du programme (jamais code en dur)."""
+    """Montant suggere par la matrice du programme (jamais code en dur).
+
+    La grille peut varier par actif : une faille critique sur une API de
+    production ne vaut pas la meme chose que sur un site vitrine. On passe
+    donc l'actif retenu au triage ; sans actif, ou sans palier propre a cet
+    actif, la grille par defaut du programme s'applique.
+    """
     program = case.program
     policy = getattr(program, "reward_policy", None) if program else None
     if not policy or not policy.is_active:
         return Decimal("0"), "XOF"
-    return policy.suggested_amount(case.severity), policy.currency
+    return policy.suggested_amount(case.severity, case.scope), policy.currency
 
 
 @transaction.atomic

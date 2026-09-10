@@ -24,6 +24,7 @@ from apps.programs.models import (
     ProgramType,
     RewardPolicy,
     RewardTier,
+    ScopePriority,
     ScopeTargetType,
 )
 from apps.reports.models import VulnerabilityReport
@@ -202,6 +203,18 @@ def bounty_program(db, organization, sla_policy):
             min_amount=Decimal(minimum),
             max_amount=Decimal(maximum),
         )
+    ProgramScope.objects.create(
+        program=program,
+        identifier="api.exemple.bf",
+        target_type=ScopeTargetType.API,
+        priority=ScopePriority.P1,
+    )
+    ProgramScope.objects.create(
+        program=program,
+        identifier="vitrine.exemple.bf",
+        target_type=ScopeTargetType.DOMAIN,
+        priority=ScopePriority.P4,
+    )
     return program
 
 

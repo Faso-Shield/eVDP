@@ -125,13 +125,15 @@ def case_detail(request, case_id):
         ),
         "triage_form": (
             TriageForm(
+                case=case,
                 initial={
                     "severity": case.severity,
                     "cvss_vector": case.cvss_vector,
                     "cwe": case.cwe_id,
                     "organization": case.organization_id,
+                    "scope": case.scope_id,
                     "tags": ", ".join(case.tags or []),
-                }
+                },
             )
             if request.user.has_capability(Capability.TRIAGE_CASE)
             else None
@@ -212,7 +214,7 @@ def change_status(request, case_id):
 @require_capability(Capability.TRIAGE_CASE)
 def triage(request, case_id):
     case = _get_case(request, case_id)
-    form = TriageForm(request.POST)
+    form = TriageForm(request.POST, case=case)
     if form.is_valid():
         try:
             set_severity(
@@ -233,6 +235,11 @@ def triage(request, case_id):
         if form.cleaned_data.get("organization"):
             case.organization = form.cleaned_data["organization"]
             updates.append("organization")
+        if "scope" in form.fields:
+            # Affecte sans condition : le triage doit aussi pouvoir retirer
+            # l'actif retenu, ce qu'un test de verite empecherait.
+            case.scope = form.cleaned_data.get("scope")
+            updates.append("scope")
         tags = form.cleaned_data.get("tags")
         if tags is not None:
             case.tags = tags
