@@ -8,7 +8,6 @@ utilises sont generes dans `static/img/` par `scripts/build_brand_assets.py`.
 | --- | --- |
 | `logo2-evdp.png` | **Master en vigueur.** Sert de source a toutes les declinaisons. |
 | `logo-evdp-background.png` | Master precedent, detoure. Conserve pour historique. |
-| `logo-evdp.png` | Mockup de presentation du master precedent, sur fond sombre. Non exploitable comme asset. |
 
 ## Regenerer les declinaisons
 
@@ -28,13 +27,13 @@ perd son globe, son cadenas et son texte. Toutes les declinaisons destinees aux
 fonds sombres reposent donc sur une plaque ou une tuile claire, qui restitue ce
 fond sans retoucher l'oeuvre.
 
-- **Fonds clairs** : `logo-evdp.png` (verrouillage complet) ou `logo-mark.png`
-  (embleme seul).
-- **Barre de navigation** : `logo-evdp-tile.png`, le verrouillage complet sur
+- **Fonds clairs** : `static/img/logo-evdp.png` (verrouillage complet) ou
+  `static/img/logo-mark.png` (embleme seul).
+- **Barre de navigation** : `static/img/logo-evdp-tile.png`, le verrouillage complet sur
   plaque claire. C'est lui qui porte le nom et la signature de la plateforme :
   aucun texte ne l'accompagne, l'attribut `alt` en tient lieu.
 - **Autres fonds sombres**, quand la place manque pour le verrouillage :
-  `logo-mark-tile.png`, l'embleme seul sur tuile.
+  `static/img/logo-mark-tile.png`, l'embleme seul sur tuile.
 - La plaque de la navbar est allongee vers la droite. Les proportions du logo
   sont celles du master : l'elargir autrement reviendrait a l'etirer.
 - La baseline occupe 6,3 % de la hauteur du verrouillage. A 80 px de plaque,
