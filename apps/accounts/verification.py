@@ -64,3 +64,32 @@ def reminder_days():
     return sorted(
         {int(j) for j in settings.EVDP["VERIFICATION_REMINDER_DAYS"]}, reverse=True
     )
+
+
+def accounts_losing_access(days_left=1, today=None):
+    """Comptes non verifies dont le sursis expire dans au plus `days_left` jours.
+
+    L'echeance est commune a toute la cohorte : elle depend de la date de
+    bascule, pas de chaque compte. La requete se resume donc a un test de
+    date, suivi du filtre d'eligibilite au sursis.
+
+    Les comptes dont le sursis a deja expire restent listes : ce sont
+    precisement ceux qu'il faut rattraper autrement, la relance par email
+    ayant echoue.
+    """
+    from django.utils import timezone
+
+    from .models import User
+
+    bascule = enforcement_date()
+    if bascule is None:
+        return User.objects.none()
+
+    echeance = bascule + timedelta(days=int(settings.EVDP["VERIFICATION_GRACE_DAYS"]))
+    jour = today or timezone.localdate()
+    if (echeance - jour).days > days_left:
+        return User.objects.none()
+
+    return User.objects.filter(
+        is_active=True, email_verified=False, created_at__date__lt=bascule
+    )

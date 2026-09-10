@@ -8,6 +8,7 @@ from django.shortcuts import redirect, render
 
 from apps.accounts.permissions import require_capability
 from apps.accounts.roles import Capability
+from apps.accounts.verification import accounts_losing_access
 from apps.bounty.models import Bounty, BountyStatus
 from apps.coordination import selectors
 from apps.coordination.models import Case
@@ -126,6 +127,10 @@ def csirt_dashboard(request):
             "active_researchers": ResearcherProfile.objects.filter(
                 reports_submitted__gt=0
             ).count(),
+            # Comptes qui vont perdre l'acces aux Bug Bounty faute de
+            # verification : la relance par email les rate par construction,
+            # le CSIRT doit pouvoir les reprendre a la main.
+            "comptes_a_relancer": accounts_losing_access().count(),
             "advisories_published": Advisory.objects.published().count(),
         },
     )

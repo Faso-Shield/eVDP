@@ -173,3 +173,77 @@ def test_verified_accounts_are_never_reminded(
     monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=23))
 
     assert remind_unverified_accounts() == 0
+
+
+# --------------------------------------------------------------------- export
+def test_cohort_is_empty_before_the_last_stretch(regle_active, bounty_researcher, monkeypatch):
+    """L'export ne sert qu'a l'approche de l'echeance, pas des la bascule."""
+    from apps.accounts.verification import accounts_losing_access
+
+    bounty_researcher.email_verified = False
+    bounty_researcher.save(update_fields=["email_verified"])
+    _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
+    monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=10))
+
+    assert not accounts_losing_access().exists()
+
+
+def test_cohort_listed_the_day_before_expiry(regle_active, bounty_researcher, monkeypatch):
+    from apps.accounts.verification import accounts_losing_access
+
+    bounty_researcher.email_verified = False
+    bounty_researcher.save(update_fields=["email_verified"])
+    _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
+    monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=29))
+
+    assert list(accounts_losing_access()) == [bounty_researcher]
+
+
+def test_expired_accounts_remain_listed(regle_active, bounty_researcher, monkeypatch):
+    """Ce sont eux qu'il faut rattraper : la relance par email a echoue."""
+    from apps.accounts.verification import accounts_losing_access
+
+    bounty_researcher.email_verified = False
+    bounty_researcher.save(update_fields=["email_verified"])
+    _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
+    monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=60))
+
+    assert list(accounts_losing_access()) == [bounty_researcher]
+
+
+def test_verified_and_recent_accounts_are_excluded(
+    regle_active, bounty_researcher, researcher_a, monkeypatch
+):
+    from apps.accounts.verification import accounts_losing_access
+
+    # verifie : rien a relancer
+    _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
+    # non verifie mais posterieur a la bascule : jamais eu de sursis
+    researcher_a.email_verified = False
+    researcher_a.save(update_fields=["email_verified"])
+    _cree_le(researcher_a, timezone.make_aware(timezone.datetime(2026, 2, 1)))
+    monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=29))
+
+    assert not accounts_losing_access().exists()
+
+
+def test_csv_export_lists_the_cohort(
+    regle_active, client_for, coordinator, bounty_researcher, monkeypatch
+):
+    bounty_researcher.email_verified = False
+    bounty_researcher.save(update_fields=["email_verified"])
+    _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
+    monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=29))
+
+    response = client_for(coordinator).get("/dashboard/exports/comptes-non-verifies.csv")
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith("text/csv")
+    corps = response.content.decode("utf-8-sig")
+    assert "Fin du sursis" in corps
+    assert bounty_researcher.email in corps
+
+
+def test_csv_export_requires_the_capability(regle_active, client_for, researcher_a):
+    """La liste porte des adresses email : elle n'est pas publique."""
+    response = client_for(researcher_a).get("/dashboard/exports/comptes-non-verifies.csv")
+    assert response.status_code in (302, 403, 404), response.status_code

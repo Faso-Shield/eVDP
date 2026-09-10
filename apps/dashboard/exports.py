@@ -8,6 +8,7 @@ import csv
 from io import BytesIO
 
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -26,6 +27,7 @@ from reportlab.platypus import (
 
 from apps.accounts.permissions import require_capability
 from apps.accounts.roles import Capability
+from apps.accounts.verification import accounts_losing_access, grace_deadline
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination.models import Case
@@ -251,4 +253,78 @@ def export_case_pdf(request, case_id):
     )
     response = HttpResponse(buffer.read(), content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{case.case_id}.pdf"'
+    return response
+
+
+COMPTES_COLUMNS = [
+    "Email",
+    "Nom complet",
+    "Role",
+    "Compte cree le",
+    "Derniere connexion",
+    "Derniere relance",
+    "Fin du sursis",
+    "Signalements deposes",
+]
+
+
+@login_required
+@require_capability(Capability.EXPORT_DATA)
+def export_unverified_accounts_csv(request):
+    """Comptes sur le point de perdre l'acces aux programmes Bug Bounty.
+
+    La relance par email ne suffit pas : une adresse morte ou erronee ne
+    verra jamais passer le rappel, et c'est justement le cas des comptes qui
+    n'ont jamais verifie la leur. Cet export permet au CSIRT de reprendre
+    contact autrement avant, ou apres, l'expiration du sursis.
+
+    Le parametre `jours` elargit la fenetre au-dela du J-1 par defaut.
+    """
+    try:
+        jours = int(request.GET.get("jours", 1))
+    except (TypeError, ValueError):
+        jours = 1
+    jours = max(0, min(jours, 90))
+
+    comptes = (
+        accounts_losing_access(jours)
+        .annotate(signalements=Count("submitted_reports"))
+        .order_by("created_at")
+    )
+
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = (
+        f'attachment; filename="evdp-comptes-non-verifies-{timezone.now():%Y%m%d}.csv"'
+    )
+    response.write("﻿")  # BOM pour Excel
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(COMPTES_COLUMNS)
+    for compte in comptes:
+        echeance = grace_deadline(compte)
+        writer.writerow(
+            [
+                compte.email,
+                compte.full_name,
+                compte.get_role_display(),
+                timezone.localtime(compte.created_at).strftime("%d/%m/%Y"),
+                timezone.localtime(compte.last_login).strftime("%d/%m/%Y %H:%M")
+                if compte.last_login
+                else "Jamais",
+                compte.verification_reminded_on.strftime("%d/%m/%Y")
+                if compte.verification_reminded_on
+                else "Aucune",
+                echeance.strftime("%d/%m/%Y") if echeance else "",
+                compte.signalements,
+            ]
+        )
+
+    log_action(
+        AuditAction.EXPORT_GENERATED,
+        actor=request.user,
+        request=request,
+        object_type="User",
+        format="csv",
+        count=comptes.count(),
+        jours=jours,
+    )
     return response

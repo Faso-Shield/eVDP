@@ -137,6 +137,29 @@ rejouée sans risque.
 Pendant le sursis, la page du programme et le formulaire de signalement
 affichent la date limite plutôt qu'un refus.
 
+### Rattrapage par le CSIRT
+
+La relance par email rate par construction une partie de la cible : un compte
+qui n'a jamais vérifié son adresse peut en avoir saisi une erronée ou morte.
+Le tableau de bord CSIRT signale donc la cohorte concernée et propose son
+export :
+
+```
+/dashboard/exports/comptes-non-verifies.csv
+```
+
+L'export liste les comptes à **J-1** de l'échéance, et les y maintient une
+fois le sursis expiré — ce sont précisément ceux qu'il faut rattraper. Le
+paramètre `?jours=N` élargit la fenêtre (maximum 90).
+
+Colonnes : email, nom complet, rôle, date de création, dernière connexion,
+date de la dernière relance, fin du sursis, nombre de signalements déposés.
+Les deux dernières servent à prioriser : un compte qui a déjà contribué et
+n'a jamais reçu de relance mérite un appel.
+
+La liste contient des adresses email : l'export exige la capacité
+`EXPORT_DATA` et est journalisé au même titre que les autres.
+
 Le contrôle est fait dans `submit_report`, point d'entrée commun au formulaire
 web, à l'API et à l'import CSAF. Un second contrôle à la proposition de
 récompense couvre le cas d'un programme devenu exigeant après coup.

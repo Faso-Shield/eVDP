@@ -250,7 +250,7 @@ docker compose run --rm -e DB_ENGINE=postgres evdp-web \
 pytest --cov=apps --cov-report=term-missing
 ```
 
-**229 tests** couvrant l'authentification, le RBAC, le workflow CVD et Bug
+**235 tests** couvrant l'authentification, le RBAC, le workflow CVD et Bug
 Bounty, les doublons, les pièces jointes, les récompenses, les advisories,
 l'API, le journal d'audit, le calculateur CVSS et la sécurité applicative
 (XSS, CSRF, IDOR, élévation de privilèges, mass assignment, upload).
