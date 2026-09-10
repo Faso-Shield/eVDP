@@ -35,7 +35,9 @@ fond sans retoucher l'oeuvre.
   aucun texte ne l'accompagne, l'attribut `alt` en tient lieu.
 - **Autres fonds sombres**, quand la place manque pour le verrouillage :
   `logo-mark-tile.png`, l'embleme seul sur tuile.
-- La baseline occupe 6,3 % de la hauteur du verrouillage. A 57 px de haut, la
-  hauteur retenue dans la navbar, elle tombe a environ 4 px : elle est presente
-  et reconnaissable, mais ne se lit pas. La rendre lisible demanderait un logo
-  d'environ 145 px de haut, donc un en-tete nettement plus haut.
+- La baseline occupe 6,3 % de la hauteur du verrouillage. C'est elle qui fixe
+  la hauteur de la barre de navigation : pour qu'elle se lise il lui faut
+  environ 9 px, donc un logo de 168 px et un en-tete de 208 px topbar comprise.
+  Toute reduction de cette hauteur rend la signature illisible.
+- Sous 1000 px de large, la barre repasse en mode compact (logo a 104 px, puis
+  72 px sous 700 px) : la baseline y redevient decorative, faute de place.

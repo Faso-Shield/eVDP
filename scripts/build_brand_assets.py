@@ -68,7 +68,7 @@ def embleme(lock: Image.Image) -> Image.Image:
     return em.crop(em.getchannel("A").getbbox())
 
 
-def plaque(lock: Image.Image, hauteur_logo: int, pad: float = 0.10,
+def plaque(lock: Image.Image, hauteur_logo: int, pad: float = 0.06,
            fond=TUILE_FOND) -> Image.Image:
     """Verrouillage complet sur une plaque claire, pour la barre de navigation.
 
@@ -131,8 +131,10 @@ def main() -> None:
         ("logo-mark.png", reduire(em, 512)),
         # Fonds sombres et icones : sur tuile claire.
         ("logo-mark-tile.png", tuile(em, 256)),
-        # Barre de navigation : logo complet, rendu en 3x pour les ecrans HiDPI.
-        ("logo-evdp-tile.png", plaque(lock, 144)),
+        # Barre de navigation : logo complet, rendu en 2x pour les ecrans HiDPI.
+        # 150 px de logo a l'affichage, hauteur minimale pour que la baseline
+        # atteigne ~9,5 px et devienne lisible (elle occupe 6,3 % du logo).
+        ("logo-evdp-tile.png", plaque(lock, 300)),
         ("favicon-32.png", tuile(em, 32)),
         ("favicon-192.png", tuile(em, 192)),
         ("logo-512.png", tuile(em, 512)),
