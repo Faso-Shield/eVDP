@@ -37,8 +37,8 @@ fond sans retoucher l'oeuvre.
   `logo-mark-tile.png`, l'embleme seul sur tuile.
 - La plaque de la navbar est allongee vers la droite. Les proportions du logo
   sont celles du master : l'elargir autrement reviendrait a l'etirer.
-- La baseline occupe 6,3 % de la hauteur du verrouillage. A 90 px de plaque,
-  la hauteur retenue dans la navbar, elle tourne autour de 5 px : presente et
+- La baseline occupe 6,3 % de la hauteur du verrouillage. A 80 px de plaque,
+  la hauteur retenue dans la navbar, elle tourne autour de 4 px : presente et
   reconnaissable, mais elle ne se lit pas. La rendre lisible demanderait une
   plaque d'environ 200 px, donc un en-tete de plus de 200 px, essaye au commit
   5be328c puis abandonne comme trop encombrant.
