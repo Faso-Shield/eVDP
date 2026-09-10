@@ -17,6 +17,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 
+from apps.accounts.verification import is_within_grace
 from apps.core.models import BaseModel
 from apps.core.pgp import PGPError, validate_public_key
 from apps.vulnerabilities.constants import Severity
@@ -199,6 +200,9 @@ class Program(BaseModel):
             return None
 
         if (self.requires_verified_email or self.is_bug_bounty) and not reporter.email_verified:
+            if is_within_grace(reporter):
+                # Compte anterieur a l'entree en vigueur : sursis en cours.
+                return None
             return (
                 "Ce programme exige une adresse email verifiee. "
                 "Verifiez votre adresse depuis votre profil pour y participer."

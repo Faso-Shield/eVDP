@@ -234,6 +234,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.accounts.tasks.purge_expired_tokens",
         "schedule": crontab(minute=0, hour=3),
     },
+    "evdp-relance-comptes-non-verifies": {
+        "task": "apps.accounts.tasks.remind_unverified_accounts",
+        "schedule": crontab(minute=30, hour=8),
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -361,6 +365,14 @@ EVDP = {
     "ADVISORY_PREFIX": "EVDP-ADV",
     "DEFAULT_CURRENCY": env("EVDP_DEFAULT_CURRENCY", default="XOF"),
     "DEFAULT_DISCLOSURE_DELAY_DAYS": env.int("EVDP_DISCLOSURE_DELAY_DAYS", default=90),
+    # Exigence d'adresse verifiee : date de bascule, sursis accorde aux seuls
+    # comptes anterieurs, et jalons de relance exprimes en jours restants.
+    # Voir apps/accounts/verification.py.
+    "VERIFICATION_ENFORCED_FROM": env("EVDP_VERIFICATION_ENFORCED_FROM", default=""),
+    "VERIFICATION_GRACE_DAYS": env.int("EVDP_VERIFICATION_GRACE_DAYS", default=30),
+    "VERIFICATION_REMINDER_DAYS": env.list(
+        "EVDP_VERIFICATION_REMINDER_DAYS", default=["14", "7", "1"]
+    ),
     "MAX_ATTACHMENT_SIZE": env.int("EVDP_MAX_ATTACHMENT_SIZE", default=25 * 1024 * 1024),
     "ATTACHMENT_ALLOWED_EXTENSIONS": env.list(
         "EVDP_ATTACHMENT_EXTENSIONS",

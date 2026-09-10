@@ -53,7 +53,8 @@ Signaler  →  Analyser  →  Coordonner  →  Corriger  →  Publier
   montants ajustables par actif du périmètre
 - Cycle proposition → revue → approbation → versement
 - Séparation stricte des rôles : proposer ≠ approuver ≠ payer
-- Participation réservée aux comptes dont l'adresse email est vérifiée
+- Participation réservée aux comptes dont l'adresse email est vérifiée,
+  avec délai de grâce et relance pour les comptes antérieurs à la règle
 - Aucun flux financier réel n'est déclenché par la plateforme (MVP)
 
 ### Publication
@@ -249,7 +250,7 @@ docker compose run --rm -e DB_ENGINE=postgres evdp-web \
 pytest --cov=apps --cov-report=term-missing
 ```
 
-**217 tests** couvrant l'authentification, le RBAC, le workflow CVD et Bug
+**229 tests** couvrant l'authentification, le RBAC, le workflow CVD et Bug
 Bounty, les doublons, les pièces jointes, les récompenses, les advisories,
 l'API, le journal d'audit, le calculateur CVSS et la sécurité applicative
 (XSS, CSRF, IDOR, élévation de privilèges, mass assignment, upload).

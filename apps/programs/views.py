@@ -8,6 +8,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
+from apps.accounts.verification import grace_deadline
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 
@@ -62,6 +63,7 @@ def program_detail(request, slug):
             # les conditions, plutot que de le laisser rediger un rapport pour
             # se le voir refuser a l'envoi.
             "refus_participation": program.reporter_rejection(request.user),
+            "delai_verification": grace_deadline(request.user),
         },
     )
 

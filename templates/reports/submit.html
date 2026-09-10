@@ -19,8 +19,15 @@
 
 {% if user.is_authenticated and not user.email_verified %}
 <div class="notice">
-  Votre adresse email n'est pas encore vérifiée. Les programmes qui exigent un
-  compte vérifié — la plupart des Bug Bounty — refuseront votre signalement.
+  {% if delai_verification %}
+    Votre adresse email n'est pas encore vérifiée. Vous pouvez encore signaler
+    sur les programmes Bug Bounty <strong>jusqu'au
+    {{ delai_verification|date:"d/m/Y" }}</strong>, après quoi ils refuseront
+    votre signalement.
+  {% else %}
+    Votre adresse email n'est pas encore vérifiée. Les programmes qui exigent un
+    compte vérifié — tous les Bug Bounty — refuseront votre signalement.
+  {% endif %}
   <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
 </div>
 {% endif %}

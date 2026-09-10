@@ -69,6 +69,12 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     email_verified = models.BooleanField(default=False)
+    verification_reminded_on = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Jour de la derniere relance de verification, pour n'en "
+        "envoyer qu'une par jalon.",
+    )
     pgp_public_key = models.TextField(blank=True)
     pgp_fingerprint = models.CharField(max_length=64, blank=True)
     mfa_enabled = models.BooleanField(

@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 
+from apps.accounts.verification import grace_deadline
 from apps.attachments.services import store_attachment
 from apps.core.markdown_utils import render_markdown
 from apps.core.models import SiteSetting
@@ -74,6 +75,7 @@ def submit(request):
             "form": form,
             "program": program,
             "policy_excerpt": render_markdown(policy[:1200]),
+            "delai_verification": grace_deadline(request.user),
         },
     )
 

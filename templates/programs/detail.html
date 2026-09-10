@@ -28,7 +28,13 @@
   {% endif %}
 </div>
 
-{% if refus_participation %}
+{% if delai_verification %}
+  <div class="notice">
+    Votre adresse email n'est pas vérifiée. Vous conservez l'accès à ce
+    programme <strong>jusqu'au {{ delai_verification|date:"d/m/Y" }}</strong>.
+    <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
+  </div>
+{% elif refus_participation %}
   <div class="notice">
     {{ refus_participation }}
     {% if user.is_authenticated and not user.email_verified %}

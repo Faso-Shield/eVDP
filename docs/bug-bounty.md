@@ -112,6 +112,31 @@ Ne pas confondre les deux réglages :
 | `allows_anonymous_reports` | le droit de signaler **sans compte** |
 | `requires_verified_email` | les déclarants **avec compte**, dont l'adresse doit être vérifiée |
 
+### Délai de grâce et relance
+
+Appliquer l'exigence prive du jour au lendemain les comptes déjà en base qui
+n'ont jamais vérifié leur adresse. Un sursis leur est donc accordé, réglé par
+trois variables d'environnement :
+
+| Variable | Rôle |
+|----------|------|
+| `EVDP_VERIFICATION_ENFORCED_FROM` | date de bascule (AAAA-MM-JJ). Vide = application immédiate, sans sursis |
+| `EVDP_VERIFICATION_GRACE_DAYS` | durée du sursis, 30 jours par défaut |
+| `EVDP_VERIFICATION_REMINDER_DAYS` | jalons de relance, en jours restants (14, 7, 1) |
+
+Le sursis vaut **uniquement pour les comptes créés avant la date de bascule**.
+Un compte créé après doit vérifier son adresse immédiatement : lui accorder un
+délai reviendrait à laisser une adresse non contrôlée participer à un Bug
+Bounty, ce que la règle vise précisément à empêcher.
+
+La tâche `apps.accounts.tasks.remind_unverified_accounts`, planifiée chaque
+jour à 8 h 30, relance les comptes concernés à chaque jalon avec un lien de
+vérification neuf. Un seul envoi par jour et par compte : la tâche peut être
+rejouée sans risque.
+
+Pendant le sursis, la page du programme et le formulaire de signalement
+affichent la date limite plutôt qu'un refus.
+
 Le contrôle est fait dans `submit_report`, point d'entrée commun au formulaire
 web, à l'API et à l'import CSAF. Un second contrôle à la proposition de
 récompense couvre le cas d'un programme devenu exigeant après coup.
