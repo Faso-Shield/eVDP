@@ -14,13 +14,6 @@
   {% block head %}{% endblock %}
 </head>
 <body>
-<div class="topbar">
-  <div class="container flex-between">
-    <span>{{ PROJECT_CODE }} — {{ EVDP.NATIONAL_TEAM }}</span>
-    <span><a href="{% url 'core:pgp_key' %}">Clé PGP publique</a> · <a href="{% url 'core:disclosure_policy' %}">Politique de divulgation</a></span>
-  </div>
-</div>
-
 <header class="navbar">
   <div class="container navbar-inner">
     <a class="brand" href="{% url 'core:home' %}">

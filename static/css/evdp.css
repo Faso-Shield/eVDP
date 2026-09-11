@@ -72,12 +72,6 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 1.4rem 0; }
 .container-narrow { max-width: 880px; margin: 0 auto; padding: 0 1.2rem; }
 .main { padding: 1.8rem 0 3.5rem; min-height: 60vh; }
 
-.topbar {
-  background: var(--evdp-navy-dark); color: #cbd9e6; font-size: .78rem;
-  padding: .3rem 0; letter-spacing: .02em;
-}
-.topbar a { color: #cbd9e6; }
-
 .navbar { background: var(--evdp-navy); color: var(--text-inverse); box-shadow: var(--shadow-sm); }
 .navbar-inner { display: flex; align-items: center; gap: 1.4rem; padding: .65rem 0; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: .65rem; color: #fff; }
