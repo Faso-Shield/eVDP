@@ -26,8 +26,15 @@ calculé dans `apps/core/navigation.py`, chaque entrée déclarant la capacité
 qu'elle exige. Un compte ne voit donc que ce qu'il peut ouvrir, et un titre de
 rubrique n'apparaît que si la rubrique a du contenu.
 
-Un compte signaleur s'y réduit à **Tableau de bord**, **Espace chercheur**,
-**Récompenses**, **Advisories publiés** et **Mon profil**.
+Un compte signaleur s'y réduit à **Tableau de bord**, **Récompenses**,
+**Advisories publiés** et **Mon profil**.
+
+`Tableau de bord` n'affiche rien par lui-même : il aiguille vers la vue du
+rôle (`apps/core/navigation.py::landing_route`, que la vue d'aiguillage et le
+menu lisent tous deux). Une entrée « Vue X » n'est donc listée que si elle
+mène ailleurs : un analyste atterrissant sur la vue CSIRT ne la voit pas
+proposée une seconde fois, tandis qu'un auditeur, qui atterrit sur la vue
+nationale, la garde.
 
 Les capacités du menu sont celles que les vues ciblées contrôlent : un test
 parcourt le menu de six rôles et suit chaque lien, de sorte que les deux ne

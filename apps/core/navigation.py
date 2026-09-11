@@ -29,6 +29,23 @@ def _lien(libelle, nom_url):
     return {"label": libelle, "url": reverse(nom_url)}
 
 
+def landing_route(user):
+    """Tableau de bord ou mene « Tableau de bord » pour ce compte.
+
+    `dashboard:home` n'affiche rien : il aiguille vers la vue du role. La
+    regle est ici plutot que dans la vue pour que le menu et l'aiguillage la
+    lisent au meme endroit — sans quoi le menu proposerait une entree qui
+    mene la ou « Tableau de bord » mene deja.
+    """
+    if user.has_capability(C.VIEW_NATIONAL_DASHBOARD):
+        return "dashboard:national"
+    if user.has_capability(C.VIEW_CSIRT_DASHBOARD):
+        return "dashboard:csirt"
+    if user.is_organization_user:
+        return "dashboard:organization"
+    return "dashboard:researcher"
+
+
 def sidebar_sections(user):
     """Sections du menu pour `user`, vides s'il n'est pas authentifie.
 
@@ -42,13 +59,19 @@ def sidebar_sections(user):
     voit_des_dossiers = peut(C.VIEW_ALL_CASES) or peut(C.VIEW_ORG_CASES)
     sections = []
 
+    # Une vue de role n'est listee que si elle differe de l'atterrissage :
+    # sinon l'entree est un doublon exact de « Tableau de bord », qui y mene.
+    # Un auditeur, lui, atterrit sur la vue nationale et garde donc la vue
+    # CSIRT, qui est une autre page.
+    atterrissage = landing_route(user)
     espace = [_lien("Tableau de bord", "dashboard:home")]
-    if peut(C.VIEW_CSIRT_DASHBOARD):
-        espace.append(_lien("Vue CSIRT", "dashboard:csirt"))
-    if user.is_organization_user:
-        espace.append(_lien("Vue organisation", "dashboard:organization"))
-    if user.is_researcher:
-        espace.append(_lien("Espace chercheur", "dashboard:researcher"))
+    for libelle, route, ouverte in [
+        ("Vue CSIRT", "dashboard:csirt", peut(C.VIEW_CSIRT_DASHBOARD)),
+        ("Vue organisation", "dashboard:organization", user.is_organization_user),
+        ("Espace chercheur", "dashboard:researcher", user.is_researcher),
+    ]:
+        if ouverte and route != atterrissage:
+            espace.append(_lien(libelle, route))
     sections.append(("Espace", espace))
 
     # Un signaleur atteint ses propres dossiers depuis son espace ; la
