@@ -4,6 +4,8 @@ Comptes metiers et comptes signaleurs sont deux populations : ces tests
 fixent la partition, l'etancheite des listes et ce que chacune montre.
 """
 
+import re
+
 import pytest
 from django.contrib.admin.sites import site
 
@@ -127,3 +129,47 @@ def test_the_registry_exposes_two_lists_and_hides_the_raw_user_model(rf, coordin
     requete = rf.get("/admin/")
     requete.user = coordinator
     assert site._registry[User].get_model_perms(requete) == {}
+
+
+# ------------------------------------------------------------------- libelles
+def libelles(admin_class, modele):
+    """Intitules de colonnes tels que l'administration les rendra."""
+    instance = admin_class(modele, site)
+    rendus = []
+    for nom in instance.list_display:
+        attribut = getattr(instance, nom, None)
+        if attribut is not None:
+            rendus.append(attribut.short_description)
+        else:
+            rendus.append(modele._meta.get_field(nom).verbose_name)
+    return rendus
+
+
+@pytest.mark.parametrize(
+    ("admin_class", "modele"),
+    [(BusinessAccountAdmin, BusinessAccount), (ReporterAccountAdmin, ReporterAccount)],
+)
+def test_no_column_header_falls_back_to_an_english_field_name(admin_class, modele):
+    """Sans `verbose_name`, Django titre la colonne avec le nom du champ.
+
+    « Full name », « Is active », « Email verified » apparaissaient ainsi au
+    milieu d'une interface francaise. Le test echoue si un champ ajoute a une
+    liste arrive sans libelle.
+    """
+    anglais = [
+        intitule
+        for intitule in libelles(admin_class, modele)
+        if re.fullmatch(r"[a-z][a-z0-9]*(?:[ _][a-z0-9]+)*", str(intitule))
+    ]
+    assert not anglais, f"colonnes sans libelle francais : {anglais}"
+
+
+def test_the_lists_carry_the_expected_french_headers():
+    metiers = [str(x) for x in libelles(BusinessAccountAdmin, BusinessAccount)]
+    signaleurs = [str(x) for x in libelles(ReporterAccountAdmin, ReporterAccount)]
+
+    assert "Nom complet" in metiers
+    assert "Compte actif" in metiers
+    assert "Second facteur" in metiers
+    assert "Adresse verifiee" in signaleurs
+    assert "Inscrit le" in signaleurs, "created_at est renomme par la liste"

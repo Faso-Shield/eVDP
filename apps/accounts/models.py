@@ -52,47 +52,57 @@ class UserManager(BaseUserManager):
 
 class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True, db_index=True)
-    full_name = models.CharField(max_length=150, blank=True)
+    email = models.EmailField(unique=True, db_index=True, verbose_name="Adresse email")
+    full_name = models.CharField(max_length=150, blank=True, verbose_name="Nom complet")
     display_name = models.CharField(
         max_length=80,
         blank=True,
+        verbose_name="Nom affiche",
         help_text="Nom affiche dans l'interface (pseudonyme possible).",
     )
-    phone = models.CharField(max_length=32, blank=True)
+    phone = models.CharField(max_length=32, blank=True, verbose_name="Telephone")
     role = models.CharField(
         max_length=32,
         choices=Role.choices,
         default=Role.PUBLIC_USER,
         db_index=True,
+        verbose_name="Role",
         help_text="Role RBAC. Jamais modifiable par l'utilisateur lui-meme.",
     )
-    is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
-    email_verified = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True, verbose_name="Compte actif")
+    is_staff = models.BooleanField(default=False, verbose_name="Acces a l'administration")
+    email_verified = models.BooleanField(default=False, verbose_name="Adresse verifiee")
     verification_reminded_on = models.DateField(
         null=True,
         blank=True,
+        verbose_name="Derniere relance de verification",
         help_text="Jour de la derniere relance de verification, pour n'en "
         "envoyer qu'une par jalon.",
     )
-    pgp_public_key = models.TextField(blank=True)
-    pgp_fingerprint = models.CharField(max_length=64, blank=True)
+    pgp_public_key = models.TextField(blank=True, verbose_name="Cle publique PGP")
+    pgp_fingerprint = models.CharField(max_length=64, blank=True, verbose_name="Empreinte PGP")
     mfa_enabled = models.BooleanField(
         default=False,
+        verbose_name="Authentificateur enregistre",
         help_text="Enrolement TOTP effectue. L'exigence, elle, decoule du "
         "role : voir apps.accounts.mfa.is_required.",
     )
     mfa_secret = models.CharField(max_length=64, blank=True, editable=False)
-    mfa_confirmed_at = models.DateTimeField(null=True, blank=True, editable=False)
+    mfa_confirmed_at = models.DateTimeField(
+        null=True, blank=True, editable=False, verbose_name="Enregistre le"
+    )
     mfa_last_step = models.BigIntegerField(
         null=True,
         blank=True,
         editable=False,
         help_text="Dernier pas de temps TOTP consomme, pour refuser le rejeu.",
     )
-    last_login_ip = models.CharField(max_length=45, blank=True)
-    accepted_policy_at = models.DateTimeField(null=True, blank=True)
+    last_login_ip = models.CharField(
+        max_length=45, blank=True, verbose_name="Derniere IP de connexion"
+    )
+    accepted_policy_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Politique acceptee le"
+    )
 
     objects = UserManager()
 

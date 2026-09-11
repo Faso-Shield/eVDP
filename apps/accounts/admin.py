@@ -190,7 +190,7 @@ class ReporterAccountAdmin(BaseAccountAdmin):
         "reputation",
         "rapports_soumis",
         "is_active",
-        "created_at",
+        "inscrit_le",
     )
     list_filter = ("role", "is_active", "email_verified")
     fieldsets = (
@@ -239,6 +239,16 @@ class ReporterAccountAdmin(BaseAccountAdmin):
     def rapports_soumis(self, obj):
         profil = getattr(obj, "researcher_profile", None)
         return profil.reports_submitted if profil else "—"
+
+    @admin.display(description="Inscrit le", ordering="created_at")
+    def inscrit_le(self, obj):
+        """`created_at` vient de `TimeStampedModel`, partage par tout le projet.
+
+        Le renommer la-bas ferait une migration dans chaque application pour
+        un libelle de colonne. Et "Inscrit le" dit mieux ce dont il s'agit
+        ici qu'un "Cree le" generique : ces comptes s'inscrivent seuls.
+        """
+        return obj.created_at
 
 
 @admin.register(UserToken)
