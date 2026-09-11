@@ -99,3 +99,23 @@ def test_advisory_list_renders_without_organization(client, coordinator, case_al
     publish_advisory(advisory, coordinator)
 
     assert client.get("/advisories/").status_code == 200
+
+
+@pytest.mark.django_db
+def test_no_model_change_is_left_without_a_migration():
+    """Un `choices` etendu modifie le schema, et s'oublie facilement.
+
+    Rien ne casse en test : SQLite n'applique pas les `choices`, et Django
+    les lit depuis le modele, pas depuis la base. L'ecart ne se voit qu'au
+    `migrate` suivant, sur un deploiement, sous la forme d'un avertissement
+    que personne ne lit.
+    """
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    sortie = StringIO()
+    try:
+        call_command("makemigrations", "--check", "--dry-run", stdout=sortie, verbosity=1)
+    except SystemExit:
+        pytest.fail("Des changements de modele n'ont pas de migration : " + sortie.getvalue())
