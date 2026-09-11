@@ -86,7 +86,14 @@ def case_list(request):
 
 
 @login_required
+@require_capability(Capability.VIEW_ALL_CASES, Capability.VIEW_ORG_CASES)
 def kanban(request):
+    """Tableau de triage : l'outil de ceux qui traitent les dossiers d'autrui.
+
+    La vue n'exigeait que d'etre connecte. Un signaleur y accedait donc, pour
+    y trouver un tableau reduit a ses propres rapports, que son espace lui
+    presente deja mieux.
+    """
     return render(
         request,
         "coordination/kanban.html",

@@ -128,3 +128,44 @@ def test_capability_matrix(db, role, capability, expected):
 def test_inactive_user_has_no_capability(researcher_a):
     researcher_a.is_active = False
     assert researcher_a.has_capability(Capability.SUBMIT_REPORT) is False
+
+
+# ----------------------------------------- vues de gestion ouvertes par oubli
+# Les deux ne portaient que @login_required alors qu'elles servent des ecrans
+# de traitement. Le menu lateral les reserve deja ; la vue doit refuser de
+# meme, sans quoi l'URL saisie a la main suffirait.
+def test_a_reporter_cannot_open_the_triage_board(client_for, researcher_a):
+    assert client_for(researcher_a).get(reverse("coordination:kanban")).status_code == 403
+
+
+def test_a_reporter_cannot_open_the_program_management_list(client_for, researcher_a):
+    assert client_for(researcher_a).get(reverse("programs:my_programs")).status_code == 403
+
+
+def test_an_auditor_keeps_the_triage_board_but_loses_program_management(client_for, auditor):
+    """L'auditeur voit tout et n'administre rien : la nuance porte ici.
+
+    National, il recevait jusqu'ici la liste de tous les programmes du pays
+    dans un ecran d'administration. L'annuaire public lui reste ouvert.
+    """
+    client = client_for(auditor)
+    assert client.get(reverse("coordination:kanban")).status_code == 200
+    assert client.get(reverse("programs:my_programs")).status_code == 403
+    assert client.get(reverse("programs:list")).status_code == 200
+
+
+def test_the_staff_roles_keep_both(client_for, analyst, dsi_alpha):
+    for utilisateur in (analyst, dsi_alpha):
+        client = client_for(utilisateur)
+        assert client.get(reverse("coordination:kanban")).status_code == 200
+        assert client.get(reverse("programs:my_programs")).status_code == 200
+
+
+def test_the_refusal_is_audited(client_for, researcher_a):
+    """Un refus doit laisser une trace : c'est la regle du depot."""
+    from apps.audit.models import AuditAction, AuditLog
+
+    client_for(researcher_a).get(reverse("coordination:kanban"))
+    assert AuditLog.objects.filter(
+        action=AuditAction.PERMISSION_DENIED, actor=researcher_a
+    ).exists()

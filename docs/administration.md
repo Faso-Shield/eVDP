@@ -19,6 +19,23 @@ Guide d'exploitation quotidienne à destination des équipes ANSSI-BF / CSIRT.
 | `BUG_BOUNTY_RESEARCHER` | Chasseurs de bugs | Ses rapports |
 | `PUBLIC_USER` | Compte créé sans qualification | Ses rapports |
 
+### Le menu latéral suit les capacités
+
+Le menu de l'espace authentifié n'est pas écrit dans le gabarit : il est
+calculé dans `apps/core/navigation.py`, chaque entrée déclarant la capacité
+qu'elle exige. Un compte ne voit donc que ce qu'il peut ouvrir, et un titre de
+rubrique n'apparaît que si la rubrique a du contenu.
+
+Un compte signaleur s'y réduit à **Tableau de bord**, **Espace chercheur**,
+**Récompenses**, **Advisories publiés** et **Mon profil**.
+
+Les capacités du menu sont celles que les vues ciblées contrôlent : un test
+parcourt le menu de six rôles et suit chaque lien, de sorte que les deux ne
+peuvent pas diverger sans que la suite échoue. Ajouter une entrée demande donc
+de garder la vue correspondante — et l'inverse.
+
+---
+
 ### Deux listes, pas une
 
 L'administration présente les comptes en **deux listes distinctes**, parce

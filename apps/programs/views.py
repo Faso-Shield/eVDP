@@ -85,8 +85,16 @@ def _can_manage(user, program):
 
 
 @login_required
+@require_capability(Capability.MANAGE_PROGRAM)
 def my_programs(request):
-    """Programmes gerables par l'utilisateur."""
+    """Programmes gerables par l'utilisateur.
+
+    La vue n'exigeait que d'etre connecte, alors qu'elle liste ce que l'on
+    peut administrer et mene aux formulaires de gestion, eux gardes. Un
+    compte sans MANAGE_PROGRAM y voyait une liste sur laquelle il ne pouvait
+    rien faire — et un auditeur, national, y voyait tous les programmes du
+    pays dans un ecran d'administration. L'annuaire public reste ouvert.
+    """
     if request.user.is_national:
         queryset = Program.objects.all()
     else:
