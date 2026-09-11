@@ -15,7 +15,7 @@ from django.db import transaction
 from apps.reports.models import VulnerabilityReport
 from apps.reports.services import submit_report
 from apps.vulnerabilities.constants import ReportSource, Severity, VulnerabilityType
-from apps.vulnerabilities.cvss import CVSSError, evaluate
+from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
 from apps.vulnerabilities.models import CVE, CWE
 
 SUPPORTED_CATEGORIES = {
@@ -75,7 +75,7 @@ def _extract_cvss(vulnerability):
             value, severity = evaluate(vector)
         except CVSSError:
             continue
-        return vector, value, severity
+        return vector, score_as_decimal(value), severity
     return "", None, Severity.MEDIUM
 
 

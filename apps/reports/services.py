@@ -26,7 +26,7 @@ from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify_external, notify_many
 from apps.programs.models import ProgramType
 from apps.vulnerabilities.constants import ReportSource, Severity
-from apps.vulnerabilities.cvss import CVSSError, evaluate
+from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
 
 from .models import ReportStatus, VulnerabilityReport
 
@@ -41,7 +41,7 @@ def _severity_for(report):
     if report.cvss_vector:
         try:
             score, severity = evaluate(report.cvss_vector)
-            return severity, score
+            return severity, score_as_decimal(score)
         except CVSSError:
             pass
     return report.reported_severity or Severity.MEDIUM, report.cvss_score
@@ -73,6 +73,11 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
         client_ip = get_client_ip(request)
         if client_ip:
             report.submitter_ip_hash = hash_text(client_ip)
+    # Un ModelSerializer et un import ne declenchent pas la validation du
+    # modele : sans cet appel, VulnerabilityReport.clean() ne s'executait que
+    # pour le formulaire web, seul chemin a passer par un ModelForm. Le
+    # controle du bloc PGP est ici le seul garde-fou de l'API.
+    report.full_clean()
     report.save()
 
     severity, score = _severity_for(report)

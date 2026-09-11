@@ -281,6 +281,7 @@ client est rejeté.
 Formulaire / API / CSAF
    → validation (forms.py | serializers.py)
    → reports.services.submit_report()
+        ├── report.full_clean()  ← règles du modèle, pour les trois chemins
         ├── crée VulnerabilityReport (privé)
         ├── crée Case (statut SUBMITTED, workflow déduit du programme)
         ├── ouvre la chronologie
@@ -289,6 +290,20 @@ Formulaire / API / CSAF
         ├── journalise REPORT_SUBMITTED + CASE_CREATED
         └── notifie l'équipe de triage et accuse réception au déclarant
 ```
+
+**`Model.clean()` ne s'exécute pas tout seul.** Seul un `ModelForm` l'appelle,
+via son `_post_clean` : un `ModelSerializer` DRF, un import et un
+`objects.create()` l'ignorent. Une règle métier posée sur un modèle ne vaut
+donc que pour le formulaire web, sauf à être relayée explicitement. Deux
+relais existent, à tenir à jour quand un chemin d'écriture s'ajoute :
+
+| Modèle | Relais | Couvre |
+|--------|--------|--------|
+| `VulnerabilityReport` | `submit_report()` | web, API, import CSAF |
+| `Program` | `ProgramWriteSerializer.validate()` | API (le formulaire y passe déjà) |
+
+`Bounty` valide déjà dans `bounty.services`. `Organization`, `SecurityContact`
+et `RewardTier` n'ont pas d'autre chemin d'écriture que leur `ModelForm`.
 
 ### Transition de statut
 
