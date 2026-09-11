@@ -5,12 +5,17 @@ qui voient les dossiers d'autrui, et laisse tranquille celui qui vient
 signaler une faille.
 """
 
+from html import unescape
+from urllib.parse import unquote
+
 import pyotp
 import pytest
+import segno
 from django.core.exceptions import ValidationError
 from django.core.management import CommandError, call_command
 from django.utils import timezone
 
+from apps.accounts import mfa
 from apps.accounts.mfa import INTERVAL, consume_code, is_required
 from apps.accounts.middleware import SESSION_KEY as MFA_SESSION_KEY
 from apps.accounts.models import User
@@ -193,6 +198,44 @@ def test_another_accounts_code_is_refused(analyste_enrole, coordinator):
     coordinator.mfa_enabled = True
     coordinator.save()
     assert not consume_code(analyste_enrole, code_pour(coordinator.mfa_secret))
+
+
+# ---------------------------------------------------------------- code QR
+def test_the_enrollment_page_serves_a_scannable_qr_code(client_for, analyst):
+    """Le QR doit porter l'URI d'enrolement, et la cle rester saisissable."""
+    client = client_for(analyst, mfa=False)
+    page = client.get("/mfa/enrolement/").content.decode()
+    secret = client.session["mfa_setup_candidate"]
+
+    assert "data:image/svg+xml" in page, "code QR absent"
+    assert mfa.readable_secret(secret) in page, "saisie manuelle toujours possible"
+    assert mfa.provisioning_uri(analyst, secret) in unescape(page)
+
+
+def test_the_qr_is_derived_from_the_secret(analyst):
+    """Un symbole constant se scannerait aussi : il doit suivre le secret."""
+    premier = pyotp.random_base32()
+    second = pyotp.random_base32()
+
+    assert mfa.qr_data_uri(analyst, premier) == mfa.qr_data_uri(analyst, premier)
+    assert mfa.qr_data_uri(analyst, premier) != mfa.qr_data_uri(analyst, second)
+
+
+def test_the_qr_is_a_svg_large_enough_for_its_payload(analyst):
+    """Le symbole doit avoir la version qu'exige l'URI, pas une plus petite."""
+    secret = pyotp.random_base32()
+    svg = unquote(mfa.qr_data_uri(analyst, secret).split(",", 1)[1])
+    cote, _ = segno.make(mfa.provisioning_uri(analyst, secret), error="m").symbol_size(
+        scale=5, border=2
+    )
+
+    assert svg.startswith("<svg")
+    assert f"width='{cote}'" in svg
+
+
+def test_the_qr_needs_no_csp_exception(settings):
+    """Une URI `data:` dans un <img> : deja couverte par la CSP en vigueur."""
+    assert "data:" in settings.CSP_DIRECTIVES["img-src"]
 
 
 # ------------------------------------------------------------- reinitialisation

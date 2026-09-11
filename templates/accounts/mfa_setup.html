@@ -24,11 +24,20 @@
 
     <ol class="mfa-steps">
       <li>
-        <strong>Ajoutez le compte à votre authentificateur.</strong>
-        Saisissez cette clé, ou ouvrez le lien depuis l'appareil qui porte
-        l'application.
-        <div class="mfa-secret"><code>{{ secret_lisible }}</code></div>
-        <p class="small mt-1"><a href="{{ uri }}">Ouvrir dans l'authentificateur</a></p>
+        <strong>Scannez ce code avec votre authentificateur.</strong>
+        <div class="mfa-qr">
+          <img src="{{ qr }}" width="225" height="225"
+               alt="Code QR d'enrôlement pour {{ user.email }}">
+        </div>
+        <details class="mfa-fallback">
+          <summary>Impossible de scanner ?</summary>
+          <p class="small">
+            Saisissez cette clé à la main dans l'application, ou ouvrez le lien
+            depuis l'appareil qui la porte.
+          </p>
+          <div class="mfa-secret"><code>{{ secret_lisible }}</code></div>
+          <p class="small mt-1"><a href="{{ uri }}">Ouvrir dans l'authentificateur</a></p>
+        </details>
       </li>
       <li>
         <strong>Confirmez avec le code affiché.</strong>

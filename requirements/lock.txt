@@ -81,6 +81,7 @@ rich==15.0.0
 rpds-py==2026.6.3
 ruff==0.16.6
 s3transfer==0.19.2
+segno==1.6.6
 six==1.17.0
 sortedcontainers==2.4.0
 sqlparse==0.6.0

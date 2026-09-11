@@ -397,3 +397,9 @@ table.table tbody tr:hover { background: var(--surface-alt); }
   border: 1px solid #bfe3d6; border-radius: var(--radius); text-align: center;
 }
 .mfa-secret code { font-size: 1.05rem; letter-spacing: .12em; word-break: break-all; }
+.mfa-qr { margin: .7rem 0; text-align: center; }
+.mfa-qr img {
+  background: #fff; padding: .5rem; border: 1px solid var(--border);
+  border-radius: var(--radius); max-width: 100%; height: auto;
+}
+.mfa-fallback summary { cursor: pointer; font-size: .85rem; color: var(--text-muted); }

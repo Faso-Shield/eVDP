@@ -17,6 +17,7 @@ la plateforme et dont l'interception est un scenario documente.
 import time
 
 import pyotp
+import segno
 from django.conf import settings
 
 from .roles import RESEARCHER_ROLES
@@ -64,6 +65,21 @@ def provisioning_uri(user, secret):
 def readable_secret(secret):
     """Secret en groupes de quatre, pour une saisie manuelle sans faute."""
     return " ".join(secret[i : i + 4] for i in range(0, len(secret), 4))
+
+
+def qr_data_uri(user, secret):
+    """Code QR de l'URI d'enrolement, en SVG au format `data:`.
+
+    Une URI `data:` dans un `<img>` plutot qu'un SVG injecte dans la page :
+    la valeur reste un attribut, echappe par le gabarit, et ne demande pas de
+    marquer du balisage comme sur. `img-src 'self' data:` est deja autorise
+    par la CSP, aucune dispense n'est ajoutee pour cette page.
+
+    Correction d'erreur au niveau M : la cible est un ecran, pas une etiquette
+    abimee, et un symbole plus dense se scanne moins bien.
+    """
+    code = segno.make(provisioning_uri(user, secret), error="m")
+    return code.svg_data_uri(scale=5, border=2)
 
 
 def matching_step(secret, code, now=None):

@@ -180,6 +180,7 @@ def mfa_setup(request):
             "form": form,
             "secret_lisible": mfa.readable_secret(secret),
             "uri": mfa.provisioning_uri(request.user, secret),
+            "qr": mfa.qr_data_uri(request.user, secret),
             "reenrolement": not request.user.mfa_pending_enrollment,
         },
     )

@@ -61,6 +61,14 @@ décorateur parce que `/admin/` a sa propre page de connexion : un décorateur
 posé sur la connexion eVDP y laisserait une porte ouverte. Une requête d'API
 authentifiée **par session** reçoit un 403 plutôt qu'une redirection HTML.
 
+**Enrôlement.** La page présente un code QR de l'URI `otpauth://`, rendu par
+`segno` (pure Python, sans dépendance) en SVG dans une URI `data:`. Une URI
+`data:` portée par un attribut `src` reste une valeur échappée par le
+gabarit, là où un SVG injecté dans la page demanderait de marquer du balisage
+comme sûr ; `img-src 'self' data:` étant déjà dans la CSP, cette page n'y
+ajoute aucune dispense. La clé reste affichée en clair sous le code, pour la
+saisie manuelle quand l'appareil ne peut pas scanner.
+
 **Clés d'API.** Elles ne passent pas par la session et ne sont donc pas
 soumises au second facteur — usage machine, non interactif. Ce n'est pas un
 contournement : aucun parcours ne permet à un utilisateur de s'en délivrer
