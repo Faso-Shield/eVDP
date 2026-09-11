@@ -9,7 +9,11 @@
     <p class="muted mb-0">{{ program.organization.name }} — {{ program.get_program_type_display }}</p>
   </div>
   <div class="btn-row">
-    <a class="btn btn-accent" href="{% url 'reports:submit' %}?program={{ program.slug }}">Signaler une vulnérabilité</a>
+    {% if refus_participation and not user.is_authenticated %}
+      <a class="btn btn-accent" href="{% url 'accounts:login' %}?next={{ lien_signalement|urlencode }}">Se connecter pour signaler</a>
+    {% else %}
+      <a class="btn btn-accent" href="{{ lien_signalement }}">Signaler une vulnérabilité</a>
+    {% endif %}
     {% if can_manage %}<a class="btn btn-outline" href="{% url 'programs:manage' program.slug %}">Gérer</a>{% endif %}
   </div>
 </div>
@@ -23,7 +27,7 @@
   {% if program.requires_verified_email %}
     <span class="pill pill-requirement" title="Un compte dont l'adresse email a été vérifiée est exigé pour participer">Compte vérifié requis</span>
   {% endif %}
-  {% if not program.allows_anonymous_reports %}
+  {% if not program.accepts_anonymous_reports %}
     <span class="pill pill-requirement">Signalement anonyme refusé</span>
   {% endif %}
 </div>
@@ -170,7 +174,7 @@
           <dd><a href="{% url 'organizations:detail' program.organization.slug %}">{{ program.organization.name }}</a></dd>
           {% if program.contact_email %}<dt>Email</dt><dd>{{ program.contact_email }}</dd>{% endif %}
           <dt>Signalements anonymes</dt>
-          <dd>{{ program.allows_anonymous_reports|yesno:"Acceptés,Non acceptés" }}</dd>
+          <dd>{{ program.accepts_anonymous_reports|yesno:"Acceptés,Non acceptés" }}</dd>
         </dl>
         {% if program.pgp_public_key %}
           <p class="small muted">Une clé PGP est publiée pour ce programme.</p>

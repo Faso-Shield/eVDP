@@ -105,6 +105,18 @@ autres types de programme, `requires_verified_email` reste une politique
 librement configurable, et le signalement anonyme demeure possible quand
 `allows_anonymous_reports` est actif.
 
+`Program.clean` ne garde toutefois que les enregistrements passés par un
+formulaire : une ligne écrite en masse ou par migration peut porter
+`allows_anonymous_reports=True` sur un Bug Bounty. La règle affichée et
+celle appliquée se lisent donc toutes deux sur
+`Program.accepts_anonymous_reports`, qui la dérive du type de programme,
+et jamais sur le réglage brut.
+
+Le refus est annoncé **à l'arrivée** — sur la fiche du programme comme sur le
+formulaire de signalement atteint avec `?program=`, dont le bouton d'appel
+renvoie alors vers la connexion. Un visiteur sans compte n'a ainsi pas à
+rédiger un rapport pour se le voir refuser à l'envoi.
+
 Ne pas confondre les deux réglages :
 
 | Réglage | Porte sur |

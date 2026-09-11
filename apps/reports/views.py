@@ -76,6 +76,12 @@ def submit(request):
             "program": program,
             "policy_excerpt": render_markdown(policy[:1200]),
             "delai_verification": grace_deadline(request.user),
+            # Meme annonce que sur la fiche du programme : un visiteur sans
+            # compte arrivant sur un Bug Bounty doit le savoir avant de
+            # rediger, pas au moment de l'envoi.
+            "refus_participation": (
+                program.reporter_rejection(request.user) if program is not None else None
+            ),
         },
     )
 

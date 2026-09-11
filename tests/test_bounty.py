@@ -1,5 +1,6 @@
 """Tests du module Bug Bounty : proposition, revue, approbation, paiement."""
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -16,7 +17,7 @@ from apps.bounty.services import (
     suggested_amount,
 )
 from apps.coordination.services import set_severity
-from apps.programs.models import ProgramScope, RewardTier
+from apps.programs.models import Program, ProgramScope, RewardTier
 from apps.vulnerabilities.constants import Severity
 
 pytestmark = pytest.mark.django_db
@@ -358,3 +359,48 @@ def test_bounty_refused_to_unverified_researcher(bounty_case, analyst):
 
     with pytest.raises(ValidationError, match="verifie son adresse email"):
         propose_bounty(bounty_case, analyst, amount=Decimal("100000"))
+
+
+def test_bug_bounty_never_advertises_anonymous_reports(bounty_program):
+    """Le reglage brut peut mentir : la regle affichee est celle qui s'applique.
+
+    `Program.clean` ne garde que les enregistrements passes par un
+    formulaire. Une ligne ecrite en masse pourrait donc porter
+    `allows_anonymous_reports=True` sur un Bug Bounty et annoncer sur sa
+    fiche un signalement anonyme que l'envoi refusera.
+    """
+    Program.objects.filter(pk=bounty_program.pk).update(allows_anonymous_reports=True)
+    bounty_program.refresh_from_db()
+
+    assert bounty_program.allows_anonymous_reports
+    assert not bounty_program.accepts_anonymous_reports
+    assert "chercheur identifie" in bounty_program.reporter_rejection()
+
+
+def test_program_dates_are_still_validated(bounty_program):
+    """L'invariant Bug Bounty ne doit pas avoir evince les autres controles."""
+    bounty_program.starts_on = date(2026, 6, 1)
+    bounty_program.ends_on = date(2026, 5, 1)
+    with pytest.raises(ValidationError, match="date de fin"):
+        bounty_program.full_clean()
+
+
+def test_submit_page_announces_the_refusal_to_a_visitor_without_account(
+    client, bounty_program
+):
+    """Le refus est annonce a l'arrivee, pas apres redaction du rapport."""
+    response = client.get(f"/report/?program={bounty_program.slug}")
+    page = response.content.decode()
+
+    assert "chercheur identifie" in page
+    assert "Vous pouvez signaler sans compte" not in page
+
+
+def test_program_page_sends_a_visitor_without_account_to_the_login(
+    client, bounty_program
+):
+    """Le bouton d'appel ne mene pas a un formulaire qui refusera l'envoi."""
+    page = client.get(f"/programs/{bounty_program.slug}/").content.decode()
+
+    assert "Se connecter pour signaler" in page
+    assert "%3Fprogram%3D" in page

@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
@@ -64,6 +65,9 @@ def program_detail(request, slug):
             # se le voir refuser a l'envoi.
             "refus_participation": program.reporter_rejection(request.user),
             "delai_verification": grace_deadline(request.user),
+            # Un visiteur refuse est envoye vers la connexion plutot que vers
+            # un formulaire qui ne peut aboutir ; il y revient ensuite.
+            "lien_signalement": f"{reverse('reports:submit')}?program={program.slug}",
         },
     )
 

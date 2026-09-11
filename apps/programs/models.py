@@ -138,6 +138,23 @@ class Program(BaseModel):
                 self.pgp_public_key = validate_public_key(self.pgp_public_key)
             except PGPError as exc:
                 raise ValidationError({"pgp_public_key": str(exc)}) from exc
+        # Un Bug Bounty ne se configure pas sans identification du chercheur.
+        if self.is_bug_bounty:
+            if self.allows_anonymous_reports:
+                raise ValidationError(
+                    {
+                        "allows_anonymous_reports": "Un Bug Bounty ne peut pas "
+                        "accepter de signalement anonyme : la recompense doit "
+                        "pouvoir etre versee a un chercheur identifie."
+                    }
+                )
+            if not self.requires_verified_email:
+                raise ValidationError(
+                    {
+                        "requires_verified_email": "Un Bug Bounty exige une "
+                        "adresse email verifiee."
+                    }
+                )
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -168,6 +185,19 @@ class Program(BaseModel):
     def is_public(self):
         return self.confidentiality == ConfidentialityLevel.PUBLIC and self.is_open
 
+    @property
+    def accepts_anonymous_reports(self):
+        """Le signalement sans compte est-il accepte ?
+
+        Derive plutot que lu directement : `allows_anonymous_reports` est un
+        reglage, et `Program.clean` ne le garde que sur les enregistrements
+        passes par un formulaire. Une ligne creee en masse ou par migration
+        peut laisser True sur un Bug Bounty. La regle ne doit pas dependre de
+        la facon dont la ligne a ete ecrite, et la fiche du programme doit
+        annoncer ce qui sera reellement applique a l'envoi.
+        """
+        return self.allows_anonymous_reports and not self.is_bug_bounty
+
     def reporter_rejection(self, reporter=None, is_anonymous=False):
         """Motif de refus du declarant, None s'il est admis a participer.
 
@@ -192,7 +222,7 @@ class Program(BaseModel):
                     "Un Bug Bounty ne peut recompenser qu'un chercheur identifie. "
                     "Connectez-vous avec un compte dont l'adresse email est verifiee."
                 )
-            if not self.allows_anonymous_reports:
+            if not self.accepts_anonymous_reports:
                 return (
                     "Ce programme n'accepte pas les signalements anonymes. "
                     "Connectez-vous pour y participer."
@@ -208,25 +238,6 @@ class Program(BaseModel):
                 "Verifiez votre adresse depuis votre profil pour y participer."
             )
         return None
-
-    def clean(self):
-        """Un Bug Bounty ne se configure pas sans identification du chercheur."""
-        if self.is_bug_bounty:
-            if self.allows_anonymous_reports:
-                raise ValidationError(
-                    {
-                        "allows_anonymous_reports": "Un Bug Bounty ne peut pas "
-                        "accepter de signalement anonyme : la recompense doit "
-                        "pouvoir etre versee a un chercheur identifie."
-                    }
-                )
-            if not self.requires_verified_email:
-                raise ValidationError(
-                    {
-                        "requires_verified_email": "Un Bug Bounty exige une "
-                        "adresse email verifiee."
-                    }
-                )
 
     def in_scope_targets(self):
         return self.scopes.filter(in_scope=True, is_active=True)
