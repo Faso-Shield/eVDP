@@ -20,7 +20,7 @@ import pyotp
 import segno
 from django.conf import settings
 
-from .roles import RESEARCHER_ROLES
+from .roles import BUSINESS_ROLES
 
 #: Longueur du code attendu, et pas de temps en secondes (valeurs RFC 6238
 #: par defaut, celles qu'appliquent les authentificateurs courants).
@@ -44,7 +44,7 @@ def is_required(user):
         return False
     if not user.is_active:
         return False
-    return user.role not in RESEARCHER_ROLES
+    return user.role in BUSINESS_ROLES
 
 
 def issuer():

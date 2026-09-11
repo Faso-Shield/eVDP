@@ -222,6 +222,42 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         return self.display_name or "Utilisateur eVDP"
 
 
+class BusinessAccount(User):
+    """Comptes metiers et administrateurs, vue d'administration dediee.
+
+    Deux populations qui n'ont ni le meme cycle de vie ni les memes
+    informations utiles : celle-ci est creee par un administrateur, porte un
+    role donnant acces aux dossiers d'autrui et un second facteur ; l'autre
+    s'inscrit seule et se juge a sa reputation. Les melanger dans une liste
+    unique obligeait a lire la colonne role pour savoir a qui on avait
+    affaire, et a filtrer avant toute action de masse.
+
+    Un proxy et non une table : c'est la meme entite `User`, vue sous deux
+    angles. Aucune donnee n'est dupliquee et l'authentification ignore la
+    distinction. Le partage des roles entre les deux vues se fait dans
+    l'administration, et non par un manager filtre par defaut, qui servirait
+    aussi de `_base_manager` et masquerait des lignes a l'ORM.
+    """
+
+    class Meta:
+        proxy = True
+        verbose_name = "Compte metier"
+        verbose_name_plural = "Comptes metiers et administrateurs"
+
+
+class ReporterAccount(User):
+    """Comptes signaleurs : chercheurs et utilisateurs publics.
+
+    Population d'inscription libre, jamais soumise au second facteur. Voir
+    `BusinessAccount` pour la raison de la separation.
+    """
+
+    class Meta:
+        proxy = True
+        verbose_name = "Compte signaleur"
+        verbose_name_plural = "Comptes signaleurs"
+
+
 class TokenPurpose(models.TextChoices):
     EMAIL_VERIFICATION = "EMAIL_VERIFICATION", "Verification d'email"
     PASSWORD_RESET = "PASSWORD_RESET", "Reinitialisation de mot de passe"
@@ -294,4 +330,14 @@ class ApiKey(TimeStampedModel):
         return self.is_active and (self.expires_at is None or self.expires_at > timezone.now())
 
 
-__all__ = ["User", "UserManager", "UserToken", "TokenPurpose", "ApiKey", "Capability", "Role"]
+__all__ = [
+    "User",
+    "UserManager",
+    "BusinessAccount",
+    "ReporterAccount",
+    "UserToken",
+    "TokenPurpose",
+    "ApiKey",
+    "Capability",
+    "Role",
+]

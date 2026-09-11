@@ -149,6 +149,16 @@ RESEARCHER_ROLES = frozenset(
 #: Roles pouvant etre choisis librement a l'inscription publique.
 SELF_SERVICE_ROLES = frozenset({Role.SECURITY_RESEARCHER, Role.BUG_BOUNTY_RESEARCHER})
 
+#: Roles metiers et administrateurs : le complement des roles signaleurs.
+#:
+#: Defini par difference et non par enumeration : un role ajoute a `Role`
+#: rejoint cette population par defaut, ce qui est le sens sur : il faut une
+#: decision explicite pour dispenser un role du second facteur et le ranger
+#: parmi les signaleurs. Frontiere unique, lue par la double authentification
+#: (`apps.accounts.mfa.is_required`) comme par les deux listes de comptes de
+#: l'administration.
+BUSINESS_ROLES = frozenset(set(Role.values) - set(RESEARCHER_ROLES))
+
 #: Roles en lecture seule : aucune ecriture metier tolerée.
 READ_ONLY_ROLES = frozenset({Role.AUDITOR})
 

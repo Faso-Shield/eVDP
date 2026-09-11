@@ -19,8 +19,28 @@ Guide d'exploitation quotidienne à destination des équipes ANSSI-BF / CSIRT.
 | `BUG_BOUNTY_RESEARCHER` | Chasseurs de bugs | Ses rapports |
 | `PUBLIC_USER` | Compte créé sans qualification | Ses rapports |
 
-Le rôle se modifie **uniquement** depuis `/admin/` → Utilisateurs. Tout
-changement est journalisé (`ROLE_CHANGED`).
+### Deux listes, pas une
+
+L'administration présente les comptes en **deux listes distinctes**, parce
+qu'il s'agit de deux populations sans cycle de vie commun :
+
+| Liste | Qui | Ce qu'elle montre |
+|-------|-----|-------------------|
+| **Comptes métiers et administrateurs** | Les sept rôles hors signaleur, créés par un administrateur | Organisation de rattachement, état du second facteur, dernière connexion |
+| **Comptes signaleurs** | Chercheurs et utilisateurs publics, inscrits librement | Identité publique, adresse vérifiée, réputation, rapports soumis |
+
+L'action « Réinitialiser la double authentification » et le filtre
+correspondant n'existent que sur la première : un compte signaleur n'y est
+jamais soumis. La frontière est `BUSINESS_ROLES` dans
+`apps/accounts/roles.py`, définie comme le complément des rôles signaleurs —
+un rôle ajouté rejoint donc la population protégée par défaut, et il faut une
+décision explicite pour l'en dispenser. C'est la même frontière que lit la
+double authentification.
+
+Le rôle se modifie **uniquement** depuis ces listes. Tout changement est
+journalisé (`ROLE_CHANGED`) ; s'il fait passer le compte d'une population à
+l'autre, un message le signale, faute de quoi le compte semblerait disparaître
+de la liste.
 
 > Attribuez `AUDITOR` pour toute mission d'inspection : le rôle voit tout et
 > ne peut rien écrire.
