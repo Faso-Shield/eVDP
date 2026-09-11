@@ -18,9 +18,16 @@ class UserAdmin(DjangoUserAdmin):
         "email_verified",
         "created_at",
     )
-    list_filter = ("role", "is_active", "is_staff", "email_verified")
+    list_filter = ("role", "is_active", "is_staff", "email_verified", "mfa_enabled")
+    actions = ("reinitialiser_mfa",)
     search_fields = ("email", "full_name", "display_name")
-    readonly_fields = ("last_login", "created_at", "updated_at", "last_login_ip")
+    readonly_fields = (
+        "last_login",
+        "created_at",
+        "updated_at",
+        "last_login_ip",
+        "mfa_confirmed_at",
+    )
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Identite", {"fields": ("full_name", "display_name", "phone")}),
@@ -43,6 +50,7 @@ class UserAdmin(DjangoUserAdmin):
                 "fields": (
                     "email_verified",
                     "mfa_enabled",
+                    "mfa_confirmed_at",
                     "pgp_public_key",
                     "pgp_fingerprint",
                     "last_login_ip",
@@ -60,6 +68,28 @@ class UserAdmin(DjangoUserAdmin):
             },
         ),
     )
+
+    @admin.action(description="Reinitialiser la double authentification")
+    def reinitialiser_mfa(self, request, queryset):
+        """Revoque l'enrolement TOTP : appareil perdu, ou depart d'un agent.
+
+        Le compte n'en est pas dispense pour autant : son role l'y soumet
+        toujours, et sa prochaine connexion repassera par l'enrolement.
+        """
+        concernes = [u for u in queryset if u.mfa_enabled or u.mfa_secret]
+        for utilisateur in concernes:
+            utilisateur.reset_mfa()
+            log_action(
+                AuditAction.MFA_RESET,
+                actor=request.user,
+                obj=utilisateur,
+                request=request,
+            )
+        self.message_user(
+            request,
+            f"{len(concernes)} compte(s) devront enregistrer un nouvel "
+            "authentificateur a la prochaine connexion.",
+        )
 
     def save_model(self, request, obj, form, change):
         role_changed = change and "role" in form.changed_data

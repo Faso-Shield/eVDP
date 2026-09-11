@@ -14,6 +14,7 @@ from django.contrib.auth.views import (
 from django.db import transaction
 from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.debug import sensitive_post_parameters
 
@@ -25,14 +26,22 @@ from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
 from apps.researchers.services import get_or_create_profile
 
+from . import mfa
 from .forms import (
     EmailAuthenticationForm,
     ProfileForm,
     RegistrationForm,
     ResearcherProfileForm,
     StrongPasswordChangeForm,
+    TotpCodeForm,
 )
+from .middleware import elevate, session_is_elevated
 from .models import TokenPurpose, UserToken
+
+#: Secret candidat d'un enrolement en cours. Il ne rejoint le compte qu'une
+#: fois un code valide fourni : un enrolement abandonne ne laisse rien
+#: derriere lui, et le compte garde son facteur precedent jusqu'au bout.
+SETUP_SESSION_KEY = "mfa_setup_candidate"
 
 
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")
@@ -98,6 +107,116 @@ def register(request):
     else:
         form = RegistrationForm()
     return render(request, "accounts/register.html", {"form": form})
+
+
+def _mfa_par_compte(request):
+    """Limite de debit par compte : c'est le code d'un compte qu'on devine."""
+    return str(getattr(request.user, "pk", "-"))
+
+
+@login_required
+@rate_limited("mfa", key_func=_mfa_par_compte)
+def mfa_setup(request):
+    """Enrolement d'un authentificateur TOTP.
+
+    Accessible sans session elevee au premier enrolement seulement : le
+    compte vient de prouver son mot de passe et n'a pas encore de facteur a
+    opposer. Une fois enrole, changer d'authentificateur exige d'abord de
+    valider celui en place, sinon le mot de passe seul suffirait a remplacer
+    le second facteur — et il n'y aurait plus de second facteur.
+    """
+    if not request.user.mfa_required:
+        messages.info(request, "Votre compte n'est pas soumis a la double authentification.")
+        return redirect("accounts:profile")
+    if not request.user.mfa_pending_enrollment and not session_is_elevated(request):
+        return redirect("accounts:mfa_challenge")
+
+    secret = request.session.get(SETUP_SESSION_KEY)
+    if not secret:
+        secret = mfa.new_secret()
+        request.session[SETUP_SESSION_KEY] = secret
+
+    form = TotpCodeForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        pas = mfa.matching_step(secret, form.cleaned_data["code"])
+        if pas is None:
+            log_action(
+                AuditAction.MFA_FAILED,
+                actor=request.user,
+                obj=request.user,
+                request=request,
+                phase="enrolement",
+            )
+            messages.error(request, "Code incorrect. Verifiez l'heure de votre appareil.")
+        else:
+            user = request.user
+            user.mfa_secret = secret
+            user.mfa_enabled = True
+            user.mfa_confirmed_at = timezone.now()
+            user.mfa_last_step = pas
+            user.save(
+                update_fields=[
+                    "mfa_secret",
+                    "mfa_enabled",
+                    "mfa_confirmed_at",
+                    "mfa_last_step",
+                    "updated_at",
+                ]
+            )
+            request.session.pop(SETUP_SESSION_KEY, None)
+            elevate(request)
+            log_action(AuditAction.MFA_ENROLLED, actor=user, obj=user, request=request)
+            messages.success(
+                request,
+                "Double authentification activee. Un code vous sera demande "
+                "a chaque connexion.",
+            )
+            return redirect("dashboard:home")
+
+    return render(
+        request,
+        "accounts/mfa_setup.html",
+        {
+            "form": form,
+            "secret_lisible": mfa.readable_secret(secret),
+            "uri": mfa.provisioning_uri(request.user, secret),
+            "reenrolement": not request.user.mfa_pending_enrollment,
+        },
+    )
+
+
+@login_required
+@rate_limited("mfa", key_func=_mfa_par_compte)
+def mfa_challenge(request):
+    """Validation du second facteur : eleve la session pour sa duree."""
+    if not request.user.mfa_required:
+        return redirect("accounts:profile")
+    if request.user.mfa_pending_enrollment:
+        return redirect("accounts:mfa_setup")
+    if session_is_elevated(request):
+        return redirect("dashboard:home")
+
+    form = TotpCodeForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        if mfa.consume_code(request.user, form.cleaned_data["code"]):
+            elevate(request)
+            log_action(
+                AuditAction.MFA_VERIFIED,
+                actor=request.user,
+                obj=request.user,
+                request=request,
+            )
+            return redirect(request.GET.get("next") or "dashboard:home")
+        log_action(
+            AuditAction.MFA_FAILED,
+            actor=request.user,
+            obj=request.user,
+            request=request,
+            phase="connexion",
+        )
+        messages.error(request, "Code incorrect ou deja utilise.")
+
+    return render(request, "accounts/mfa_challenge.html", {"form": form})
 
 
 def verify_email(request, token):

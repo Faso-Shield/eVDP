@@ -25,6 +25,29 @@ class EmailAuthenticationForm(AuthenticationForm):
     }
 
 
+class TotpCodeForm(forms.Form):
+    """Saisie du code a six chiffres de l'authentificateur."""
+
+    code = forms.CharField(
+        label="Code de votre authentificateur",
+        max_length=16,
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "one-time-code",
+                "inputmode": "numeric",
+                "autofocus": True,
+                "placeholder": "123456",
+            }
+        ),
+        help_text="Six chiffres, renouveles toutes les 30 secondes.",
+    )
+
+    def clean_code(self):
+        # Les authentificateurs affichent le code en deux groupes de trois :
+        # l'espace recopie ne doit pas faire echouer une saisie correcte.
+        return (self.cleaned_data["code"] or "").replace(" ", "").strip()
+
+
 class RegistrationForm(forms.ModelForm):
     """Inscription publique : uniquement des roles chercheur."""
 

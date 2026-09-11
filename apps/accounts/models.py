@@ -4,6 +4,7 @@ import uuid
 from datetime import timedelta
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -78,9 +79,18 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     pgp_public_key = models.TextField(blank=True)
     pgp_fingerprint = models.CharField(max_length=64, blank=True)
     mfa_enabled = models.BooleanField(
-        default=False, help_text="Architecture prete ; activation par etape ulterieure."
+        default=False,
+        help_text="Enrolement TOTP effectue. L'exigence, elle, decoule du "
+        "role : voir apps.accounts.mfa.is_required.",
     )
     mfa_secret = models.CharField(max_length=64, blank=True, editable=False)
+    mfa_confirmed_at = models.DateTimeField(null=True, blank=True, editable=False)
+    mfa_last_step = models.BigIntegerField(
+        null=True,
+        blank=True,
+        editable=False,
+        help_text="Dernier pas de temps TOTP consomme, pour refuser le rejeu.",
+    )
     last_login_ip = models.CharField(max_length=45, blank=True)
     accepted_policy_at = models.DateTimeField(null=True, blank=True)
 
@@ -98,11 +108,65 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     def __str__(self):
         return self.display_name or self.full_name or self.email
 
+    def clean(self):
+        if self.mfa_enabled and self.is_researcher:
+            raise ValidationError(
+                {
+                    "mfa_enabled": "Un compte signaleur n'est pas soumis a la "
+                    "double authentification."
+                }
+            )
+
     def save(self, *args, **kwargs):
         self.email = self.email.lower().strip()
         if not self.display_name:
             self.display_name = (self.full_name or self.email.split("@")[0])[:80]
+        # Une retrogradation vers un role de signaleur ne doit pas laisser un
+        # secret orphelin en base : il ne servirait plus jamais, la regle
+        # etant portee par le role. On le purge au lieu de le conserver.
+        if self.is_researcher and (self.mfa_enabled or self.mfa_secret):
+            self.mfa_enabled = False
+            self.mfa_secret = ""
+            self.mfa_confirmed_at = None
+            self.mfa_last_step = None
+            champs = kwargs.get("update_fields")
+            if champs is not None:
+                kwargs["update_fields"] = list(champs) + [
+                    "mfa_enabled",
+                    "mfa_secret",
+                    "mfa_confirmed_at",
+                    "mfa_last_step",
+                ]
         return super().save(*args, **kwargs)
+
+    # -- Double authentification --------------------------------------------
+    @property
+    def mfa_required(self):
+        """Le second facteur s'applique-t-il ? Decoule du role, jamais du client."""
+        from .mfa import is_required
+
+        return is_required(self)
+
+    @property
+    def mfa_pending_enrollment(self):
+        """Compte soumis au second facteur mais pas encore enrole."""
+        return self.mfa_required and not (self.mfa_enabled and self.mfa_secret)
+
+    def reset_mfa(self):
+        """Revoque l'enrolement : le compte devra en refaire un a la connexion."""
+        self.mfa_enabled = False
+        self.mfa_secret = ""
+        self.mfa_confirmed_at = None
+        self.mfa_last_step = None
+        self.save(
+            update_fields=[
+                "mfa_enabled",
+                "mfa_secret",
+                "mfa_confirmed_at",
+                "mfa_last_step",
+                "updated_at",
+            ]
+        )
 
     # -- RBAC ---------------------------------------------------------------
     @property

@@ -342,7 +342,7 @@ Case validé
 | Bordure (Nginx) | TLS, HSTS, rate limiting, `server_tokens off`, `/media/` interdit, `/metrics/` restreint aux réseaux privés |
 | Transport | Cookies `Secure`+`HttpOnly`+`SameSite`, `SECURE_PROXY_SSL_HEADER` |
 | Application | CSP, Permissions-Policy, `X-Frame-Options: DENY`, CSRF, `no-store` sur les pages sensibles |
-| Authentification | Argon2, validateurs (12 caractères min.), rate limiting, vérification d'email, architecture MFA prête |
+| Authentification | Argon2, validateurs (12 caractères min.), rate limiting, vérification d'email, TOTP obligatoire hors comptes signaleurs |
 | Autorisation | RBAC par capacités, isolation queryset, 404 au lieu de 403 |
 | Données | Markdown assaini (bleach), ORM paramétré, pas de mass assignment (champs explicites) |
 | Fichiers | Extension + MIME + signature binaire, taille bornée, nom opaque, SHA-256, antivirus optionnel |
@@ -370,7 +370,6 @@ Les journaux sont émis en **JSON structuré** (`apps/core/logging.py`) sur
 
 | Sujet | État | Point d'accroche |
 |-------|------|------------------|
-| MFA (TOTP) | Architecture prête | `User.mfa_enabled` / `mfa_secret`, `pyotp` installé |
 | SSO / OIDC / Keycloak / LDAP | Non implémenté | `AUTHENTICATION_BACKENDS` |
 | HSM pour PGP | Interface prête | `core/pgp.py::verify_signature` |
 | CVSS v4.0 | Détecté et rejeté proprement | `vulnerabilities/cvss.py` |

@@ -84,6 +84,10 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.core.middleware.RequestContextMiddleware",
+    # Apres AuthenticationMiddleware : la session n'est elevee qu'une fois le
+    # second facteur valide. Place ici, la regle couvre toute la plateforme,
+    # y compris /admin/ qui a sa propre page de connexion.
+    "apps.accounts.middleware.MfaEnforcementMiddleware",
     "apps.core.middleware.SecurityHeadersMiddleware",
 ]
 
@@ -441,6 +445,10 @@ EVDP = {
         "register": env("EVDP_RL_REGISTER", default="5/1h"),
         "report": env("EVDP_RL_REPORT", default="10/1h"),
         "password_reset": env("EVDP_RL_PASSWORD_RESET", default="5/1h"),
+        # Second facteur : limite par compte, pas par IP. Un code a six
+        # chiffres se devine en 10^6 essais ; la limite les rend hors de
+        # portee sans bloquer le titulaire legitime qui se trompe.
+        "mfa": env("EVDP_RL_MFA", default="10/5m"),
     },
 }
 
