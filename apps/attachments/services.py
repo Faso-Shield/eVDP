@@ -15,10 +15,10 @@ from .models import Attachment, ScanStatus
 
 #: Signatures binaires refusees quel que soit le nom du fichier.
 DANGEROUS_MAGIC = (
-    b"MZ",                  # executable Windows (PE)
-    b"\x7fELF",             # executable Linux (ELF)
-    b"\xca\xfe\xba\xbe",    # Java / Mach-O fat
-    b"#!/",                 # script shell
+    b"MZ",  # executable Windows (PE)
+    b"\x7fELF",  # executable Linux (ELF)
+    b"\xca\xfe\xba\xbe",  # Java / Mach-O fat
+    b"#!/",  # script shell
 )
 
 #: Signatures attendues pour les formats binaires autorises.
@@ -36,6 +36,7 @@ ALLOWED_MAGIC = {
         b"\xa1\xb2\x3c\x4d",
     ),
 }
+
 
 def _extension(filename):
     return filename.rsplit(".", 1)[1].lower() if "." in filename else ""

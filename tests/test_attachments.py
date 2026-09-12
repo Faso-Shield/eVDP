@@ -47,6 +47,7 @@ def test_executable_content_is_rejected_despite_safe_extension():
     with pytest.raises(ValidationError, match="executable"):
         validate_upload(upload("innocent.txt", b"MZ\x90\x00\x03binaire"))
 
+
 def test_jpeg_signature_mismatch_is_rejected():
     with pytest.raises(ValidationError, match="signature"):
         validate_upload(upload("photo.jpg", b"%PDF-faux-jpeg"))
@@ -63,10 +64,9 @@ def test_valid_pdf_signature_is_accepted():
 
 
 def test_valid_png_signature_is_accepted():
-    metadata = validate_upload(
-        upload("image.png", b"\x89PNG\r\n\x1a\ncontenu")
-    )
+    metadata = validate_upload(upload("image.png", b"\x89PNG\r\n\x1a\ncontenu"))
     assert metadata["extension"] == "png"
+
 
 def test_elf_content_is_rejected():
     with pytest.raises(ValidationError, match="executable"):
