@@ -13,7 +13,7 @@
   <meta name="theme-color" content="#0b2a4a">
   {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 <header class="navbar">
   <div class="container navbar-inner">
     <a class="brand" href="{% url 'core:home' %}">
