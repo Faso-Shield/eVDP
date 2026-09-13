@@ -279,6 +279,21 @@ puis rapproché via la référence.
 Le chercheur suit également ses messages, ses programmes et les advisories qui
 le créditent.
 
+### Ce que le bénéficiaire ne voit pas
+
+La fiche d'une récompense se lit différemment selon le compte. Celui qui
+l'instruit — capacité `PROPOSE_BOUNTY` ou `APPROVE_BOUNTY` — voit la
+proposition, les avis de revue et la décision signée. Le chercheur qui la
+reçoit voit ce qui le concerne : dossier, sévérité retenue, montant proposé,
+montant approuvé, état d'avancement et versements enregistrés.
+
+Lui restent invisibles le nom de qui a proposé, de qui a donné un avis et de
+qui a signé, la justification interne, la note de décision et l'agent ayant
+saisi le versement. Les avis ne sont pas seulement masqués par le gabarit :
+ils ne sont pas chargés pour ce compte. Aucune commande — proposer, donner un
+avis, approuver, enregistrer un versement — ne lui est offerte, et le serveur
+refuse ces actions même en cas de requête forgée.
+
 ---
 
 ## 9. Bonnes pratiques

@@ -3,17 +3,26 @@
 {% block title %}Récompenses{% endblock %}
 {% block dashboard_content %}
 <h1>Récompenses Bug Bounty</h1>
+{% if peut_instruire %}
 <p class="muted small">Aucun flux financier n'est déclenché par la plateforme :
 seule la trace comptable du versement est enregistrée.</p>
+{% else %}
+<p class="muted small">Les récompenses attachées à vos signalements. Leur montant est
+arrêté par la coordination nationale ; le versement est réalisé hors plateforme,
+puis enregistré ici.</p>
+{% endif %}
 
 <div class="card"><div class="card-body table-wrap">
   <table class="table">
-    <thead><tr><th>Dossier</th><th>Chercheur</th><th>Sévérité</th><th>Proposé</th><th>Approuvé</th><th>Statut</th><th></th></tr></thead>
+    <thead><tr>
+      <th>Dossier</th>{% if peut_instruire %}<th>Chercheur</th>{% endif %}
+      <th>Sévérité</th><th>Proposé</th><th>Approuvé</th><th>Statut</th><th></th>
+    </tr></thead>
     <tbody>
     {% for bounty in page_obj %}
       <tr>
         <td class="mono nowrap"><a href="{{ bounty.case.get_absolute_url }}">{{ bounty.case.case_id }}</a></td>
-        <td class="small">{{ bounty.researcher.display_name|default:"—" }}</td>
+        {% if peut_instruire %}<td class="small">{{ bounty.researcher.display_name|default:"—" }}</td>{% endif %}
         <td><span class="badge {{ bounty.severity|severity_class }}">{{ bounty.get_severity_display }}</span></td>
         <td class="mono small">{{ bounty.proposed_amount|floatformat:0 }} {{ bounty.currency }}</td>
         <td class="mono small">{% if bounty.approved_amount %}{{ bounty.approved_amount|floatformat:0 }} {{ bounty.currency }}{% else %}—{% endif %}</td>
@@ -21,7 +30,7 @@ seule la trace comptable du versement est enregistrée.</p>
         <td><a class="btn btn-sm btn-outline" href="{% url 'bounty:detail' bounty.id %}">Ouvrir</a></td>
       </tr>
     {% empty %}
-      <tr><td colspan="7" class="muted">Aucune récompense dans votre périmètre.</td></tr>
+      <tr><td colspan="{% if peut_instruire %}7{% else %}6{% endif %}" class="muted">Aucune récompense dans votre périmètre.</td></tr>
     {% endfor %}
     </tbody>
   </table>

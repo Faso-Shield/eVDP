@@ -394,11 +394,81 @@ def test_submit_page_announces_the_refusal_to_a_visitor_without_account(
     assert "Vous pouvez signaler sans compte" not in page
 
 
-def test_program_page_sends_a_visitor_without_account_to_the_login(
-    client, bounty_program
-):
+def test_program_page_sends_a_visitor_without_account_to_the_login(client, bounty_program):
     """Le bouton d'appel ne mene pas a un formulaire qui refusera l'envoi."""
     page = client.get(f"/programs/{bounty_program.slug}/").content.decode()
 
     assert "Se connecter pour signaler" in page
     assert "%3Fprogram%3D" in page
+
+
+# ------------------------------------------------------- vue du beneficiaire
+def test_researcher_sees_his_reward_without_the_deciders(
+    client_for, bounty_case, analyst, coordinator, bounty_researcher
+):
+    """Le beneficiaire voit ce qui le concerne, jamais qui a tranche.
+
+    La deliberation - proposition, avis, signature - appartient a
+    l'instruction. Le chercheur en recoit le resultat, pas le detail.
+    """
+    bounty = propose_bounty(
+        bounty_case, analyst, amount=Decimal("200000"), justification="Impact confirme"
+    )
+    review_bounty(bounty, coordinator, ReviewDecision.APPROVE, comment="Avis favorable")
+
+    page = client_for(bounty_researcher).get(f"/bounties/{bounty.pk}/").content.decode()
+
+    assert "200 000" in page or "200000" in page
+    assert bounty_case.case_id in page
+    assert analyst.display_name not in page
+    assert coordinator.display_name not in page
+    assert "Proposé par" not in page
+    assert "Décidé par" not in page
+    assert "Revues" not in page
+    assert "Avis favorable" not in page
+    assert "Impact confirme" not in page
+
+
+def test_researcher_gets_no_lever_on_his_reward(
+    client_for, bounty_case, analyst, bounty_researcher
+):
+    """Aucune commande n'est offerte au beneficiaire, ni servie s'il insiste."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    client = client_for(bounty_researcher)
+
+    page = client.get(f"/bounties/{bounty.pk}/").content.decode()
+    assert "Approuver" not in page
+    assert "Enregistrer l'avis" not in page
+    assert "Enregistrer un versement" not in page
+
+    for chemin in (
+        f"/bounties/{bounty.pk}/review/",
+        f"/bounties/{bounty.pk}/approve/",
+        f"/bounties/{bounty.pk}/payment/",
+        f"/bounties/case/{bounty_case.case_id}/propose/",
+    ):
+        assert client.post(chemin, {}).status_code == 403, chemin
+
+
+def test_analyst_still_sees_the_deciders(client_for, bounty_case, analyst, coordinator):
+    """La restriction vise le beneficiaire, pas ceux qui instruisent."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    review_bounty(bounty, coordinator, ReviewDecision.APPROVE, comment="Avis favorable")
+
+    page = client_for(analyst).get(f"/bounties/{bounty.pk}/").content.decode()
+
+    assert "Proposé par" in page
+    assert "Revues" in page
+    assert "Avis favorable" in page
+
+
+def test_reward_list_hides_other_researchers_column(
+    client_for, bounty_case, analyst, bounty_researcher
+):
+    propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+
+    page_chercheur = client_for(bounty_researcher).get("/bounties/").content.decode()
+    page_analyste = client_for(analyst).get("/bounties/").content.decode()
+
+    assert "<th>Chercheur</th>" not in page_chercheur
+    assert "<th>Chercheur</th>" in page_analyste
