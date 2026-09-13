@@ -19,15 +19,15 @@ METRIC_ORDER = ["AV", "AC", "PR", "UI", "S", "C", "I", "A"]
 METRIC_LABELS = {
     "AV": (
         "Vecteur d'attaque",
-        {"N": "Reseau", "A": "Adjacent", "L": "Local", "P": "Physique"},
+        {"N": "Réseau", "A": "Adjacent", "L": "Local", "P": "Physique"},
     ),
-    "AC": ("Complexite d'attaque", {"L": "Faible", "H": "Elevee"}),
-    "PR": ("Privileges requis", {"N": "Aucun", "L": "Faibles", "H": "Eleves"}),
+    "AC": ("Complexité d'attaque", {"L": "Faible", "H": "Élevée"}),
+    "PR": ("Privilèges requis", {"N": "Aucun", "L": "Faibles", "H": "Élevés"}),
     "UI": ("Interaction utilisateur", {"N": "Aucune", "R": "Requise"}),
-    "S": ("Portee", {"U": "Inchangee", "C": "Modifiee"}),
-    "C": ("Confidentialite", {"H": "Elevee", "L": "Faible", "N": "Aucune"}),
-    "I": ("Integrite", {"H": "Elevee", "L": "Faible", "N": "Aucune"}),
-    "A": ("Disponibilite", {"H": "Elevee", "L": "Faible", "N": "Aucune"}),
+    "S": ("Portée", {"U": "Inchangée", "C": "Modifiée"}),
+    "C": ("Confidentialité", {"H": "Élevée", "L": "Faible", "N": "Aucune"}),
+    "I": ("Intégrité", {"H": "Élevée", "L": "Faible", "N": "Aucune"}),
+    "A": ("Disponibilité", {"H": "Élevée", "L": "Faible", "N": "Aucune"}),
 }
 
 WEIGHTS = {

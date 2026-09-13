@@ -7,7 +7,7 @@ import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
 
 from apps.audit.models import AuditAction, AuditLog
-from apps.bounty.models import BountyStatus, PaymentStatus
+from apps.bounty.models import BountyStatus, PaymentStatus, ReviewDecision
 from apps.bounty.services import (
     approve_bounty,
     propose_bounty,
@@ -128,7 +128,7 @@ def test_review_moves_bounty_under_review(bounty_case, analyst, coordinator):
 # ---------------------------------------------------------------- paiement
 def test_payment_requires_approval(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    with pytest.raises(ValidationError, match="approuvee"):
+    with pytest.raises(ValidationError, match="approuvée"):
         record_payment(bounty, coordinator)
 
 
@@ -250,7 +250,7 @@ def test_tier_rejects_out_of_scope_asset(bounty_program):
         min_amount=Decimal("0"),
         max_amount=Decimal("1000"),
     )
-    with pytest.raises(ValidationError, match="hors perimetre"):
+    with pytest.raises(ValidationError, match="hors périmètre"):
         tier.full_clean()
 
 
@@ -266,16 +266,14 @@ def test_unverified_researcher_cannot_join_bounty_program(
     bounty_researcher.email_verified = False
     bounty_researcher.save(update_fields=["email_verified"])
 
-    with pytest.raises(ValidationError, match="adresse email verifiee"):
+    with pytest.raises(ValidationError, match="adresse email vérifiée"):
         submit_report(
             build_report(bounty_researcher, organization, bounty_program),
             reporter=bounty_researcher,
         )
 
 
-def test_anonymous_report_refused_when_verification_required(
-    bounty_program, organization
-):
+def test_anonymous_report_refused_when_verification_required(bounty_program, organization):
     """Sans compte, aucune adresse n'est verifiee : le programme refuse."""
     from apps.reports.services import submit_report
 
@@ -284,7 +282,7 @@ def test_anonymous_report_refused_when_verification_required(
     report = build_report(None, organization, bounty_program)
     report.reporter = None
     report.is_anonymous = True
-    with pytest.raises(ValidationError, match="chercheur identifie"):
+    with pytest.raises(ValidationError, match="chercheur identifié"):
         submit_report(report)
 
 
@@ -348,7 +346,7 @@ def test_bug_bounty_cannot_be_configured_without_identification(bounty_program):
 
     bounty_program.allows_anonymous_reports = False
     bounty_program.requires_verified_email = False
-    with pytest.raises(ValidationError, match="adresse email verifiee"):
+    with pytest.raises(ValidationError, match="adresse email vérifiée"):
         bounty_program.full_clean()
 
 
@@ -357,7 +355,7 @@ def test_bounty_refused_to_unverified_researcher(bounty_case, analyst):
     bounty_case.reporter.email_verified = False
     bounty_case.reporter.save(update_fields=["email_verified"])
 
-    with pytest.raises(ValidationError, match="verifie son adresse email"):
+    with pytest.raises(ValidationError, match="vérifié son adresse email"):
         propose_bounty(bounty_case, analyst, amount=Decimal("100000"))
 
 
@@ -374,7 +372,7 @@ def test_bug_bounty_never_advertises_anonymous_reports(bounty_program):
 
     assert bounty_program.allows_anonymous_reports
     assert not bounty_program.accepts_anonymous_reports
-    assert "chercheur identifie" in bounty_program.reporter_rejection()
+    assert "chercheur identifié" in bounty_program.reporter_rejection()
 
 
 def test_program_dates_are_still_validated(bounty_program):
@@ -392,7 +390,7 @@ def test_submit_page_announces_the_refusal_to_a_visitor_without_account(
     response = client.get(f"/report/?program={bounty_program.slug}")
     page = response.content.decode()
 
-    assert "chercheur identifie" in page
+    assert "chercheur identifié" in page
     assert "Vous pouvez signaler sans compte" not in page
 
 

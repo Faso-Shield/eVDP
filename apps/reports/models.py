@@ -32,7 +32,7 @@ class VulnerabilityReport(BaseModel):
     # --- Identification -----------------------------------------------------
     title = models.CharField(max_length=200)
     product = models.CharField(
-        max_length=200, blank=True, help_text="Produit, service ou application affecte."
+        max_length=200, blank=True, help_text="Produit, service ou application affecté."
     )
     affected_organization = models.ForeignKey(
         "organizations.Organization",
@@ -44,7 +44,7 @@ class VulnerabilityReport(BaseModel):
     affected_organization_name = models.CharField(
         max_length=200,
         blank=True,
-        help_text="Nom saisi librement si l'organisation n'est pas encore referencee.",
+        help_text="Nom saisi librement si l'organisation n'est pas encore référencée.",
     )
     program = models.ForeignKey(
         "programs.Program",
@@ -72,15 +72,15 @@ class VulnerabilityReport(BaseModel):
         max_length=16,
         choices=Severity.choices,
         default=Severity.MEDIUM,
-        help_text="Severite estimee par le declarant (revue lors du triage).",
+        help_text="Sévérité estimée par le déclarant (revue lors du triage).",
     )
 
     # --- Contenu (Markdown) -------------------------------------------------
-    description = models.TextField(help_text="Markdown autorise.")
-    steps_to_reproduce = models.TextField(blank=True, help_text="Markdown autorise.")
-    impact = models.TextField(blank=True, help_text="Markdown autorise.")
-    proof_of_concept = models.TextField(blank=True, help_text="Markdown autorise.")
-    recommendations = models.TextField(blank=True, help_text="Markdown autorise.")
+    description = models.TextField(help_text="Markdown autorisé.")
+    steps_to_reproduce = models.TextField(blank=True, help_text="Markdown autorisé.")
+    impact = models.TextField(blank=True, help_text="Markdown autorisé.")
+    proof_of_concept = models.TextField(blank=True, help_text="Markdown autorisé.")
+    recommendations = models.TextField(blank=True, help_text="Markdown autorisé.")
     affected_version = models.CharField(max_length=120, blank=True)
     fixed_version = models.CharField(max_length=120, blank=True)
     environment = models.CharField(max_length=180, blank=True)
@@ -95,12 +95,12 @@ class VulnerabilityReport(BaseModel):
         related_name="submitted_reports",
     )
     reporter_email = models.EmailField(
-        blank=True, help_text="Utilise pour les signalements anonymes."
+        blank=True, help_text="Utilisé pour les signalements anonymes."
     )
     reporter_name = models.CharField(max_length=150, blank=True)
     is_anonymous = models.BooleanField(default=False)
     wants_credit = models.BooleanField(
-        default=True, help_text="Souhaite etre credite dans l'advisory public."
+        default=True, help_text="Souhaite être crédité dans l'advisory public."
     )
     requests_cve = models.BooleanField(default=False)
     accepted_policy = models.BooleanField(default=False)
@@ -109,8 +109,8 @@ class VulnerabilityReport(BaseModel):
     is_pgp_encrypted = models.BooleanField(default=False)
     pgp_payload = models.TextField(
         blank=True,
-        help_text="Bloc PGP chiffre. eVDP ne detient aucune cle privee : "
-        "le dechiffrement est effectue hors ligne par l'equipe destinataire.",
+        help_text="Bloc PGP chiffré. eVDP ne détient aucune clé privée : "
+        "le déchiffrement est effectué hors ligne par l'équipe destinataire.",
     )
     pgp_signature_verified = models.BooleanField(default=False)
 
@@ -125,7 +125,7 @@ class VulnerabilityReport(BaseModel):
     submitter_ip_hash = models.CharField(
         max_length=64,
         blank=True,
-        help_text="Empreinte de l'IP (anti-abus) - l'IP brute n'est pas conservee.",
+        help_text="Empreinte de l'IP (anti-abus) - l'IP brute n'est pas conservée.",
     )
 
     class Meta:
@@ -144,12 +144,12 @@ class VulnerabilityReport(BaseModel):
     def clean(self):
         if not self.reporter and not self.reporter_email and not self.is_anonymous:
             raise ValidationError(
-                "Un rapport doit etre rattache a un compte, a une adresse de "
-                "contact, ou etre explicitement anonyme."
+                "Un rapport doit être rattaché à un compte, à une adresse de "
+                "contact, ou être explicitement anonyme."
             )
         if self.pgp_payload and not is_encrypted_blob(self.pgp_payload):
             raise ValidationError(
-                {"pgp_payload": "Le bloc fourni n'est pas un message PGP chiffre."}
+                {"pgp_payload": "Le bloc fourni n'est pas un message PGP chiffré."}
             )
 
     def save(self, *args, **kwargs):

@@ -331,7 +331,7 @@ def _apply_reputation(case, status, actor):
 @transaction.atomic
 def assign_case(case, assignee, actor, note="", request=None):
     if not actor.has_capability(Capability.ASSIGN_CASE):
-        raise PermissionDenied("Vous n'etes pas autorise a assigner un case.")
+        raise PermissionDenied("Vous n'êtes pas autorisé à assigner un case.")
     case.assignments.filter(is_active=True).update(is_active=False)
     case.assignee = assignee
     case.save(update_fields=["assignee", "updated_at"])
@@ -370,15 +370,15 @@ def post_message(
     """Publie un message dans le fil securise du case."""
     if not is_system:
         if not case.is_visible_to(author):
-            raise PermissionDenied("Vous n'avez pas acces a ce dossier.")
+            raise PermissionDenied("Vous n'avez pas accès à ce dossier.")
         if confidentiality != Confidentiality.PARTICIPANTS and not author.has_capability(
             Capability.POST_INTERNAL_MESSAGE
         ):
-            raise PermissionDenied("Vous n'etes pas autorise a publier un message interne.")
+            raise PermissionDenied("Vous n'êtes pas autorisé à publier un message interne.")
         if getattr(author, "is_read_only", False):
-            raise PermissionDenied("Role en lecture seule.")
+            raise PermissionDenied("Rôle en lecture seule.")
     if not (body or "").strip():
-        raise ValidationError("Le message ne peut pas etre vide.")
+        raise ValidationError("Le message ne peut pas être vide.")
 
     message = CaseMessage.objects.create(
         case=case,
@@ -423,11 +423,11 @@ def mark_duplicate(case, original, actor, comment="", request=None):
     le case original (identifiant, organisation, contenu).
     """
     if not actor.has_capability(Capability.TRIAGE_CASE):
-        raise PermissionDenied("Capacite de triage requise.")
+        raise PermissionDenied("Capacité de triage requise.")
     if original.pk == case.pk:
-        raise ValidationError("Un case ne peut pas etre le doublon de lui-meme.")
+        raise ValidationError("Un case ne peut pas être le doublon de lui-même.")
     if original.duplicate_of_id == case.pk:
-        raise ValidationError("Reference circulaire de doublon.")
+        raise ValidationError("Référence circulaire de doublon.")
 
     case.duplicate_of = original
     case.save(update_fields=["duplicate_of", "updated_at"])
@@ -449,7 +449,7 @@ def mark_duplicate(case, original, actor, comment="", request=None):
 def set_severity(case, actor, severity=None, cvss_vector="", request=None):
     """Definit la severite retenue, eventuellement calculee depuis un CVSS."""
     if not actor.has_capability(Capability.SET_SEVERITY):
-        raise PermissionDenied("Capacite requise pour definir la severite.")
+        raise PermissionDenied("Capacité requise pour définir la sévérité.")
     from apps.vulnerabilities.cvss import CVSSError, evaluate
 
     updates = ["severity", "updated_at"]
@@ -485,7 +485,7 @@ def set_severity(case, actor, severity=None, cvss_vector="", request=None):
 @transaction.atomic
 def schedule_disclosure(case, actor, disclosure_date, request=None):
     if not actor.has_capability(Capability.CHANGE_CASE_STATUS):
-        raise PermissionDenied("Capacite requise.")
+        raise PermissionDenied("Capacité requise.")
     case.disclosure_date = disclosure_date
     case.save(update_fields=["disclosure_date", "updated_at"])
     schedule_sla(case, SLAKind.DISCLOSURE, _start_of_day(disclosure_date))

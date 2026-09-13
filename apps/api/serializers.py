@@ -209,7 +209,7 @@ class ReportSubmissionSerializer(serializers.ModelSerializer):
     def validate_description(self, value):
         if len(value.strip()) < 30:
             raise serializers.ValidationError(
-                "La description doit comporter au moins 30 caracteres."
+                "La description doit comporter au moins 30 caractères."
             )
         return value
 
@@ -227,7 +227,7 @@ class ReportSubmissionSerializer(serializers.ModelSerializer):
             ]
         ):
             raise serializers.ValidationError(
-                "Precisez l'organisation affectee ou un programme."
+                "Précisez l'organisation affectée ou un programme."
             )
         return attrs
 

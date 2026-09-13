@@ -99,7 +99,7 @@ def register(request):
             )
             messages.success(
                 request,
-                "Compte cree. Un email de verification vous a ete envoye : "
+                "Compte créé. Un email de vérification vous à été envoyé : "
                 "confirmez votre adresse pour soumettre des rapports.",
             )
             login(request, user, backend="django.contrib.auth.backends.ModelBackend")
@@ -126,7 +126,7 @@ def mfa_setup(request):
     le second facteur — et il n'y aurait plus de second facteur.
     """
     if not request.user.mfa_required:
-        messages.info(request, "Votre compte n'est pas soumis a la double authentification.")
+        messages.info(request, "Votre compte n'est pas soumis à la double authentification.")
         return redirect("accounts:profile")
     if not request.user.mfa_pending_enrollment and not session_is_elevated(request):
         return redirect("accounts:mfa_challenge")
@@ -147,7 +147,7 @@ def mfa_setup(request):
                 request=request,
                 phase="enrolement",
             )
-            messages.error(request, "Code incorrect. Verifiez l'heure de votre appareil.")
+            messages.error(request, "Code incorrect. Vérifiez l'heure de votre appareil.")
         else:
             user = request.user
             user.mfa_secret = secret
@@ -168,8 +168,8 @@ def mfa_setup(request):
             log_action(AuditAction.MFA_ENROLLED, actor=user, obj=user, request=request)
             messages.success(
                 request,
-                "Double authentification activee. Un code vous sera demande "
-                "a chaque connexion.",
+                "Double authentification activée. Un code vous sera demandé "
+                "à chaque connexion.",
             )
             return redirect("dashboard:home")
 
@@ -215,7 +215,7 @@ def mfa_challenge(request):
             request=request,
             phase="connexion",
         )
-        messages.error(request, "Code incorrect ou deja utilise.")
+        messages.error(request, "Code incorrect ou déjà utilisé.")
 
     return render(request, "accounts/mfa_challenge.html", {"form": form})
 
@@ -228,31 +228,31 @@ def verify_email(request, token):
         .first()
     )
     if entry is None or not entry.is_valid:
-        messages.error(request, "Lien de verification invalide ou expire.")
+        messages.error(request, "Lien de vérification invalide ou expiré.")
         return redirect("core:home")
     user = entry.user
     user.email_verified = True
     user.save(update_fields=["email_verified", "updated_at"])
     entry.consume()
     log_action(AuditAction.EMAIL_VERIFIED, actor=user, obj=user, request=request)
-    messages.success(request, "Adresse email verifiee. Merci.")
+    messages.success(request, "Adresse email vérifiée. Merci.")
     return redirect("dashboard:home")
 
 
 @login_required
 def resend_verification(request):
     if request.user.email_verified:
-        messages.info(request, "Votre adresse est deja verifiee.")
+        messages.info(request, "Votre adresse est déjà vérifiée.")
         return redirect("accounts:profile")
     token = UserToken.issue(request.user, TokenPurpose.EMAIL_VERIFICATION)
     notify(
         request.user,
         NotificationKind.ACCOUNT,
-        title="Verification de votre adresse email",
+        title="Vérification de votre adresse email",
         body="Un nouveau lien de verification est disponible.",
         url=f"/verify-email/{token.token}/",
     )
-    messages.success(request, "Un nouveau lien de verification vous a ete envoye.")
+    messages.success(request, "Un nouveau lien de vérification vous à été envoyé.")
     return redirect("accounts:profile")
 
 
@@ -283,7 +283,7 @@ def profile(request):
                 obj=request.user,
                 request=request,
             )
-            messages.success(request, "Profil mis a jour.")
+            messages.success(request, "Profil mis à jour.")
             return redirect("accounts:profile")
     else:
         user_form = ProfileForm(instance=request.user)
@@ -315,7 +315,7 @@ def change_password(request):
                 obj=request.user,
                 request=request,
             )
-            messages.success(request, "Mot de passe modifie. Reconnectez-vous si necessaire.")
+            messages.success(request, "Mot de passe modifié. Reconnectez-vous si nécessaire.")
             return redirect("accounts:profile")
     else:
         form = StrongPasswordChangeForm(request.user)

@@ -5,7 +5,7 @@ from django.db import models
 
 class Severity(models.TextChoices):
     CRITICAL = "CRITICAL", "Critique"
-    HIGH = "HIGH", "Elevee"
+    HIGH = "HIGH", "Élevée"
     MEDIUM = "MEDIUM", "Moyenne"
     LOW = "LOW", "Faible"
     INFO = "INFO", "Informative"
@@ -34,22 +34,22 @@ class Severity(models.TextChoices):
 
 class VulnerabilityType(models.TextChoices):
     AUTHENTICATION = "AUTHENTICATION", "Authentification"
-    AUTHORIZATION = "AUTHORIZATION", "Autorisation / controle d'acces"
+    AUTHORIZATION = "AUTHORIZATION", "Autorisation / contrôle d'accès"
     XSS = "XSS", "Cross-Site Scripting (XSS)"
     SQLI = "SQLI", "Injection SQL"
     SSRF = "SSRF", "Server-Side Request Forgery (SSRF)"
-    RCE = "RCE", "Execution de code a distance (RCE)"
+    RCE = "RCE", "Exécution de code à distance (RCE)"
     LFI_RFI = "LFI_RFI", "Inclusion de fichier (LFI/RFI)"
-    IDOR = "IDOR", "Reference directe non securisee (IDOR)"
+    IDOR = "IDOR", "Référence directe non sécurisée (IDOR)"
     CSRF = "CSRF", "Cross-Site Request Forgery (CSRF)"
     INFO_DISCLOSURE = "INFO_DISCLOSURE", "Divulgation d'information"
     MISCONFIGURATION = "MISCONFIGURATION", "Mauvaise configuration"
-    CRYPTO = "CRYPTO", "Probleme cryptographique"
-    BUSINESS_LOGIC = "BUSINESS_LOGIC", "Logique metier"
-    API_SECURITY = "API_SECURITY", "Securite des API"
+    CRYPTO = "CRYPTO", "Problème cryptographique"
+    BUSINESS_LOGIC = "BUSINESS_LOGIC", "Logique métier"
+    API_SECURITY = "API_SECURITY", "Sécurité des API"
     MOBILE = "MOBILE", "Application mobile"
     CLOUD = "CLOUD", "Cloud"
-    NETWORK = "NETWORK", "Reseau / infrastructure"
+    NETWORK = "NETWORK", "Réseau / infrastructure"
     OTHER = "OTHER", "Autre"
 
 

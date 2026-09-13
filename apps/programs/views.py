@@ -122,7 +122,7 @@ def program_create(request):
                 request=request,
                 program_type=program.program_type,
             )
-            messages.success(request, "Programme cree.")
+            messages.success(request, "Programme créé.")
             return redirect("programs:manage", slug=program.slug)
     else:
         form = ProgramForm(user=request.user)
@@ -155,7 +155,7 @@ def program_manage(request, slug):
                 obj=program,
                 request=request,
             )
-            messages.success(request, "Programme mis a jour.")
+            messages.success(request, "Programme mis à jour.")
             return redirect("programs:manage", slug=program.slug)
     else:
         form = ProgramForm(instance=program, user=request.user)
@@ -195,7 +195,7 @@ def scope_add(request, slug):
             request=request,
             scope_added=scope.identifier,
         )
-        messages.success(request, "Perimetre ajoute.")
+        messages.success(request, "Périmètre ajouté.")
     else:
         messages.error(request, form.errors.as_text())
     return redirect("programs:manage", slug=program.slug)
@@ -217,5 +217,5 @@ def scope_delete(request, slug, scope_id):
             request=request,
             scope_removed=str(scope_id),
         )
-        messages.success(request, "Perimetre retire.")
+        messages.success(request, "Périmètre retiré.")
     return redirect("programs:manage", slug=program.slug)

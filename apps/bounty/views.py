@@ -94,7 +94,7 @@ def propose(request, case_id):
             except (PermissionDenied, ValidationError) as exc:
                 messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
             else:
-                messages.success(request, "Recompense proposee.")
+                messages.success(request, "Récompense proposée.")
                 return redirect("bounty:detail", bounty_id=bounty.pk)
     else:
         form = BountyProposalForm(initial={"amount": default_amount})
@@ -122,7 +122,7 @@ def review(request, bounty_id):
                 suggested=form.cleaned_data.get("suggested_amount"),
                 request=request,
             )
-            messages.success(request, "Avis enregistre.")
+            messages.success(request, "Avis enregistré.")
         except PermissionDenied as exc:
             messages.error(request, str(exc))
     else:
@@ -145,7 +145,7 @@ def approve(request, bounty_id):
                 note=form.cleaned_data.get("note", ""),
                 request=request,
             )
-            messages.success(request, "Recompense approuvee.")
+            messages.success(request, "Récompense approuvée.")
         except (PermissionDenied, ValidationError) as exc:
             messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
@@ -164,7 +164,7 @@ def reject(request, bounty_id):
     )
     try:
         reject_bounty(bounty, request.user, note=note, request=request)
-        messages.success(request, "Recompense rejetee.")
+        messages.success(request, "Récompense rejetée.")
     except (PermissionDenied, ValidationError) as exc:
         messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     return redirect("bounty:detail", bounty_id=bounty.pk)
@@ -188,7 +188,7 @@ def payment(request, bounty_id):
             )
             messages.success(
                 request,
-                "Versement enregistre. Aucun flux financier reel n'est declenche "
+                "Versement enregistre. Aucun flux financier réel n'est déclenché "
                 "par la plateforme.",
             )
         except (PermissionDenied, ValidationError) as exc:

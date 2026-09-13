@@ -42,7 +42,7 @@ class SLAPolicy(TimeStampedModel):
     remediation_days_low = models.PositiveIntegerField(default=90)
     disclosure_delay_days = models.PositiveIntegerField(default=90)
     warning_ratio = models.PositiveSmallIntegerField(
-        default=80, help_text="Pourcentage du delai a partir duquel une alerte est levee."
+        default=80, help_text="Pourcentage du délai à partir duquel une alerte est levée."
     )
 
     class Meta:
@@ -127,8 +127,8 @@ class Case(BaseModel):
         blank=True,
         related_name="cases",
         help_text=(
-            "Actif du perimetre concerne, retenu au triage. Determine la "
-            "grille de recompense lorsqu'elle varie par actif."
+            "Actif du périmètre concerné, retenu au triage. Détermine la "
+            "grille de récompense lorsqu'elle varie par actif."
         ),
     )
     title = models.CharField(max_length=200)
@@ -378,7 +378,7 @@ class CaseMessage(BaseModel):
         on_delete=models.SET_NULL,
         related_name="case_messages",
     )
-    body = models.TextField(help_text="Markdown autorise.")
+    body = models.TextField(help_text="Markdown autorisé.")
     confidentiality = models.CharField(
         max_length=16,
         choices=Confidentiality.choices,
@@ -390,7 +390,7 @@ class CaseMessage(BaseModel):
         max_length=64,
         blank=True,
         editable=False,
-        help_text="SHA-256 du contenu : preuve d'integrite du fil de discussion.",
+        help_text="SHA-256 du contenu : preuve d'intégrité du fil de discussion.",
     )
     is_pgp_encrypted = models.BooleanField(default=False)
 
@@ -446,7 +446,7 @@ class CaseTimelineEvent(BaseModel):
     )
     is_public = models.BooleanField(
         default=False,
-        help_text="Seuls les evenements publics peuvent alimenter un advisory.",
+        help_text="Seuls les événements publics peuvent alimenter un advisory.",
     )
     metadata = models.JSONField(default=dict, blank=True)
 
@@ -509,4 +509,4 @@ class SLAEvent(BaseModel):
 
 def validate_no_self_duplicate(case):
     if case.duplicate_of_id and case.duplicate_of_id == case.id:
-        raise ValidationError("Un case ne peut pas etre le doublon de lui-meme.")
+        raise ValidationError("Un case ne peut pas être le doublon de lui-même.")

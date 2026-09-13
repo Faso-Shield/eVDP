@@ -171,5 +171,5 @@ def test_the_lists_carry_the_expected_french_headers():
     assert "Nom complet" in metiers
     assert "Compte actif" in metiers
     assert "Second facteur" in metiers
-    assert "Adresse verifiee" in signaleurs
+    assert "Adresse vérifiée" in signaleurs
     assert "Inscrit le" in signaleurs, "created_at est renomme par la liste"

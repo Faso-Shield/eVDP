@@ -48,7 +48,7 @@ def submit(request):
                 if request.user.is_authenticated:
                     messages.success(
                         request,
-                        f"Signalement enregistre sous la reference {case.case_id}. "
+                        f"Signalement enregistre sous la référence {case.case_id}. "
                         "Suivez son traitement dans votre espace.",
                     )
                     return redirect("coordination:case_detail", case_id=case.case_id)
@@ -101,7 +101,7 @@ def _attach_files(request, case, report):
         except ValidationError as exc:
             messages.warning(
                 request,
-                f"Piece jointe « {uploaded.name} » refusee : {'; '.join(exc.messages)}",
+                f"Pièce jointe « {uploaded.name} » refusée : {'; '.join(exc.messages)}",
             )
 
 

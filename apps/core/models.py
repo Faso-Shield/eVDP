@@ -36,7 +36,7 @@ class SiteSetting(TimeStampedModel):
 
     key = models.SlugField(max_length=120, unique=True)
     label = models.CharField(max_length=200)
-    value = models.TextField(blank=True, help_text="Contenu Markdown autorise.")
+    value = models.TextField(blank=True, help_text="Contenu Markdown autorisé.")
     is_published = models.BooleanField(default=True)
 
     class Meta:

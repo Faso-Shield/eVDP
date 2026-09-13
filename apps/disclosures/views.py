@@ -99,7 +99,7 @@ def advisory_create(request, case_id=None):
                 advisory.case = case
                 advisory.organization = case.organization
             advisory.save()
-            messages.success(request, f"Advisory {advisory.advisory_id} cree.")
+            messages.success(request, f"Advisory {advisory.advisory_id} créé.")
             return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
     elif case is not None:
         try:
@@ -109,8 +109,8 @@ def advisory_create(request, case_id=None):
             return redirect("coordination:case_detail", case_id=case.case_id)
         messages.success(
             request,
-            f"Brouillon {advisory.advisory_id} genere a partir du dossier "
-            f"{case.case_id}. Completez le resume public avant publication.",
+            f"Brouillon {advisory.advisory_id} généré à partir du dossier "
+            f"{case.case_id}. Complétez le résumé public avant publication.",
         )
         return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
     else:

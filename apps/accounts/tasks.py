@@ -54,10 +54,10 @@ def remind_unverified_accounts():
         notify(
             user,
             NotificationKind.ACCOUNT,
-            title="Verifiez votre adresse email pour continuer a participer",
+            title="Vérifiez votre adresse email pour continuer à participer",
             body=(
-                f"Il vous reste {restant} {jour} pour verifier votre adresse. "
-                "Passe ce delai, vous ne pourrez plus signaler sur les "
+                f"Il vous reste {restant} {jour} pour vérifier votre adresse. "
+                "Passe ce délai, vous ne pourrez plus signaler sur les "
                 "programmes Bug Bounty."
             ),
             url=f"/verify-email/{token.token}/",

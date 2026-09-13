@@ -105,7 +105,7 @@ def test_refused_once_the_grace_has_expired(
     _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
     monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=31))
 
-    with pytest.raises(ValidationError, match="adresse email verifiee"):
+    with pytest.raises(ValidationError, match="adresse email vérifiée"):
         submit_report(
             build_report(bounty_researcher, organization, bounty_program),
             reporter=bounty_researcher,

@@ -7,7 +7,7 @@ from .models import PaymentMethod, ReviewDecision
 
 class BountyProposalForm(forms.Form):
     amount = forms.DecimalField(
-        label="Montant propose", max_digits=12, decimal_places=2, min_value=0
+        label="Montant proposé", max_digits=12, decimal_places=2, min_value=0
     )
     justification = forms.CharField(
         label="Justification",
@@ -18,21 +18,21 @@ class BountyProposalForm(forms.Form):
 
 class BountyDecisionForm(forms.Form):
     amount = forms.DecimalField(
-        label="Montant approuve",
+        label="Montant approuvé",
         max_digits=12,
         decimal_places=2,
         min_value=0,
         required=False,
     )
     note = forms.CharField(
-        label="Note de decision", widget=forms.Textarea(attrs={"rows": 3}), required=False
+        label="Note de décision", widget=forms.Textarea(attrs={"rows": 3}), required=False
     )
 
 
 class BountyReviewForm(forms.Form):
     decision = forms.ChoiceField(label="Avis", choices=ReviewDecision.choices)
     suggested_amount = forms.DecimalField(
-        label="Montant suggere",
+        label="Montant suggéré",
         max_digits=12,
         decimal_places=2,
         required=False,
@@ -45,11 +45,11 @@ class BountyReviewForm(forms.Form):
 
 class PaymentForm(forms.Form):
     amount = forms.DecimalField(
-        label="Montant verse",
+        label="Montant versé",
         max_digits=12,
         decimal_places=2,
         min_value=0,
         required=False,
     )
     method = forms.ChoiceField(label="Moyen", choices=PaymentMethod.choices)
-    reference = forms.CharField(label="Reference comptable", max_length=120, required=False)
+    reference = forms.CharField(label="Référence comptable", max_length=120, required=False)
