@@ -111,9 +111,13 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
     """Approuve une recompense. Seul un valideur habilite peut le faire."""
     if not approver.has_capability(Capability.APPROVE_BOUNTY):
         raise PermissionDenied("Capacite requise pour approuver une recompense.")
+    if bounty.proposed_by_id and approver.pk == bounty.proposed_by_id:
+        raise PermissionDenied(
+            "Le proposant d'une recompense ne peut pas l'approuver lui-meme."
+        )
     if not bounty.can_transition_to(BountyStatus.APPROVED):
         raise ValidationError(
-            f"Transition interdite depuis l'etat {bounty.get_status_display()}."
+            "Transition interdite depuis l'etat {bounty.get_status_display()}."
         )
     amount = Decimal(amount) if amount is not None else bounty.proposed_amount
     if amount < 0:
@@ -171,6 +175,10 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
 def reject_bounty(bounty, approver, note="", request=None):
     if not approver.has_capability(Capability.APPROVE_BOUNTY):
         raise PermissionDenied("Capacite requise pour statuer sur une recompense.")
+    if bounty.proposed_by_id and approver.pk == bounty.proposed_by_id:
+        raise PermissionDenied(
+            "Le proposant d'une recompense ne peut pas la rejeter lui-meme."
+        )
     if not bounty.can_transition_to(BountyStatus.REJECTED):
         raise ValidationError("Transition interdite.")
     bounty.status = BountyStatus.REJECTED

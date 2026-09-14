@@ -86,6 +86,11 @@ def test_coordinator_approves_bounty(bounty_case, analyst, coordinator):
     assert bounty.decided_at is not None
     assert AuditLog.objects.filter(action=AuditAction.BOUNTY_APPROVED).exists()
 
+#ici
+def test_proposer_cannot_approve_own_bounty(bounty_case, coordinator):
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    with pytest.raises(PermissionDenied):
+        approve_bounty(bounty, coordinator)
 
 def test_rejection_blocks_further_transitions(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
