@@ -80,7 +80,7 @@ class MfaEnforcementMiddleware:
         if user.mfa_pending_enrollment:
             messages.info(
                 request,
-                "Votre role exige la double authentification. "
+                "Votre rôle exige la double authentification. "
                 "Enregistrez un authentificateur pour continuer.",
             )
             return redirect("accounts:mfa_setup")

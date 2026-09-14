@@ -75,7 +75,7 @@ def organization_create(request):
                 obj=organization,
                 request=request,
             )
-            messages.success(request, "Organisation creee.")
+            messages.success(request, "Organisation créée.")
             return redirect("organizations:manage", slug=organization.slug)
     else:
         form = OrganizationForm()
@@ -101,7 +101,7 @@ def organization_manage(request, slug):
                 obj=organization,
                 request=request,
             )
-            messages.success(request, "Organisation mise a jour.")
+            messages.success(request, "Organisation mise à jour.")
             return redirect("organizations:manage", slug=organization.slug)
     else:
         form = OrganizationForm(instance=organization)

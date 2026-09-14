@@ -61,9 +61,7 @@ def is_within_grace(user, today=None):
 
 def reminder_days():
     """Nombre de jours restants declenchant une relance."""
-    return sorted(
-        {int(j) for j in settings.EVDP["VERIFICATION_REMINDER_DAYS"]}, reverse=True
-    )
+    return sorted({int(j) for j in settings.EVDP["VERIFICATION_REMINDER_DAYS"]}, reverse=True)
 
 
 def accounts_losing_access(days_left=1, today=None):

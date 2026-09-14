@@ -18,28 +18,28 @@ from apps.accounts.roles import Capability
 class CaseStatus(models.TextChoices):
     DRAFT = "DRAFT", "Brouillon"
     SUBMITTED = "SUBMITTED", "Soumis"
-    RECEIVED = "RECEIVED", "Recu"
+    RECEIVED = "RECEIVED", "Reçu"
     TRIAGE = "TRIAGE", "En triage"
-    NEEDS_INFORMATION = "NEEDS_INFORMATION", "Informations demandees"
-    ACKNOWLEDGED = "ACKNOWLEDGED", "Accuse de reception"
-    VALIDATED = "VALIDATED", "Valide"
-    SEVERITY_ASSIGNED = "SEVERITY_ASSIGNED", "Severite attribuee"
-    BOUNTY_REVIEW = "BOUNTY_REVIEW", "Revue de recompense"
-    REWARD_APPROVED = "REWARD_APPROVED", "Recompense approuvee"
+    NEEDS_INFORMATION = "NEEDS_INFORMATION", "Informations demandées"
+    ACKNOWLEDGED = "ACKNOWLEDGED", "Accusé de réception"
+    VALIDATED = "VALIDATED", "Validé"
+    SEVERITY_ASSIGNED = "SEVERITY_ASSIGNED", "Sévérité attribuée"
+    BOUNTY_REVIEW = "BOUNTY_REVIEW", "Revue de récompense"
+    REWARD_APPROVED = "REWARD_APPROVED", "Récompense approuvée"
     DUPLICATE = "DUPLICATE", "Doublon"
-    REJECTED = "REJECTED", "Rejete"
-    OUT_OF_SCOPE = "OUT_OF_SCOPE", "Hors perimetre"
+    REJECTED = "REJECTED", "Rejeté"
+    OUT_OF_SCOPE = "OUT_OF_SCOPE", "Hors périmètre"
     NOT_APPLICABLE = "NOT_APPLICABLE", "Non applicable"
     INFORMATIVE = "INFORMATIVE", "Informatif"
     IN_PROGRESS = "IN_PROGRESS", "En cours de traitement"
-    VENDOR_CONTACTED = "VENDOR_CONTACTED", "Organisation contactee"
-    VENDOR_ACKNOWLEDGED = "VENDOR_ACKNOWLEDGED", "Organisation a accuse reception"
-    REMEDIATION = "REMEDIATION", "Remediation en cours"
+    VENDOR_CONTACTED = "VENDOR_CONTACTED", "Organisation contactée"
+    VENDOR_ACKNOWLEDGED = "VENDOR_ACKNOWLEDGED", "Organisation a accusé réception"
+    REMEDIATION = "REMEDIATION", "Remédiation en cours"
     FIX_AVAILABLE = "FIX_AVAILABLE", "Correctif disponible"
-    VERIFICATION = "VERIFICATION", "Verification du correctif"
-    FIX_VERIFIED = "FIX_VERIFIED", "Correctif verifie"
-    DISCLOSURE_SCHEDULED = "DISCLOSURE_SCHEDULED", "Divulgation planifiee"
-    PUBLISHED = "PUBLISHED", "Publie"
+    VERIFICATION = "VERIFICATION", "Vérification du correctif"
+    FIX_VERIFIED = "FIX_VERIFIED", "Correctif vérifié"
+    DISCLOSURE_SCHEDULED = "DISCLOSURE_SCHEDULED", "Divulgation planifiée"
+    PUBLISHED = "PUBLISHED", "Publié"
     CLOSED = "CLOSED", "Clos"
 
     @classmethod
@@ -191,7 +191,7 @@ KANBAN_COLUMNS = [
     ("TRIAGE", "Triage", [CaseStatus.TRIAGE, CaseStatus.NEEDS_INFORMATION]),
     (
         "VALIDATED",
-        "Valide",
+        "Validé",
         [
             CaseStatus.VALIDATED,
             CaseStatus.SEVERITY_ASSIGNED,
@@ -201,7 +201,7 @@ KANBAN_COLUMNS = [
     ),
     (
         "REMEDIATION",
-        "Remediation",
+        "Remédiation",
         [
             CaseStatus.IN_PROGRESS,
             CaseStatus.VENDOR_CONTACTED,
@@ -210,7 +210,7 @@ KANBAN_COLUMNS = [
             CaseStatus.FIX_AVAILABLE,
         ],
     ),
-    ("VERIFICATION", "Verification", [CaseStatus.VERIFICATION, CaseStatus.FIX_VERIFIED]),
+    ("VERIFICATION", "Vérification", [CaseStatus.VERIFICATION, CaseStatus.FIX_VERIFIED]),
     ("DISCLOSURE", "Divulgation", [CaseStatus.DISCLOSURE_SCHEDULED, CaseStatus.PUBLISHED]),
     (
         "CLOSED",
@@ -255,7 +255,7 @@ def required_capability(target_status):
 def check_transition(current_status, target_status, workflow, user=None):
     """Valide une transition. Leve TransitionNotAllowed si elle est interdite."""
     if current_status == target_status:
-        raise TransitionNotAllowed("Le case est deja dans cet etat.")
+        raise TransitionNotAllowed("Le case est déjà dans cet état.")
     if not can_transition(current_status, target_status, workflow):
         raise TransitionNotAllowed(
             f"Transition interdite : {current_status} -> {target_status} "
@@ -264,10 +264,10 @@ def check_transition(current_status, target_status, workflow, user=None):
     if user is not None:
         needed = required_capability(target_status)
         if not user.has_capability(needed):
-            raise TransitionNotAllowed(f"Capacite requise pour cette transition : {needed}.")
+            raise TransitionNotAllowed(f"Capacité requise pour cette transition : {needed}.")
         if not user.has_capability(Capability.CHANGE_CASE_STATUS):
             raise TransitionNotAllowed(
-                "Vous n'etes pas autorise a changer le statut d'un case."
+                "Vous n'êtes pas autorisé à changer le statut d'un case."
             )
     return True
 

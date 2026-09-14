@@ -105,7 +105,7 @@ class BusinessAccountAdmin(BaseAccountAdmin):
     readonly_fields = BaseAccountAdmin.readonly_fields + ("mfa_confirmed_at",)
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Identite", {"fields": ("full_name", "display_name", "phone")}),
+        ("Identité", {"fields": ("full_name", "display_name", "phone")}),
         (
             "RBAC",
             {
@@ -120,7 +120,7 @@ class BusinessAccountAdmin(BaseAccountAdmin):
             },
         ),
         (
-            "Securite",
+            "Sécurité",
             {
                 "fields": (
                     "email_verified",
@@ -154,7 +154,7 @@ class BusinessAccountAdmin(BaseAccountAdmin):
         """Enrolement TOTP effectif : la colonne qui n'a pas de sens ailleurs."""
         return obj.mfa_enabled
 
-    @admin.action(description="Reinitialiser la double authentification")
+    @admin.action(description="Réinitialiser la double authentification")
     def reinitialiser_mfa(self, request, queryset):
         """Revoque l'enrolement TOTP : appareil perdu, ou depart d'un agent.
 
@@ -195,10 +195,10 @@ class ReporterAccountAdmin(BaseAccountAdmin):
     list_filter = ("role", "is_active", "email_verified")
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Identite", {"fields": ("full_name", "display_name", "phone")}),
-        ("Role", {"fields": ("role", "is_active")}),
+        ("Identité", {"fields": ("full_name", "display_name", "phone")}),
+        ("Rôle", {"fields": ("role", "is_active")}),
         (
-            "Securite",
+            "Sécurité",
             {
                 "fields": (
                     "email_verified",
@@ -206,7 +206,7 @@ class ReporterAccountAdmin(BaseAccountAdmin):
                     "pgp_fingerprint",
                     "last_login_ip",
                 ),
-                "description": "Un compte signaleur n'est jamais soumis a la "
+                "description": "Un compte signaleur n'est jamais soumis à la "
                 "double authentification.",
             },
         ),
@@ -225,12 +225,12 @@ class ReporterAccountAdmin(BaseAccountAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("researcher_profile")
 
-    @admin.display(description="Identite publique")
+    @admin.display(description="Identité publique")
     def identite_publique(self, obj):
         """Ce que le public voit : nom, pseudonyme, ou anonymat revendique."""
         return obj.public_identity()
 
-    @admin.display(description="Reputation", ordering="researcher_profile__reputation")
+    @admin.display(description="Réputation", ordering="researcher_profile__reputation")
     def reputation(self, obj):
         profil = getattr(obj, "researcher_profile", None)
         return profil.reputation if profil else "—"

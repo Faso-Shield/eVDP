@@ -107,7 +107,7 @@ class ReportViewSet(
 
     def perform_update(self, serializer):
         if not self.request.user.has_capability(Capability.SET_SEVERITY):
-            raise PermissionDenied("Capacite requise pour modifier ce dossier.")
+            raise PermissionDenied("Capacité requise pour modifier ce dossier.")
         case = serializer.save()
         log_action(
             AuditAction.CASE_UPDATED,

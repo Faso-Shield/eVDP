@@ -50,8 +50,14 @@ def verrouillage() -> Image.Image:
     """Master avec alpha normalise et recadre au contenu."""
     im = Image.open(MASTER).convert("RGBA")
     alpha = im.getchannel("A").point(
-        lambda v: 0 if v <= SEUIL_BAS else (
-            255 if v >= SEUIL_HAUT else round((v - SEUIL_BAS) * 255 / (SEUIL_HAUT - SEUIL_BAS))
+        lambda v: (
+            0
+            if v <= SEUIL_BAS
+            else (
+                255
+                if v >= SEUIL_HAUT
+                else round((v - SEUIL_BAS) * 255 / (SEUIL_HAUT - SEUIL_BAS))
+            )
         )
     )
     im.putalpha(alpha)
@@ -68,8 +74,13 @@ def embleme(lock: Image.Image) -> Image.Image:
     return em.crop(em.getchannel("A").getbbox())
 
 
-def plaque(lock: Image.Image, hauteur_logo: int, pad: float = 0.10,
-           extra_droite: float = 0.0, fond=TUILE_FOND) -> Image.Image:
+def plaque(
+    lock: Image.Image,
+    hauteur_logo: int,
+    pad: float = 0.10,
+    extra_droite: float = 0.0,
+    fond=TUILE_FOND,
+) -> Image.Image:
     """Verrouillage complet sur une plaque claire, pour la barre de navigation.
 
     Le mot et la baseline sont en bleu nuit : poses nus sur le bleu
@@ -89,22 +100,28 @@ def plaque(lock: Image.Image, hauteur_logo: int, pad: float = 0.10,
     canevas = Image.new("RGBA", (largeur, hauteur), (0, 0, 0, 0))
     masque = Image.new("L", (largeur * 4, hauteur * 4), 0)
     ImageDraw.Draw(masque).rounded_rectangle(
-        [0, 0, largeur * 4 - 1, hauteur * 4 - 1], radius=int(hauteur * 4 * 0.16), fill=255)
-    canevas.paste(Image.new("RGBA", (largeur, hauteur), fond), (0, 0),
-                  masque.resize((largeur, hauteur), Image.LANCZOS))
+        [0, 0, largeur * 4 - 1, hauteur * 4 - 1], radius=int(hauteur * 4 * 0.16), fill=255
+    )
+    canevas.paste(
+        Image.new("RGBA", (largeur, hauteur), fond),
+        (0, 0),
+        masque.resize((largeur, hauteur), Image.LANCZOS),
+    )
     canevas.alpha_composite(redim, (mx, my))
     return canevas
 
 
-def tuile(source: Image.Image, taille: int, rayon: float = 0.22,
-          marge: float = 0.09, fond=TUILE_FOND) -> Image.Image:
+def tuile(
+    source: Image.Image, taille: int, rayon: float = 0.22, marge: float = 0.09, fond=TUILE_FOND
+) -> Image.Image:
     """Embleme centre sur une tuile claire. rayon=0 donne un carre plein."""
     canevas = Image.new("RGBA", (taille, taille), (0, 0, 0, 0))
     if rayon:
         # Masque trace en 4x puis reduit : coins arrondis proprement lisses.
         masque = Image.new("L", (taille * 4, taille * 4), 0)
         ImageDraw.Draw(masque).rounded_rectangle(
-            [0, 0, taille * 4 - 1, taille * 4 - 1], radius=int(taille * 4 * rayon), fill=255)
+            [0, 0, taille * 4 - 1, taille * 4 - 1], radius=int(taille * 4 * rayon), fill=255
+        )
         masque = masque.resize((taille, taille), Image.LANCZOS)
     else:
         masque = Image.new("L", (taille, taille), 255)
@@ -112,8 +129,9 @@ def tuile(source: Image.Image, taille: int, rayon: float = 0.22,
 
     utile = round(taille * (1 - 2 * marge))
     k = min(utile / source.width, utile / source.height)
-    redim = source.resize((max(1, round(source.width * k)), max(1, round(source.height * k))),
-                          Image.LANCZOS)
+    redim = source.resize(
+        (max(1, round(source.width * k)), max(1, round(source.height * k))), Image.LANCZOS
+    )
     canevas.alpha_composite(redim, ((taille - redim.width) // 2, (taille - redim.height) // 2))
     return canevas
 

@@ -185,7 +185,7 @@ def post_case_message(request, case_id):
                 confidentiality=form.cleaned_data["confidentiality"],
                 request=request,
             )
-            messages.success(request, "Message publie.")
+            messages.success(request, "Message publié.")
         except (PermissionDenied, ValidationError) as exc:
             messages.error(request, str(exc))
     else:
@@ -208,7 +208,7 @@ def change_status(request, case_id):
                 comment=form.cleaned_data.get("comment", ""),
                 request=request,
             )
-            messages.success(request, f"Statut mis a jour : {case.get_status_display()}.")
+            messages.success(request, f"Statut mis à jour : {case.get_status_display()}.")
         except TransitionNotAllowed as exc:
             messages.error(request, str(exc))
     else:
@@ -260,7 +260,7 @@ def triage(request, case_id):
                 request=request,
                 fields=updates,
             )
-        messages.success(request, "Qualification enregistree.")
+        messages.success(request, "Qualification enregistrée.")
     else:
         messages.error(request, "Qualification invalide : " + form.errors.as_text())
     return redirect("coordination:case_detail", case_id=case.case_id)
@@ -280,7 +280,7 @@ def assign(request, case_id):
             note=form.cleaned_data.get("note", ""),
             request=request,
         )
-        messages.success(request, "Assignation mise a jour.")
+        messages.success(request, "Assignation mise à jour.")
     else:
         messages.error(request, "Assignation invalide.")
     return redirect("coordination:case_detail", case_id=case.case_id)
@@ -301,7 +301,7 @@ def mark_as_duplicate(request, case_id):
                 comment=form.cleaned_data.get("comment", ""),
                 request=request,
             )
-            messages.success(request, "Dossier marque comme doublon.")
+            messages.success(request, "Dossier marqué comme doublon.")
         except (PermissionDenied, ValidationError, TransitionNotAllowed) as exc:
             messages.error(request, str(exc))
     else:
@@ -319,7 +319,7 @@ def set_disclosure_date(request, case_id):
         schedule_disclosure(
             case, request.user, form.cleaned_data["disclosure_date"], request=request
         )
-        messages.success(request, "Date de divulgation planifiee.")
+        messages.success(request, "Date de divulgation planifiée.")
     else:
         messages.error(request, "Date invalide.")
     return redirect("coordination:case_detail", case_id=case.case_id)
@@ -361,7 +361,7 @@ def upload_attachment(request, case_id):
                 description=form.cleaned_data.get("description", ""),
                 request=request,
             )
-            messages.success(request, "Piece jointe enregistree.")
+            messages.success(request, "Pièce jointe enregistrée.")
         except (PermissionDenied, ValidationError) as exc:
             messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:

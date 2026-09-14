@@ -62,9 +62,7 @@ class ProgramScopeSerializer(serializers.ModelSerializer):
 class RewardTierSerializer(serializers.ModelSerializer):
     """Palier de recompense. `scope` vide signifie : grille par defaut."""
 
-    scope = serializers.CharField(
-        source="scope.identifier", read_only=True, default=None
-    )
+    scope = serializers.CharField(source="scope.identifier", read_only=True, default=None)
 
     class Meta:
         model = RewardTier
@@ -108,9 +106,7 @@ class ProgramSerializer(serializers.ModelSerializer):
         policy = getattr(obj, "reward_policy", None)
         if not policy or not policy.is_active:
             return []
-        return RewardTierSerializer(
-            policy.tiers.select_related("scope"), many=True
-        ).data
+        return RewardTierSerializer(policy.tiers.select_related("scope"), many=True).data
 
 
 class ProgramWriteSerializer(serializers.ModelSerializer):
@@ -209,7 +205,7 @@ class ReportSubmissionSerializer(serializers.ModelSerializer):
     def validate_description(self, value):
         if len(value.strip()) < 30:
             raise serializers.ValidationError(
-                "La description doit comporter au moins 30 caracteres."
+                "La description doit comporter au moins 30 caractères."
             )
         return value
 
@@ -227,7 +223,7 @@ class ReportSubmissionSerializer(serializers.ModelSerializer):
             ]
         ):
             raise serializers.ValidationError(
-                "Precisez l'organisation affectee ou un programme."
+                "Précisez l'organisation affectée ou un programme."
             )
         return attrs
 

@@ -7,7 +7,7 @@ import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
 
 from apps.audit.models import AuditAction, AuditLog
-from apps.bounty.models import BountyStatus, PaymentStatus
+from apps.bounty.models import BountyStatus, PaymentStatus, ReviewDecision
 from apps.bounty.services import (
     approve_bounty,
     propose_bounty,
@@ -128,7 +128,7 @@ def test_review_moves_bounty_under_review(bounty_case, analyst, coordinator):
 # ---------------------------------------------------------------- paiement
 def test_payment_requires_approval(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    with pytest.raises(ValidationError, match="approuvee"):
+    with pytest.raises(ValidationError, match="approuvée"):
         record_payment(bounty, coordinator)
 
 
@@ -224,9 +224,7 @@ def test_suggestion_follows_the_case_asset(bounty_case, coordinator):
 
 def test_tier_rejects_asset_of_another_program(bounty_program, vdp_program):
     """Un palier ne peut pas viser le perimetre d'un autre programme."""
-    etranger = ProgramScope.objects.create(
-        program=vdp_program, identifier="autre.exemple.bf"
-    )
+    etranger = ProgramScope.objects.create(program=vdp_program, identifier="autre.exemple.bf")
     tier = RewardTier(
         policy=bounty_program.reward_policy,
         scope=etranger,
@@ -250,7 +248,7 @@ def test_tier_rejects_out_of_scope_asset(bounty_program):
         min_amount=Decimal("0"),
         max_amount=Decimal("1000"),
     )
-    with pytest.raises(ValidationError, match="hors perimetre"):
+    with pytest.raises(ValidationError, match="hors périmètre"):
         tier.full_clean()
 
 
@@ -266,16 +264,14 @@ def test_unverified_researcher_cannot_join_bounty_program(
     bounty_researcher.email_verified = False
     bounty_researcher.save(update_fields=["email_verified"])
 
-    with pytest.raises(ValidationError, match="adresse email verifiee"):
+    with pytest.raises(ValidationError, match="adresse email vérifiée"):
         submit_report(
             build_report(bounty_researcher, organization, bounty_program),
             reporter=bounty_researcher,
         )
 
 
-def test_anonymous_report_refused_when_verification_required(
-    bounty_program, organization
-):
+def test_anonymous_report_refused_when_verification_required(bounty_program, organization):
     """Sans compte, aucune adresse n'est verifiee : le programme refuse."""
     from apps.reports.services import submit_report
 
@@ -284,7 +280,7 @@ def test_anonymous_report_refused_when_verification_required(
     report = build_report(None, organization, bounty_program)
     report.reporter = None
     report.is_anonymous = True
-    with pytest.raises(ValidationError, match="chercheur identifie"):
+    with pytest.raises(ValidationError, match="chercheur identifié"):
         submit_report(report)
 
 
@@ -301,9 +297,7 @@ def test_verified_researcher_is_admitted(bounty_program, bounty_researcher, orga
     assert case.program_id == bounty_program.id
 
 
-def test_vdp_may_waive_the_verification_requirement(
-    vdp_program, researcher_a, organization
-):
+def test_vdp_may_waive_the_verification_requirement(vdp_program, researcher_a, organization):
     """Hors Bug Bounty, l'exigence reste une politique propre au programme."""
     from apps.reports.services import submit_report
 
@@ -348,7 +342,7 @@ def test_bug_bounty_cannot_be_configured_without_identification(bounty_program):
 
     bounty_program.allows_anonymous_reports = False
     bounty_program.requires_verified_email = False
-    with pytest.raises(ValidationError, match="adresse email verifiee"):
+    with pytest.raises(ValidationError, match="adresse email vérifiée"):
         bounty_program.full_clean()
 
 
@@ -357,7 +351,7 @@ def test_bounty_refused_to_unverified_researcher(bounty_case, analyst):
     bounty_case.reporter.email_verified = False
     bounty_case.reporter.save(update_fields=["email_verified"])
 
-    with pytest.raises(ValidationError, match="verifie son adresse email"):
+    with pytest.raises(ValidationError, match="vérifié son adresse email"):
         propose_bounty(bounty_case, analyst, amount=Decimal("100000"))
 
 
@@ -374,7 +368,7 @@ def test_bug_bounty_never_advertises_anonymous_reports(bounty_program):
 
     assert bounty_program.allows_anonymous_reports
     assert not bounty_program.accepts_anonymous_reports
-    assert "chercheur identifie" in bounty_program.reporter_rejection()
+    assert "chercheur identifié" in bounty_program.reporter_rejection()
 
 
 def test_program_dates_are_still_validated(bounty_program):
@@ -392,15 +386,85 @@ def test_submit_page_announces_the_refusal_to_a_visitor_without_account(
     response = client.get(f"/report/?program={bounty_program.slug}")
     page = response.content.decode()
 
-    assert "chercheur identifie" in page
+    assert "chercheur identifié" in page
     assert "Vous pouvez signaler sans compte" not in page
 
 
-def test_program_page_sends_a_visitor_without_account_to_the_login(
-    client, bounty_program
-):
+def test_program_page_sends_a_visitor_without_account_to_the_login(client, bounty_program):
     """Le bouton d'appel ne mene pas a un formulaire qui refusera l'envoi."""
     page = client.get(f"/programs/{bounty_program.slug}/").content.decode()
 
     assert "Se connecter pour signaler" in page
     assert "%3Fprogram%3D" in page
+
+
+# ------------------------------------------------------- vue du beneficiaire
+def test_researcher_sees_his_reward_without_the_deciders(
+    client_for, bounty_case, analyst, coordinator, bounty_researcher
+):
+    """Le beneficiaire voit ce qui le concerne, jamais qui a tranche.
+
+    La deliberation - proposition, avis, signature - appartient a
+    l'instruction. Le chercheur en recoit le resultat, pas le detail.
+    """
+    bounty = propose_bounty(
+        bounty_case, analyst, amount=Decimal("200000"), justification="Impact confirme"
+    )
+    review_bounty(bounty, coordinator, ReviewDecision.APPROVE, comment="Avis favorable")
+
+    page = client_for(bounty_researcher).get(f"/bounties/{bounty.pk}/").content.decode()
+
+    assert "200 000" in page or "200000" in page
+    assert bounty_case.case_id in page
+    assert analyst.display_name not in page
+    assert coordinator.display_name not in page
+    assert "Proposé par" not in page
+    assert "Décidé par" not in page
+    assert "Revues" not in page
+    assert "Avis favorable" not in page
+    assert "Impact confirme" not in page
+
+
+def test_researcher_gets_no_lever_on_his_reward(
+    client_for, bounty_case, analyst, bounty_researcher
+):
+    """Aucune commande n'est offerte au beneficiaire, ni servie s'il insiste."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    client = client_for(bounty_researcher)
+
+    page = client.get(f"/bounties/{bounty.pk}/").content.decode()
+    assert "Approuver" not in page
+    assert "Enregistrer l'avis" not in page
+    assert "Enregistrer un versement" not in page
+
+    for chemin in (
+        f"/bounties/{bounty.pk}/review/",
+        f"/bounties/{bounty.pk}/approve/",
+        f"/bounties/{bounty.pk}/payment/",
+        f"/bounties/case/{bounty_case.case_id}/propose/",
+    ):
+        assert client.post(chemin, {}).status_code == 403, chemin
+
+
+def test_analyst_still_sees_the_deciders(client_for, bounty_case, analyst, coordinator):
+    """La restriction vise le beneficiaire, pas ceux qui instruisent."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    review_bounty(bounty, coordinator, ReviewDecision.APPROVE, comment="Avis favorable")
+
+    page = client_for(analyst).get(f"/bounties/{bounty.pk}/").content.decode()
+
+    assert "Proposé par" in page
+    assert "Revues" in page
+    assert "Avis favorable" in page
+
+
+def test_reward_list_hides_other_researchers_column(
+    client_for, bounty_case, analyst, bounty_researcher
+):
+    propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+
+    page_chercheur = client_for(bounty_researcher).get("/bounties/").content.decode()
+    page_analyste = client_for(analyst).get("/bounties/").content.decode()
+
+    assert "<th>Chercheur</th>" not in page_chercheur
+    assert "<th>Chercheur</th>" in page_analyste

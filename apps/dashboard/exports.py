@@ -307,12 +307,16 @@ def export_unverified_accounts_csv(request):
                 compte.full_name,
                 compte.get_role_display(),
                 timezone.localtime(compte.created_at).strftime("%d/%m/%Y"),
-                timezone.localtime(compte.last_login).strftime("%d/%m/%Y %H:%M")
-                if compte.last_login
-                else "Jamais",
-                compte.verification_reminded_on.strftime("%d/%m/%Y")
-                if compte.verification_reminded_on
-                else "Aucune",
+                (
+                    timezone.localtime(compte.last_login).strftime("%d/%m/%Y %H:%M")
+                    if compte.last_login
+                    else "Jamais"
+                ),
+                (
+                    compte.verification_reminded_on.strftime("%d/%m/%Y")
+                    if compte.verification_reminded_on
+                    else "Aucune"
+                ),
                 echeance.strftime("%d/%m/%Y") if echeance else "",
                 compte.signalements,
             ]
