@@ -224,9 +224,7 @@ def test_suggestion_follows_the_case_asset(bounty_case, coordinator):
 
 def test_tier_rejects_asset_of_another_program(bounty_program, vdp_program):
     """Un palier ne peut pas viser le perimetre d'un autre programme."""
-    etranger = ProgramScope.objects.create(
-        program=vdp_program, identifier="autre.exemple.bf"
-    )
+    etranger = ProgramScope.objects.create(program=vdp_program, identifier="autre.exemple.bf")
     tier = RewardTier(
         policy=bounty_program.reward_policy,
         scope=etranger,
@@ -299,9 +297,7 @@ def test_verified_researcher_is_admitted(bounty_program, bounty_researcher, orga
     assert case.program_id == bounty_program.id
 
 
-def test_vdp_may_waive_the_verification_requirement(
-    vdp_program, researcher_a, organization
-):
+def test_vdp_may_waive_the_verification_requirement(vdp_program, researcher_a, organization):
     """Hors Bug Bounty, l'exigence reste une politique propre au programme."""
     from apps.reports.services import submit_report
 
