@@ -107,6 +107,16 @@
       </div>
     </div>
 
+    {% if not is_preview and advisory.status != "RETRACTED" %}
+    <div class="card">
+      <div class="card-header"><h3>Format machine</h3></div>
+      <div class="card-body small">
+        <p>Advisory exploitable par vos outils de veille.</p>
+        <a class="btn btn-sm" href="{% url 'api:csaf_export' advisory.advisory_id %}">CSAF 2.0 (JSON)</a>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card">
       <div class="card-header"><h3>Signaler une vulnérabilité</h3></div>
       <div class="card-body small">

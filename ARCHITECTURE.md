@@ -175,7 +175,7 @@ apps/
 ├── audit/           Journal d'audit immuable
 ├── dashboard/       Tableaux de bord, recherche globale, exports
 ├── api/             API REST v1, authentification par clé, pagination
-└── csaf/            Import CSAF 2.0
+└── csaf/            Import et export CSAF 2.0
 ```
 
 Chaque application suit la même séparation :
@@ -360,7 +360,7 @@ Les journaux sont émis en **JSON structuré** (`apps/core/logging.py`) sur
 | HSM pour PGP | Interface prête | `core/pgp.py::verify_signature` |
 | CVSS v4.0 | Détecté et rejeté proprement | `vulnerabilities/cvss.py` |
 | Synchronisation NVD / MITRE / KEV / EPSS | Champs présents | `CVE.in_cisa_kev`, `epss_score`, `last_synced_at` |
-| Export CSAF | Import implémenté | `apps/csaf/services.py` |
+| Product tree CSAF complexe | Import : produit simple uniquement | `apps/csaf/services.py` |
 | Elasticsearch / OpenSearch | Non requis au MVP | `coordination/selectors.py::search_cases` |
 | Carte du Burkina Faso | Non implémenté | `Organization.region` déjà collecté |
 | Paiement réel des récompenses | Volontairement absent | `bounty.BountyPayment.method` |

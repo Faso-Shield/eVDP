@@ -116,7 +116,7 @@ projet.
 | OpenAPI / Swagger | ✅ | `/api/docs/`, `/api/redoc/`, `/api/schema/` |
 | Authentification par clé | ✅ | En-tête `X-eVDP-Api-Key`, hachée en base |
 | Import CSAF 2.0 | ✅ | Validation stricte, `POST /api/v1/import/csaf/` |
-| Export CSAF | ⬜ | **TODO** |
+| Export CSAF 2.0 | ✅ | Advisories publiés, `GET /api/v1/export/csaf/{advisory_id}/` |
 | `/health/` `/ready/` `/metrics/` | ✅ | Métriques au format Prometheus |
 | Logs JSON structurés | ✅ | Loggers dédiés audit / sécurité / SLA |
 | Prometheus / Grafana | ⬜ | Endpoint prêt, stack non fournie |
@@ -146,11 +146,10 @@ d'accroche documenté et d'un `TODO` dans le code.
 2. **SSO / OIDC / Keycloak / LDAP** — écarté du MVP pour ne pas complexifier le déploiement (conforme §32 du cahier des charges).
 3. **CVSS v4.0** — le calculateur détecte et rejette explicitement les vecteurs v4 plutôt que de produire un score faux.
 4. **Synchronisation NVD / MITRE / CISA KEV / EPSS** — le fonctionnement de base ne dépend d'aucune API externe (conforme §20).
-5. **Export CSAF** — seul l'import est implémenté.
-6. **Elasticsearch / OpenSearch** — PostgreSQL suffit au volume du MVP (conforme §36).
-7. **Paiement réel des récompenses** — délibérément absent (conforme §18).
-8. **Carte du Burkina Faso** — prévue en version ultérieure (conforme §29).
-9. **HSM** — l'interface de vérification PGP est prête pour cette bascule.
+5. **Elasticsearch / OpenSearch** — PostgreSQL suffit au volume du MVP (conforme §36).
+6. **Paiement réel des récompenses** — délibérément absent (conforme §18).
+7. **Carte du Burkina Faso** — prévue en version ultérieure (conforme §29).
+8. **HSM** — l'interface de vérification PGP est prête pour cette bascule.
 
 ---
 
