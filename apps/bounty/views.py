@@ -15,6 +15,7 @@ from .forms import BountyDecisionForm, BountyProposalForm, BountyReviewForm, Pay
 from .models import Bounty
 from .services import (
     approve_bounty,
+    budget_status,
     propose_bounty,
     record_payment,
     reject_bounty,
@@ -64,13 +65,16 @@ def bounty_detail(request, bounty_id):
             "decision_form": BountyDecisionForm(initial={"amount": bounty.proposed_amount}),
             "review_form": BountyReviewForm(),
             "payment_form": PaymentForm(initial={"amount": bounty.approved_amount}),
+            # Le proposant ne peut pas statuer sur sa propre proposition :
+            # l'interface masque l'action, le service la refuse (defense en
+            # profondeur, voir bounty.services.approve_bounty).
             "can_approve": (
-                request.user.has_capability(Capability.APPROVE_BOUNTY) and bounty.proposed_by_id != request.user.pk
+                request.user.has_capability(Capability.APPROVE_BOUNTY)
+                and bounty.proposed_by_id != request.user.pk
             ),
             "can_pay": request.user.has_capability(Capability.RECORD_PAYMENT),
-           # "can_approve": request.user.has_capability(Capability.APPROVE_BOUNTY),
-           # "can_pay": request.user.has_capability(Capability.RECORD_PAYMENT),
             "within_policy": bounty.within_policy(),
+            "budget": budget_status(bounty),
         },
     )
 

@@ -5,10 +5,12 @@ from decimal import Decimal
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.urls import reverse
+
 from apps.audit.models import AuditAction, AuditLog
-from apps.bounty.models import BountyStatus, PaymentStatus
+from apps.bounty.models import Bounty, BountyStatus, PaymentStatus
 from apps.bounty.services import (
     approve_bounty,
+    budget_status,
     propose_bounty,
     record_payment,
     reject_bounty,
@@ -86,11 +88,12 @@ def test_coordinator_approves_bounty(bounty_case, analyst, coordinator):
     assert bounty.decided_at is not None
     assert AuditLog.objects.filter(action=AuditAction.BOUNTY_APPROVED).exists()
 
-#ici
+
 def test_proposer_cannot_approve_own_bounty(bounty_case, coordinator):
     bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
     with pytest.raises(PermissionDenied):
         approve_bounty(bounty, coordinator)
+
 
 def test_approve_button_hidden_for_proposer(client_for, bounty_case, coordinator):
     bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
@@ -107,11 +110,23 @@ def test_approve_button_visible_for_other_coordinator(
     response = client.get(reverse("bounty:detail", args=[bounty.pk]))
     assert response.context["can_approve"] is True
 
+
 def test_proposer_cannot_reject_own_bounty(bounty_case, coordinator):
     bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
     with pytest.raises(PermissionDenied):
         reject_bounty(bounty, coordinator)
-        
+
+
+def test_another_coordinator_can_approve(bounty_case, coordinator, coordinator_b):
+    """La separation vise le proposant, pas le role : un pair peut statuer."""
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator_b)
+    bounty.refresh_from_db()
+
+    assert bounty.status == BountyStatus.APPROVED
+    assert bounty.decided_by == coordinator_b
+
+
 def test_rejection_blocks_further_transitions(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     reject_bounty(bounty, coordinator, note="Hors perimetre")
@@ -199,3 +214,129 @@ def test_researcher_sees_own_bounty(client_for, bounty_case, analyst, bounty_res
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     client = client_for(bounty_researcher)
     assert client.get(f"/bounties/{bounty.pk}/").status_code == 200
+
+
+# ------------------------------------------------------------------- budget
+def test_no_budget_status_without_declared_budget(bounty_case, analyst):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    assert budget_status(bounty) is None
+
+
+def test_budget_status_projects_the_decision(bounty_case, analyst, bounty_program):
+    policy = bounty_program.reward_policy
+    policy.total_budget = Decimal("1000000")
+    policy.save(update_fields=["total_budget"])
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    status = budget_status(bounty)
+
+    assert status["consumed"] == Decimal("0")
+    assert status["projected"] == Decimal("200000")
+    assert status["remaining"] == Decimal("800000")
+    assert status["exceeded"] is False
+
+
+def test_budget_overrun_is_allowed_but_audited(
+    bounty_case, analyst, coordinator, bounty_program
+):
+    """Meme traitement que le hors-matrice : jamais bloquant, jamais silencieux."""
+    policy = bounty_program.reward_policy
+    policy.total_budget = Decimal("100000")
+    policy.save(update_fields=["total_budget"])
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("250000"))
+    approve_bounty(bounty, coordinator)
+    bounty.refresh_from_db()
+
+    assert bounty.status == BountyStatus.APPROVED
+    warnings = [
+        entry.metadata.get("warning", "")
+        for entry in AuditLog.objects.filter(action=AuditAction.BOUNTY_APPROVED)
+    ]
+    assert any("budget" in warning for warning in warnings)
+
+
+def test_approved_bounty_is_not_counted_twice(
+    bounty_case, analyst, coordinator, bounty_program
+):
+    policy = bounty_program.reward_policy
+    policy.total_budget = Decimal("1000000")
+    policy.save(update_fields=["total_budget"])
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    bounty.refresh_from_db()
+
+    status = budget_status(bounty)
+    assert status["projected"] == Decimal("200000")
+    assert status["exceeded"] is False
+
+
+# ------------------------------------------------------------ administration
+def _admin_request(rf, user):
+    """Requete d'administration minimale (le framework messages est requis)."""
+    from django.contrib.messages.storage.fallback import FallbackStorage
+
+    request = rf.post("/admin/bounty/bounty/")
+    request.user = user
+    request.session = {}
+    request._messages = FallbackStorage(request)
+    return request
+
+
+def _bounty_admin():
+    from django.contrib.admin.sites import AdminSite
+
+    from apps.bounty.admin import BountyAdmin
+
+    return BountyAdmin(Bounty, AdminSite())
+
+
+def test_admin_approval_goes_through_the_service(rf, bounty_case, analyst, coordinator):
+    """L'admin ne doit pas reimplementer le cycle de vie : montant, audit,
+    notification et profil doivent etre traites comme via l'interface web."""
+    from apps.bounty.admin import action_approve
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    action_approve(
+        _bounty_admin(),
+        _admin_request(rf, coordinator),
+        Bounty.objects.filter(pk=bounty.pk),
+    )
+    bounty.refresh_from_db()
+
+    assert bounty.status == BountyStatus.APPROVED
+    assert bounty.approved_amount == Decimal("200000")
+    assert bounty.decided_by == coordinator
+    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_APPROVED).exists()
+
+
+def test_admin_approval_refuses_self_approval(rf, bounty_case, coordinator):
+    from apps.bounty.admin import action_approve
+
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    action_approve(
+        _bounty_admin(),
+        _admin_request(rf, coordinator),
+        Bounty.objects.filter(pk=bounty.pk),
+    )
+    bounty.refresh_from_db()
+
+    assert bounty.status == BountyStatus.PENDING
+
+
+def test_admin_payment_records_an_accounting_trace(rf, bounty_case, analyst, coordinator):
+    from apps.bounty.admin import action_record_payment
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    action_record_payment(
+        _bounty_admin(),
+        _admin_request(rf, coordinator),
+        Bounty.objects.filter(pk=bounty.pk),
+    )
+    bounty.refresh_from_db()
+
+    assert bounty.status == BountyStatus.PAID
+    assert bounty.payments.count() == 1
+    assert bounty.payments.first().status == PaymentStatus.RECORDED

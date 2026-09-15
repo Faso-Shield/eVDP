@@ -102,9 +102,11 @@ def cwe(db):
 def coordinator(db):
     return make_user("coordinateur@test.bf", Role.NATIONAL_COORDINATOR)
 
+
 @pytest.fixture
 def coordinator_b(db):
     return make_user("coordinateur-b@test.bf", Role.NATIONAL_COORDINATOR)
+
 
 @pytest.fixture
 def analyst(db):

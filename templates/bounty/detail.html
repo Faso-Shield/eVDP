@@ -22,6 +22,20 @@
 </div>
 {% endif %}
 
+{% if budget and budget.exceeded %}
+<div class="notice">
+  <strong>Budget du programme dépassé.</strong> Ce montant porte la consommation à
+  {{ budget.projected|floatformat:0 }} {{ budget.currency }} pour un budget de
+  {{ budget.total|floatformat:0 }} {{ budget.currency }}. La décision reste possible
+  mais elle est explicitement journalisée.
+</div>
+{% elif budget %}
+<p class="small muted">
+  Budget du programme : {{ budget.consumed|floatformat:0 }} /
+  {{ budget.total|floatformat:0 }} {{ budget.currency }} consommés.
+</p>
+{% endif %}
+
 <div class="grid" style="grid-template-columns:2fr 1fr">
   <div>
     <div class="card">

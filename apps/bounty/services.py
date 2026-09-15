@@ -34,6 +34,41 @@ def suggested_amount(case):
     return policy.suggested_amount(case.severity), policy.currency
 
 
+def budget_status(bounty, amount=None):
+    """Projection du budget du programme si `amount` etait approuve.
+
+    Retourne None quand le programme ne declare aucun budget total. Sinon un
+    dictionnaire decrivant la consommation avant / apres la decision.
+
+    `RewardPolicy.budget_consumed()` additionne les recompenses deja APPROVED
+    ou PAID : la recompense courante en est retranchee quand elle y figure
+    deja, afin de ne jamais la compter deux fois.
+    """
+    policy = getattr(bounty.program, "reward_policy", None) if bounty.program_id else None
+    if policy is None or policy.total_budget is None:
+        return None
+
+    consumed = policy.budget_consumed()
+    if bounty.status in (BountyStatus.APPROVED, BountyStatus.PAID):
+        consumed -= bounty.approved_amount or Decimal("0")
+    if amount is None:
+        amount = (
+            bounty.approved_amount
+            if bounty.approved_amount is not None
+            else bounty.proposed_amount
+        )
+
+    projected = consumed + amount
+    return {
+        "currency": policy.currency,
+        "total": policy.total_budget,
+        "consumed": consumed,
+        "projected": projected,
+        "remaining": policy.total_budget - projected,
+        "exceeded": projected > policy.total_budget,
+    }
+
+
 @transaction.atomic
 def propose_bounty(case, actor, amount=None, justification="", request=None):
     """Cree ou met a jour la proposition de recompense d'un case Bug Bounty."""
@@ -117,11 +152,15 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
         )
     if not bounty.can_transition_to(BountyStatus.APPROVED):
         raise ValidationError(
-            "Transition interdite depuis l'etat {bounty.get_status_display()}."
+            f"Transition interdite depuis l'etat {bounty.get_status_display()}."
         )
     amount = Decimal(amount) if amount is not None else bounty.proposed_amount
     if amount < 0:
         raise ValidationError({"amount": "Montant negatif interdit."})
+
+    # Calcule avant enregistrement : la recompense courante ne doit pas encore
+    # peser dans la consommation constatee.
+    budget = budget_status(bounty, amount)
 
     bounty.approved_amount = amount
     bounty.status = BountyStatus.APPROVED
@@ -139,13 +178,23 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
         ]
     )
 
+    # Un depassement reste possible - les situations exceptionnelles existent -
+    # mais il n'est jamais silencieux : il laisse une trace d'audit dediee.
+    warnings = []
     if not bounty.within_policy():
+        warnings.append("montant hors matrice du programme")
+    if budget and budget["exceeded"]:
+        warnings.append(
+            f"budget du programme depasse ({budget['projected']} / "
+            f"{budget['total']} {budget['currency']})"
+        )
+    if warnings:
         log_action(
             AuditAction.BOUNTY_APPROVED,
             actor=approver,
             obj=bounty,
             request=request,
-            warning="montant hors matrice du programme",
+            warning="; ".join(warnings),
             amount=str(amount),
         )
     log_action(
@@ -243,6 +292,7 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
 
 
 __all__ = [
+    "budget_status",
     "propose_bounty",
     "review_bounty",
     "approve_bounty",

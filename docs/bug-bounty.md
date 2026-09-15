@@ -103,8 +103,9 @@ l'application.
 | LOW | 0 – 100 000 |
 
 La devise est configurable (`XOF` par défaut). Un budget total peut être
-déclaré et son niveau de consommation est calculé à partir des récompenses
-approuvées et payées.
+déclaré : sa consommation est calculée à partir des récompenses approuvées et
+payées, affichée sur la fiche de récompense, et un dépassement projeté est
+signalé au valideur **avant** sa décision.
 
 ---
 
@@ -128,11 +129,12 @@ PENDING → UNDER_REVIEW → APPROVED → PAID
 Un analyste **ne peut pas** approuver la récompense qu'il a proposée : la
 séparation est vérifiée côté serveur et testée.
 
-### Montant hors matrice
+### Montant hors matrice, dépassement de budget
 
-Un montant sortant du palier de la sévérité reste possible — les situations
-exceptionnelles existent — mais il est **explicitement journalisé** avec un
-avertissement, et l'interface l'affiche en évidence.
+Un montant sortant du palier de la sévérité, ou portant la consommation
+au-delà du budget déclaré, reste possible — les situations exceptionnelles
+existent — mais il n'est jamais silencieux : l'interface l'affiche en évidence
+et la décision est **explicitement journalisée** avec le motif d'alerte.
 
 ---
 
