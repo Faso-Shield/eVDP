@@ -64,8 +64,12 @@ def bounty_detail(request, bounty_id):
             "decision_form": BountyDecisionForm(initial={"amount": bounty.proposed_amount}),
             "review_form": BountyReviewForm(),
             "payment_form": PaymentForm(initial={"amount": bounty.approved_amount}),
-            "can_approve": request.user.has_capability(Capability.APPROVE_BOUNTY),
+            "can_approve": (
+                request.user.has_capability(Capability.APPROVE_BOUNTY) and bounty.proposed_by_id != request.user.pk
+            ),
             "can_pay": request.user.has_capability(Capability.RECORD_PAYMENT),
+           # "can_approve": request.user.has_capability(Capability.APPROVE_BOUNTY),
+           # "can_pay": request.user.has_capability(Capability.RECORD_PAYMENT),
             "within_policy": bounty.within_policy(),
         },
     )

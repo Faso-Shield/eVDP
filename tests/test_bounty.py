@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
-
+from django.urls import reverse
 from apps.audit.models import AuditAction, AuditLog
 from apps.bounty.models import BountyStatus, PaymentStatus
 from apps.bounty.services import (
@@ -92,6 +92,26 @@ def test_proposer_cannot_approve_own_bounty(bounty_case, coordinator):
     with pytest.raises(PermissionDenied):
         approve_bounty(bounty, coordinator)
 
+def test_approve_button_hidden_for_proposer(client_for, bounty_case, coordinator):
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:detail", args=[bounty.pk]))
+    assert response.context["can_approve"] is False
+
+
+def test_approve_button_visible_for_other_coordinator(
+    client_for, bounty_case, coordinator, coordinator_b
+):
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    client = client_for(coordinator_b)
+    response = client.get(reverse("bounty:detail", args=[bounty.pk]))
+    assert response.context["can_approve"] is True
+
+def test_proposer_cannot_reject_own_bounty(bounty_case, coordinator):
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    with pytest.raises(PermissionDenied):
+        reject_bounty(bounty, coordinator)
+        
 def test_rejection_blocks_further_transitions(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     reject_bounty(bounty, coordinator, note="Hors perimetre")
