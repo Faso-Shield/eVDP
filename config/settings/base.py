@@ -221,6 +221,12 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
+# ---------------------------------------------------------------------------
+# ClamAV - analyse antivirus des pièces jointes
+# ---------------------------------------------------------------------------
+CLAMAV_HOST = env("CLAMAV_HOST", default="")
+CLAMAV_PORT = env.int("CLAMAV_PORT", default=3310)
+
 CELERY_BEAT_SCHEDULE = {
     "evdp-sla-sweep": {
         "task": "apps.coordination.tasks.sweep_sla",

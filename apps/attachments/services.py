@@ -17,9 +17,25 @@ from .models import Attachment, ScanStatus
 DANGEROUS_MAGIC = (
     b"MZ",  # executable Windows (PE)
     b"\x7fELF",  # executable Linux (ELF)
-    b"\xca\xfe\xba\xbe",  # class Java / Mach-O fat
+    b"\xca\xfe\xba\xbe",  # Java / Mach-O fat
     b"#!/",  # script shell
 )
+
+#: Signatures attendues pour les formats binaires autorises.
+ALLOWED_MAGIC = {
+    "png": (b"\x89PNG\r\n\x1a\n",),
+    "jpg": (b"\xff\xd8\xff",),
+    "jpeg": (b"\xff\xd8\xff",),
+    "gif": (b"GIF87a", b"GIF89a"),
+    "pdf": (b"%PDF-",),
+    "zip": (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
+    "pcap": (
+        b"\xd4\xc3\xb2\xa1",
+        b"\xa1\xb2\xc3\xd4",
+        b"\x4d\x3c\xb2\xa1",
+        b"\xa1\xb2\x3c\x4d",
+    ),
+}
 
 
 def _extension(filename):
@@ -65,7 +81,11 @@ def validate_upload(uploaded_file):
     for magic in DANGEROUS_MAGIC:
         if head.startswith(magic):
             raise ValidationError("Le contenu du fichier correspond a un executable : refus.")
-
+    expected_magic = ALLOWED_MAGIC.get(extension)
+    if expected_magic and not any(head.startswith(magic) for magic in expected_magic):
+        raise ValidationError(
+            f"La signature du fichier ne correspond pas a son extension .{extension}."
+        )
     return {
         "extension": extension,
         "content_type": (guessed or declared or "application/octet-stream")[:120],
