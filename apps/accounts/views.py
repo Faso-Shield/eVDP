@@ -1,8 +1,11 @@
 """Vues d'authentification et de gestion de compte."""
 
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import (
     LoginView,
     LogoutView,
@@ -11,13 +14,20 @@ from django.contrib.auth.views import (
     PasswordResetDoneView,
     PasswordResetView,
 )
+from django.core.paginator import Paginator
 from django.db import transaction
-from django.shortcuts import redirect, render
-from django.urls import reverse_lazy
+from django.db.models import Q
+from django.http import Http404, HttpResponseNotAllowed
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.debug import sensitive_post_parameters
 
+from apps.accounts.permissions import require_capability
+from apps.api.authentication import generate_key
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.core.middleware import get_client_ip
@@ -28,30 +38,51 @@ from apps.researchers.services import get_or_create_profile
 
 from . import mfa
 from .forms import (
+    ApiKeyForm,
     EmailAuthenticationForm,
+    MFACodeForm,
+    MFADisableForm,
     ProfileForm,
     RegistrationForm,
     ResearcherProfileForm,
     StrongPasswordChangeForm,
-    TotpCodeForm,
+    UserCreateForm,
+    UserEditForm,
 )
-from .middleware import elevate, session_is_elevated
-from .models import TokenPurpose, UserToken
+from .models import ApiKey, TokenPurpose, User, UserToken
+from .roles import MFA_REQUIRED_ROLES, Capability, Role
 
-#: Secret candidat d'un enrolement en cours. Il ne rejoint le compte qu'une
-#: fois un code valide fourni : un enrolement abandonne ne laisse rien
-#: derriere lui, et le compte garde son facteur precedent jusqu'au bout.
-SETUP_SESSION_KEY = "mfa_setup_candidate"
+MFA_SESSION_TIMEOUT = timedelta(minutes=5)
+
+
+def _login_account_identifier(request):
+    """Cle de limitation basee sur le compte cible, pas la source : ferme le
+    trou d'un brute-force distribue sur de nombreuses IP contre un seul
+    compte, que la limite par IP ne freine pas."""
+    email = (request.POST.get("username") or "").strip().lower()
+    return email or (get_client_ip(request) or "-")
 
 
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")
 @method_decorator(rate_limited("login"), name="dispatch")
+@method_decorator(
+    rate_limited("login_account", key_func=_login_account_identifier), name="dispatch"
+)
 class EvdpLoginView(LoginView):
     template_name = "accounts/login.html"
     authentication_form = EmailAuthenticationForm
     redirect_authenticated_user = True
 
     def form_valid(self, form):
+        user = form.get_user()
+        if user.mfa_enabled:
+            # Mot de passe verifie (form.get_user() l'a fait), mais pas
+            # encore de session ouverte : le second facteur reste a fournir
+            # avant tout appel a login().
+            self.request.session["mfa_user_id"] = str(user.pk)
+            self.request.session["mfa_started_at"] = timezone.now().isoformat()
+            return redirect("accounts:mfa_verify")
+
         response = super().form_valid(form)
         user = self.request.user
         ip = get_client_ip(self.request)
@@ -60,6 +91,55 @@ class EvdpLoginView(LoginView):
             user.save(update_fields=["last_login_ip", "updated_at"])
         reset("login", ip or "-")
         return response
+
+
+def _pending_mfa_user(request):
+    """Utilisateur en attente de second facteur, ou None si la session de
+    connexion en cours est absente, expiree, ou ne correspond plus a un
+    compte avec MFA actif."""
+    user_id = request.session.get("mfa_user_id")
+    started_at = request.session.get("mfa_started_at")
+    if not user_id or not started_at:
+        return None
+    try:
+        started = timezone.datetime.fromisoformat(started_at)
+    except ValueError:
+        return None
+    if timezone.now() - started > MFA_SESSION_TIMEOUT:
+        return None
+    return User.objects.filter(pk=user_id, is_active=True, mfa_enabled=True).first()
+
+
+def _clear_pending_mfa(request):
+    request.session.pop("mfa_user_id", None)
+    request.session.pop("mfa_started_at", None)
+
+
+@rate_limited("mfa_verify")
+def mfa_verify(request):
+    """Deuxieme etape de connexion : code TOTP a 6 chiffres."""
+    user = _pending_mfa_user(request)
+    if user is None:
+        _clear_pending_mfa(request)
+        messages.error(request, "Session de connexion expirée ou invalide. Reconnectez-vous.")
+        return redirect("accounts:login")
+
+    if request.method == "POST":
+        form = MFACodeForm(request.POST)
+        if form.is_valid() and mfa.verify_code(user.mfa_secret, form.cleaned_data["code"]):
+            _clear_pending_mfa(request)
+            login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+            ip = get_client_ip(request)
+            if ip:
+                user.last_login_ip = ip
+                user.save(update_fields=["last_login_ip", "updated_at"])
+            reset("login", ip or "-")
+            reset("mfa_verify", ip or "-")
+            return redirect("dashboard:home")
+        form.add_error("code", "Code invalide ou expiré.")
+    else:
+        form = MFACodeForm()
+    return render(request, "accounts/mfa_verify.html", {"form": form})
 
 
 class EvdpLogoutView(LogoutView):
@@ -99,125 +179,15 @@ def register(request):
             )
             messages.success(
                 request,
-                "Compte créé. Un email de vérification vous à été envoyé : "
-                "confirmez votre adresse pour soumettre des rapports.",
+                "Compte créé. Un email de vérification vous a été envoyé : "
+                "confirmez votre adresse pour pouvoir soumettre à un programme "
+                "Bug Bounty (obligatoire dès qu'une récompense est en jeu).",
             )
             login(request, user, backend="django.contrib.auth.backends.ModelBackend")
             return redirect("dashboard:home")
     else:
         form = RegistrationForm()
     return render(request, "accounts/register.html", {"form": form})
-
-
-def _mfa_par_compte(request):
-    """Limite de debit par compte : c'est le code d'un compte qu'on devine."""
-    return str(getattr(request.user, "pk", "-"))
-
-
-@login_required
-@rate_limited("mfa", key_func=_mfa_par_compte)
-def mfa_setup(request):
-    """Enrolement d'un authentificateur TOTP.
-
-    Accessible sans session elevee au premier enrolement seulement : le
-    compte vient de prouver son mot de passe et n'a pas encore de facteur a
-    opposer. Une fois enrole, changer d'authentificateur exige d'abord de
-    valider celui en place, sinon le mot de passe seul suffirait a remplacer
-    le second facteur — et il n'y aurait plus de second facteur.
-    """
-    if not request.user.mfa_required:
-        messages.info(request, "Votre compte n'est pas soumis à la double authentification.")
-        return redirect("accounts:profile")
-    if not request.user.mfa_pending_enrollment and not session_is_elevated(request):
-        return redirect("accounts:mfa_challenge")
-
-    secret = request.session.get(SETUP_SESSION_KEY)
-    if not secret:
-        secret = mfa.new_secret()
-        request.session[SETUP_SESSION_KEY] = secret
-
-    form = TotpCodeForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        pas = mfa.matching_step(secret, form.cleaned_data["code"])
-        if pas is None:
-            log_action(
-                AuditAction.MFA_FAILED,
-                actor=request.user,
-                obj=request.user,
-                request=request,
-                phase="enrolement",
-            )
-            messages.error(request, "Code incorrect. Vérifiez l'heure de votre appareil.")
-        else:
-            user = request.user
-            user.mfa_secret = secret
-            user.mfa_enabled = True
-            user.mfa_confirmed_at = timezone.now()
-            user.mfa_last_step = pas
-            user.save(
-                update_fields=[
-                    "mfa_secret",
-                    "mfa_enabled",
-                    "mfa_confirmed_at",
-                    "mfa_last_step",
-                    "updated_at",
-                ]
-            )
-            request.session.pop(SETUP_SESSION_KEY, None)
-            elevate(request)
-            log_action(AuditAction.MFA_ENROLLED, actor=user, obj=user, request=request)
-            messages.success(
-                request,
-                "Double authentification activée. Un code vous sera demandé "
-                "à chaque connexion.",
-            )
-            return redirect("dashboard:home")
-
-    return render(
-        request,
-        "accounts/mfa_setup.html",
-        {
-            "form": form,
-            "secret_lisible": mfa.readable_secret(secret),
-            "uri": mfa.provisioning_uri(request.user, secret),
-            "qr": mfa.qr_data_uri(request.user, secret),
-            "reenrolement": not request.user.mfa_pending_enrollment,
-        },
-    )
-
-
-@login_required
-@rate_limited("mfa", key_func=_mfa_par_compte)
-def mfa_challenge(request):
-    """Validation du second facteur : eleve la session pour sa duree."""
-    if not request.user.mfa_required:
-        return redirect("accounts:profile")
-    if request.user.mfa_pending_enrollment:
-        return redirect("accounts:mfa_setup")
-    if session_is_elevated(request):
-        return redirect("dashboard:home")
-
-    form = TotpCodeForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        if mfa.consume_code(request.user, form.cleaned_data["code"]):
-            elevate(request)
-            log_action(
-                AuditAction.MFA_VERIFIED,
-                actor=request.user,
-                obj=request.user,
-                request=request,
-            )
-            return redirect(request.GET.get("next") or "dashboard:home")
-        log_action(
-            AuditAction.MFA_FAILED,
-            actor=request.user,
-            obj=request.user,
-            request=request,
-            phase="connexion",
-        )
-        messages.error(request, "Code incorrect ou déjà utilisé.")
-
-    return render(request, "accounts/mfa_challenge.html", {"form": form})
 
 
 def verify_email(request, token):
@@ -248,11 +218,11 @@ def resend_verification(request):
     notify(
         request.user,
         NotificationKind.ACCOUNT,
-        title="Vérification de votre adresse email",
+        title="Verification de votre adresse email",
         body="Un nouveau lien de verification est disponible.",
         url=f"/verify-email/{token.token}/",
     )
-    messages.success(request, "Un nouveau lien de vérification vous à été envoyé.")
+    messages.success(request, "Un nouveau lien de vérification vous a été envoyé.")
     return redirect("accounts:profile")
 
 
@@ -299,8 +269,143 @@ def profile(request):
             "profile_form": profile_form,
             "researcher_profile": researcher_profile,
             "api_keys": request.user.api_keys.filter(is_active=True),
+            "api_key_form": ApiKeyForm(),
+            "mfa_disable_form": MFADisableForm(),
         },
     )
+
+
+@login_required
+def mfa_activate(request):
+    """Ecran d'activation du second facteur (TOTP).
+
+    Le secret genere n'est ecrit en base qu'une fois le code de confirmation
+    verifie : tant que l'utilisateur n'a pas prouve avoir bien scanne le QR
+    code, aucune activation partielle ne peut le verrouiller hors de son
+    compte.
+    """
+    if request.user.mfa_enabled:
+        messages.info(request, "La double authentification est déjà activée.")
+        return redirect("accounts:profile")
+
+    if request.method == "POST":
+        secret = request.session.get("mfa_pending_secret")
+        form = MFACodeForm(request.POST)
+        if secret and form.is_valid() and mfa.verify_code(secret, form.cleaned_data["code"]):
+            request.user.mfa_secret = secret
+            request.user.mfa_enabled = True
+            request.user.save(update_fields=["mfa_secret", "mfa_enabled", "updated_at"])
+            request.session.pop("mfa_pending_secret", None)
+            log_action(
+                AuditAction.USER_UPDATED,
+                actor=request.user,
+                obj=request.user,
+                request=request,
+                mfa="enabled",
+            )
+            messages.success(request, "Double authentification activée.")
+            return redirect("accounts:profile")
+        form.add_error(
+            "code", "Code invalide. Vérifiez l'heure de votre téléphone et réessayez."
+        )
+    else:
+        secret = mfa.generate_secret()
+        request.session["mfa_pending_secret"] = secret
+        form = MFACodeForm()
+
+    uri = mfa.provisioning_uri(request.user.email, secret)
+    return render(
+        request,
+        "accounts/mfa_activate.html",
+        {
+            "form": form,
+            "secret": secret,
+            "qr_data_uri": mfa.qr_code_data_uri(uri),
+            "mfa_enforced": request.user.role in MFA_REQUIRED_ROLES,
+        },
+    )
+
+
+@login_required
+def mfa_disable(request):
+    """Desactivation par l'utilisateur lui-meme : exige le mot de passe
+    actuel (defense contre une session laissee ouverte sur un poste partage).
+    Un administrateur peut aussi desactiver mfa_enabled depuis l'admin si
+    l'utilisateur a perdu l'acces a son application d'authentification."""
+    if not request.user.mfa_enabled:
+        return redirect("accounts:profile")
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+    form = MFADisableForm(request.POST, user=request.user)
+    if form.is_valid():
+        request.user.mfa_enabled = False
+        request.user.mfa_secret = ""
+        request.user.save(update_fields=["mfa_enabled", "mfa_secret", "updated_at"])
+        log_action(
+            AuditAction.USER_UPDATED,
+            actor=request.user,
+            obj=request.user,
+            request=request,
+            mfa="disabled",
+        )
+        messages.success(request, "Double authentification désactivée.")
+    else:
+        messages.error(request, "Mot de passe incorrect : désactivation refusée.")
+    return redirect("accounts:profile")
+
+
+@login_required
+def api_key_create(request):
+    """Genere une nouvelle cle d'API. La valeur en clair n'est montree qu'une
+    seule fois, dans le message de confirmation qui suit."""
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+    form = ApiKeyForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Impossible de créer la clé : " + str(form.errors))
+        return redirect("accounts:profile")
+
+    raw_key, prefix, key_hash = generate_key()
+    expires_in_days = form.cleaned_data.get("expires_in_days")
+    expires_at = timezone.now() + timedelta(days=expires_in_days) if expires_in_days else None
+    api_key = ApiKey.objects.create(
+        user=request.user,
+        label=form.cleaned_data["label"],
+        prefix=prefix,
+        key_hash=key_hash,
+        expires_at=expires_at,
+    )
+    log_action(
+        AuditAction.API_KEY_CREATED,
+        actor=request.user,
+        obj=api_key,
+        request=request,
+        label=api_key.label,
+    )
+    messages.success(
+        request,
+        f"Clé d'API créée : {raw_key}\n\n"
+        "Copiez-la maintenant : elle ne sera plus jamais affichée en clair.",
+    )
+    return redirect("accounts:profile")
+
+
+@login_required
+def api_key_revoke(request, key_id):
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+    api_key = get_object_or_404(ApiKey, pk=key_id, user=request.user)
+    api_key.is_active = False
+    api_key.save(update_fields=["is_active", "updated_at"])
+    log_action(
+        AuditAction.API_KEY_REVOKED,
+        actor=request.user,
+        obj=api_key,
+        request=request,
+        label=api_key.label,
+    )
+    messages.success(request, f"Clé « {api_key.label} » révoquée.")
+    return redirect("accounts:profile")
 
 
 @login_required
@@ -350,3 +455,147 @@ class EvdpPasswordResetConfirmView(PasswordResetConfirmView):
 
 class EvdpPasswordResetCompleteView(PasswordResetCompleteView):
     template_name = "accounts/password_reset_complete.html"
+
+
+# ---------------------------------------------------------------------------
+# Gestion des utilisateurs (MANAGE_USERS) : alternative a l'admin Django pour
+# l'usage quotidien, sans exposer is_staff a un role non technique.
+# ---------------------------------------------------------------------------
+def send_password_setup_link(user, title, body):
+    """Envoie un lien de choix de mot de passe.
+
+    Reutilise le mecanisme de reinitialisation standard de Django : un
+    compte cree sans mot de passe utilisable peut s'en voir attribuer un via
+    ce meme lien (`accounts:password_reset_confirm`), sans jeton ni vue
+    supplementaire a maintenir.
+
+    `notify()` prefixe lui-meme l'hote via `_absolute()` (voir
+    apps/notifications/services.py) : le chemin transmis ici doit rester
+    relatif, comme partout ailleurs dans ce module (`verify_email`,
+    `resend_verification`) — sinon l'hote se retrouve double dans le lien
+    envoye par email.
+    """
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    path = reverse("accounts:password_reset_confirm", kwargs={"uidb64": uid, "token": token})
+    notify(user, NotificationKind.ACCOUNT, title=title, body=body, url=path)
+
+
+@login_required
+@require_capability(Capability.MANAGE_USERS)
+def user_manage_list(request):
+    query = (request.GET.get("q") or "").strip()
+    queryset = User.objects.all().order_by("email")
+    if query:
+        queryset = queryset.filter(Q(email__icontains=query) | Q(full_name__icontains=query))
+    page = Paginator(queryset, 30).get_page(request.GET.get("page"))
+    return render(request, "accounts/manage_list.html", {"page_obj": page, "query": query})
+
+
+@login_required
+@require_capability(Capability.MANAGE_USERS)
+def user_manage_create(request):
+    allow_super_admin = request.user.is_superuser
+    if request.method == "POST":
+        form = UserCreateForm(request.POST, allow_super_admin=allow_super_admin)
+        if form.is_valid():
+            role = form.cleaned_data["role"]
+            if role == Role.SUPER_ADMIN and not allow_super_admin:
+                form.add_error("role", "Seul un superutilisateur peut créer ce rôle.")
+            else:
+                user = User.objects.create_user(
+                    email=form.cleaned_data["email"],
+                    password=None,
+                    full_name=form.cleaned_data["full_name"],
+                    role=role,
+                )
+                log_action(
+                    AuditAction.USER_CREATED,
+                    actor=request.user,
+                    obj=user,
+                    request=request,
+                    role=user.role,
+                )
+                send_password_setup_link(
+                    user,
+                    title="Votre compte eVDP a été créé",
+                    body=(
+                        f"{request.user.display_name or request.user.email} vous a créé "
+                        "un compte sur eVDP. Choisissez votre mot de passe pour l'activer."
+                    ),
+                )
+                messages.success(
+                    request,
+                    f"Compte créé pour {user.email} — un lien pour choisir son mot de "
+                    "passe lui a été envoyé.",
+                )
+                return redirect("accounts:user_manage_detail", user_id=user.pk)
+    else:
+        form = UserCreateForm(allow_super_admin=allow_super_admin)
+    return render(request, "accounts/manage_create.html", {"form": form})
+
+
+@login_required
+@require_capability(Capability.MANAGE_USERS)
+def user_manage_detail(request, user_id):
+    target = get_object_or_404(User, pk=user_id)
+    allow_super_admin = request.user.is_superuser
+    if not allow_super_admin and target.role == Role.SUPER_ADMIN:
+        # Un coordinateur ne doit meme pas savoir qu'un compte super-admin
+        # existe a cette adresse : meme traitement que les autres perimetres
+        # (404, jamais 403, pour ne pas confirmer l'existence).
+        raise Http404("Compte introuvable.")
+
+    if request.method == "POST":
+        form = UserEditForm(request.POST, allow_super_admin=allow_super_admin)
+        if form.is_valid():
+            new_role = form.cleaned_data["role"]
+            new_active = form.cleaned_data["is_active"]
+            if new_role == Role.SUPER_ADMIN and not allow_super_admin:
+                form.add_error("role", "Seul un superutilisateur peut attribuer ce rôle.")
+            elif target.id == request.user.id and not new_active:
+                form.add_error(
+                    "is_active", "Vous ne pouvez pas désactiver votre propre compte."
+                )
+            else:
+                role_changed = target.role != new_role
+                target.role = new_role
+                target.is_active = new_active
+                target.save(update_fields=["role", "is_active", "updated_at"])
+                if role_changed:
+                    log_action(
+                        AuditAction.ROLE_CHANGED,
+                        actor=request.user,
+                        obj=target,
+                        request=request,
+                        new_role=target.role,
+                    )
+                messages.success(request, "Compte mis à jour.")
+                return redirect("accounts:user_manage_detail", user_id=target.pk)
+    else:
+        form = UserEditForm(
+            initial={"role": target.role, "is_active": target.is_active},
+            allow_super_admin=allow_super_admin,
+        )
+    return render(request, "accounts/manage_detail.html", {"target": target, "form": form})
+
+
+@login_required
+@require_capability(Capability.MANAGE_USERS)
+def user_manage_resend_link(request, user_id):
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+    target = get_object_or_404(User, pk=user_id)
+    send_password_setup_link(
+        target,
+        title="Accès à votre compte eVDP",
+        body=(
+            f"{request.user.display_name or request.user.email} vous a envoyé un "
+            "nouveau lien pour définir votre mot de passe eVDP."
+        ),
+    )
+    log_action(
+        AuditAction.PASSWORD_RESET_REQUESTED, actor=request.user, obj=target, request=request
+    )
+    messages.success(request, f"Lien envoyé à {target.email}.")
+    return redirect("accounts:user_manage_detail", user_id=target.pk)

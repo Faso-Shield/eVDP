@@ -27,6 +27,7 @@ class AdvisoryAdmin(admin.ModelAdmin):
     search_fields = ("advisory_id", "title", "summary", "product")
     readonly_fields = (
         "advisory_id",
+        "status",
         "published_at",
         "published_by",
         "created_at",
@@ -34,3 +35,6 @@ class AdvisoryAdmin(admin.ModelAdmin):
     )
     inlines = [AdvisoryTimelineInline, AdvisoryReferenceInline]
     date_hierarchy = "created_at"
+
+    def has_delete_permission(self, request, obj=None):
+        return False

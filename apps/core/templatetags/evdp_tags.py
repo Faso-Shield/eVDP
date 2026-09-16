@@ -36,6 +36,27 @@ def money(value):
         return value
 
 
+@register.filter(name="bounty_status_class")
+def bounty_status_class(value):
+    return {
+        "PENDING": "status",
+        "UNDER_REVIEW": "status",
+        "APPROVED": "status-done",
+        "PAID": "status-done",
+        "REJECTED": "status-rejected",
+        "CANCELLED": "status-closed",
+    }.get((value or "").upper(), "status")
+
+
+@register.filter(name="payment_status_class")
+def payment_status_class(value):
+    return {
+        "RECORDED": "status",
+        "SETTLED": "status-done",
+        "FAILED": "status-rejected",
+    }.get((value or "").upper(), "status")
+
+
 @register.simple_tag(takes_context=True)
 def query_replace(context, **kwargs):
     """Reconstruit la query string en remplacant certains parametres."""

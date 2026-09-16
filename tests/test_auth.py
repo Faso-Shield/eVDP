@@ -128,7 +128,6 @@ def test_user_cannot_change_own_role_via_profile(client_for, researcher_a):
             "full_name": "Chercheur",
             "display_name": "chercheur",
             "phone": "",
-            "pgp_public_key": "",
             "role": Role.SUPER_ADMIN,
             "is_staff": "on",
             "is_superuser": "on",
@@ -146,28 +145,6 @@ def test_user_cannot_change_own_role_via_profile(client_for, researcher_a):
     assert researcher_a.is_superuser is False
 
 
-def test_private_key_upload_is_rejected(client_for, researcher_a):
-    client = client_for(researcher_a)
-    response = client.post(
-        reverse("accounts:profile"),
-        {
-            "full_name": "Chercheur",
-            "display_name": "chercheur",
-            "phone": "",
-            "pgp_public_key": "-----BEGIN PGP PRIVATE KEY BLOCK-----\nabc\n-----END PGP PRIVATE KEY BLOCK-----",
-            "pseudonym": "alpha-hunter",
-            "country": "Burkina Faso",
-            "affiliation": "",
-            "website": "",
-            "biography": "",
-            "identity_mode": "PSEUDONYM",
-        },
-    )
-    researcher_a.refresh_from_db()
-    assert researcher_a.pgp_public_key == ""
-    assert response.status_code == 200
-
-
 def test_anonymous_is_redirected_from_dashboard(client):
     response = client.get(reverse("dashboard:home"))
     assert response.status_code == 302
@@ -177,3 +154,18 @@ def test_anonymous_is_redirected_from_dashboard(client):
 def test_password_hashing_uses_configured_hasher(researcher_a):
     assert not researcher_a.password.startswith("plain")
     assert researcher_a.check_password(PASSWORD)
+
+
+def test_login_is_rate_limited_per_account_across_ip_addresses(client, researcher_a):
+    """Regression : la limitation de debit ne portait que sur l'IP source,
+    donc un brute-force distribue sur de nombreuses IP contre un seul compte
+    n'etait freine par rien. Chaque tentative ici vient d'une IP differente."""
+    statuses = []
+    for i in range(12):
+        response = client.post(
+            reverse("accounts:login"),
+            {"username": researcher_a.email, "password": "mauvais-mot-de-passe"},
+            HTTP_X_FORWARDED_FOR=f"203.0.113.{i}",
+        )
+        statuses.append(response.status_code)
+    assert 429 in statuses

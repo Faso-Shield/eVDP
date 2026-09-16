@@ -9,6 +9,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
+from apps.audit.models import AuditAction
+from apps.audit.services import log_action
 from apps.coordination.models import Case
 from apps.vulnerabilities.constants import Severity
 
@@ -118,64 +120,35 @@ def advisory_create(request, case_id=None):
     return render(request, "disclosures/form.html", {"form": form, "case": case})
 
 
-def _appliquer_action(request, advisory):
-    """Enchaine l'action de cycle de vie demandee apres l'enregistrement.
-
-    Le contenu et le cycle de vie vivent dans un seul formulaire. Ils etaient
-    separes : le redacteur saisissait son resume, cliquait « Publier », et la
-    publication - postee par un autre formulaire - ne voyait que ce qui etait
-    deja en base. Elle refusait alors un resume pourtant saisi sous ses yeux.
-    L'enregistrement precede desormais toute transition, et rien ne se perd.
-    """
-    action = request.POST.get("action", "save")
-    if action == "save":
-        messages.success(request, "Advisory mis à jour.")
-        return advisory
-
-    try:
-        if action == "publish":
-            publish_advisory(advisory, request.user, request=request)
-            messages.success(request, f"Advisory {advisory.advisory_id} publié.")
-        elif action == "retract":
-            retract_advisory(
-                advisory, request.user, request.POST.get("reason", ""), request=request
-            )
-            messages.success(request, "Advisory retiré.")
-        elif action == "status":
-            transition_advisory(
-                advisory,
-                request.POST.get("target_status", ""),
-                request.user,
-                request=request,
-            )
-            messages.success(request, f"Advisory : {advisory.get_status_display()}.")
-        else:
-            messages.success(request, "Advisory mis à jour.")
-            return advisory
-    except (PermissionDenied, ValidationError) as exc:
-        messages.success(request, "Contenu enregistré.")
-        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
-    return advisory
-
-
 @login_required
 @require_not_read_only
 @require_capability(Capability.DRAFT_ADVISORY)
 def advisory_manage(request, advisory_id):
     advisory = get_object_or_404(Advisory, advisory_id=advisory_id.upper())
+    is_public = advisory.status in (AdvisoryStatus.PUBLISHED, AdvisoryStatus.RETRACTED)
 
     if request.method == "POST":
+        if is_public and not request.user.has_capability(Capability.PUBLISH_ADVISORY):
+            raise PermissionDenied(
+                "Un advisory deja publie ne peut etre modifie que par une "
+                "personne habilitee a publier."
+            )
         form = AdvisoryForm(request.POST, instance=advisory)
         formset = AdvisoryTimelineFormSet(request.POST, instance=advisory)
         if form.is_valid() and formset.is_valid():
             form.save()
             formset.save()
-            _appliquer_action(request, advisory)
+            if is_public:
+                log_action(
+                    AuditAction.ADVISORY_UPDATED,
+                    actor=request.user,
+                    obj=advisory,
+                    request=request,
+                    changed_fields=sorted(form.changed_data),
+                    note="edition d'un advisory deja public",
+                )
+            messages.success(request, "Advisory mis à jour.")
             return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
-        messages.error(
-            request,
-            "Le formulaire comporte des erreurs : rien n'a été enregistre.",
-        )
     else:
         form = AdvisoryForm(instance=advisory)
         formset = AdvisoryTimelineFormSet(instance=advisory)
@@ -191,3 +164,44 @@ def advisory_manage(request, advisory_id):
             "statuses": AdvisoryStatus.choices,
         },
     )
+
+
+@login_required
+@require_not_read_only
+@require_capability(Capability.DRAFT_ADVISORY)
+def advisory_transition(request, advisory_id):
+    advisory = get_object_or_404(Advisory, advisory_id=advisory_id.upper())
+    target = request.POST.get("target_status", "")
+    try:
+        transition_advisory(advisory, target, request.user, request=request)
+        messages.success(request, f"Advisory : {advisory.get_status_display()}.")
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
+
+
+@login_required
+@require_not_read_only
+@require_capability(Capability.PUBLISH_ADVISORY)
+def advisory_publish(request, advisory_id):
+    advisory = get_object_or_404(Advisory, advisory_id=advisory_id.upper())
+    try:
+        publish_advisory(advisory, request.user, request=request)
+        messages.success(request, f"Advisory {advisory.advisory_id} publié.")
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
+
+
+@login_required
+@require_not_read_only
+@require_capability(Capability.PUBLISH_ADVISORY)
+def advisory_retract(request, advisory_id):
+    advisory = get_object_or_404(Advisory, advisory_id=advisory_id.upper())
+    reason = request.POST.get("reason", "")
+    try:
+        retract_advisory(advisory, request.user, reason, request=request)
+        messages.success(request, "Advisory retiré.")
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    return redirect("disclosures:manage", advisory_id=advisory.advisory_id)

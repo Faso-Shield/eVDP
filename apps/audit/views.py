@@ -4,14 +4,14 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.shortcuts import render
 
-from apps.accounts.permissions import require_roles
-from apps.accounts.roles import Role
+from apps.accounts.permissions import require_capability
+from apps.accounts.roles import Capability
 
 from .models import AuditAction, AuditLog
 
 
 @login_required
-@require_roles(Role.SUPER_ADMIN, Role.NATIONAL_COORDINATOR, Role.AUDITOR)
+@require_capability(Capability.VIEW_AUDIT_LOG)
 def audit_list(request):
     entries = AuditLog.objects.select_related("actor")
     action = request.GET.get("action", "").strip()

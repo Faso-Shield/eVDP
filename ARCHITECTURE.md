@@ -281,7 +281,6 @@ client est rejeté.
 Formulaire / API / CSAF
    → validation (forms.py | serializers.py)
    → reports.services.submit_report()
-        ├── report.full_clean()  ← règles du modèle, pour les trois chemins
         ├── crée VulnerabilityReport (privé)
         ├── crée Case (statut SUBMITTED, workflow déduit du programme)
         ├── ouvre la chronologie
@@ -290,20 +289,6 @@ Formulaire / API / CSAF
         ├── journalise REPORT_SUBMITTED + CASE_CREATED
         └── notifie l'équipe de triage et accuse réception au déclarant
 ```
-
-**`Model.clean()` ne s'exécute pas tout seul.** Seul un `ModelForm` l'appelle,
-via son `_post_clean` : un `ModelSerializer` DRF, un import et un
-`objects.create()` l'ignorent. Une règle métier posée sur un modèle ne vaut
-donc que pour le formulaire web, sauf à être relayée explicitement. Deux
-relais existent, à tenir à jour quand un chemin d'écriture s'ajoute :
-
-| Modèle | Relais | Couvre |
-|--------|--------|--------|
-| `VulnerabilityReport` | `submit_report()` | web, API, import CSAF |
-| `Program` | `ProgramWriteSerializer.validate()` | API (le formulaire y passe déjà) |
-
-`Bounty` valide déjà dans `bounty.services`. `Organization`, `SecurityContact`
-et `RewardTier` n'ont pas d'autre chemin d'écriture que leur `ModelForm`.
 
 ### Transition de statut
 
@@ -342,7 +327,7 @@ Case validé
 | Bordure (Nginx) | TLS, HSTS, rate limiting, `server_tokens off`, `/media/` interdit, `/metrics/` restreint aux réseaux privés |
 | Transport | Cookies `Secure`+`HttpOnly`+`SameSite`, `SECURE_PROXY_SSL_HEADER` |
 | Application | CSP, Permissions-Policy, `X-Frame-Options: DENY`, CSRF, `no-store` sur les pages sensibles |
-| Authentification | Argon2, validateurs (12 caractères min.), rate limiting, vérification d'email, TOTP obligatoire hors comptes signaleurs |
+| Authentification | Argon2, validateurs (12 caractères min.), rate limiting, vérification d'email, architecture MFA prête |
 | Autorisation | RBAC par capacités, isolation queryset, 404 au lieu de 403 |
 | Données | Markdown assaini (bleach), ORM paramétré, pas de mass assignment (champs explicites) |
 | Fichiers | Extension + MIME + signature binaire, taille bornée, nom opaque, SHA-256, antivirus optionnel |
@@ -370,6 +355,7 @@ Les journaux sont émis en **JSON structuré** (`apps/core/logging.py`) sur
 
 | Sujet | État | Point d'accroche |
 |-------|------|------------------|
+| MFA (TOTP) | Architecture prête | `User.mfa_enabled` / `mfa_secret`, `pyotp` installé |
 | SSO / OIDC / Keycloak / LDAP | Non implémenté | `AUTHENTICATION_BACKENDS` |
 | HSM pour PGP | Interface prête | `core/pgp.py::verify_signature` |
 | CVSS v4.0 | Détecté et rejeté proprement | `vulnerabilities/cvss.py` |

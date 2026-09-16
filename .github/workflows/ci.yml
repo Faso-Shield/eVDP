@@ -120,7 +120,6 @@ jobs:
 
       - name: pip-audit (vulnerabilites des dependances)
         run: pip-audit -r requirements/base.txt --strict
-        continue-on-error: true
 
       - name: Verifier l'absence de secret commite
         run: |
@@ -199,12 +198,12 @@ jobs:
           ignore-unfixed: true
           exit-code: "0"
 
-      - name: Trivy (echec sur CRITICAL corrigeable)
+      - name: Trivy (echec sur CRITICAL/HIGH corrigeable)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: evdp-app:ci
           format: table
-          severity: CRITICAL
+          severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
 

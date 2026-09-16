@@ -9,11 +9,7 @@
     <p class="muted mb-0">{{ program.organization.name }} — {{ program.get_program_type_display }}</p>
   </div>
   <div class="btn-row">
-    {% if refus_participation and not user.is_authenticated %}
-      <a class="btn btn-accent" href="{% url 'accounts:login' %}?next={{ lien_signalement|urlencode }}">Se connecter pour signaler</a>
-    {% else %}
-      <a class="btn btn-accent" href="{{ lien_signalement }}">Signaler une vulnérabilité</a>
-    {% endif %}
+    <a class="btn btn-accent" href="{% url 'reports:submit' %}?program={{ program.slug }}">Signaler une vulnérabilité</a>
     {% if can_manage %}<a class="btn btn-outline" href="{% url 'programs:manage' program.slug %}">Gérer</a>{% endif %}
   </div>
 </div>
@@ -24,33 +20,20 @@
   {% if program.starts_on %}<span class="pill">Depuis le {{ program.starts_on|date:"d/m/Y" }}</span>{% endif %}
   {% if program.ends_on %}<span class="pill">Jusqu'au {{ program.ends_on|date:"d/m/Y" }}</span>{% endif %}
   <span class="pill">Divulgation à {{ program.disclosure_delay_days }} jours</span>
-  {% if program.requires_verified_email %}
-    <span class="pill pill-requirement" title="Un compte dont l'adresse email a été vérifiée est exigé pour participer">Compte vérifié requis</span>
-  {% endif %}
-  {% if not program.accepts_anonymous_reports %}
-    <span class="pill pill-requirement">Signalement anonyme refusé</span>
+</div>
+
+<div class="grid grid-4 mb-2">
+  <div class="stat"><div class="stat-value">{{ stats.total_reports }}</div><div class="stat-label">Signalements reçus</div></div>
+  <div class="stat ok"><div class="stat-value">{{ stats.resolved_count }}</div><div class="stat-label">Résolus</div></div>
+  <div class="stat"><div class="stat-value">{% if stats.avg_response_hours %}{{ stats.avg_response_hours }} h{% else %}—{% endif %}</div><div class="stat-label">Délai moyen de 1ère réponse</div></div>
+  {% if program.is_bug_bounty %}
+  <div class="stat ok"><div class="stat-value">{{ stats.rewards_paid|money }}</div><div class="stat-label">Récompenses versées ({{ reward_policy.currency|default:"XOF" }})</div></div>
+  {% else %}
+  <div class="stat"><div class="stat-value">{{ program.allows_anonymous_reports|yesno:"Oui,Non" }}</div><div class="stat-label">Anonymat accepté</div></div>
   {% endif %}
 </div>
 
-{% if delai_verification %}
-  <div class="notice">
-    Votre adresse email n'est pas vérifiée. Vous conservez l'accès à ce
-    programme <strong>jusqu'au {{ delai_verification|date:"d/m/Y" }}</strong>.
-    <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
-  </div>
-{% elif refus_participation %}
-  <div class="notice">
-    {{ refus_participation }}
-    {% if user.is_authenticated and not user.email_verified %}
-      <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
-    {% elif not user.is_authenticated %}
-      <a href="{% url 'accounts:login' %}">Se connecter</a> ·
-      <a href="{% url 'accounts:register' %}">Créer un compte</a>
-    {% endif %}
-  </div>
-{% endif %}
-
-<div class="grid" style="grid-template-columns:2fr 1fr">
+<div class="grid split-layout">
   <div>
     <div class="card">
       <div class="card-header"><h2>Description</h2></div>
@@ -67,13 +50,6 @@
               <strong class="mono">{{ scope.identifier }}</strong>
               <span class="pill">{{ scope.get_target_type_display }}</span>
               <span class="pill">{{ scope.get_priority_display }}</span>
-              {% with bornes=scope.reward_range %}
-                {% if bornes %}
-                  <span class="pill pill-reward" title="Montants propres à cet actif">
-                    {{ bornes.min|floatformat:0 }} – {{ bornes.max|floatformat:0 }} {{ bornes.currency }}
-                  </span>
-                {% endif %}
-              {% endwith %}
               {% if scope.description %}<div class="small muted">{{ scope.description }}</div>{% endif %}
             </li>
           {% empty %}<li class="muted">Aucune cible déclarée.</li>{% endfor %}
@@ -124,44 +100,34 @@
   <aside>
     {% if reward_tiers %}
     <div class="card">
-      <div class="card-header">
-        <h3>Matrice de récompenses</h3>
-        {% if reward_scopes %}<span class="pill">Variable par actif</span>{% endif %}
-      </div>
+      <div class="card-header"><h3>Matrice de récompenses</h3></div>
       <div class="card-body">
-        <table class="table">
-          <thead><tr><th>Sévérité</th><th class="text-right">Montant</th></tr></thead>
-          <tbody>
+        <div class="reward-ladder">
+          {% with top=reward_tiers.0.max_amount %}
           {% for tier in reward_tiers %}
-            <tr>
-              <td><span class="badge {{ tier.severity|severity_class }}">{{ tier.get_severity_display }}</span></td>
-              <td class="text-right mono small">{{ tier.min_amount|floatformat:0 }} – {{ tier.max_amount|floatformat:0 }} {{ reward_policy.currency }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-        {% if reward_scopes %}
-          <h4 class="mt-2">Montants propres à un actif</h4>
-          <p class="small muted">Ces actifs dérogent à la grille ci-dessus ; tous les
-          autres la suivent.</p>
-          {% for scope in reward_scopes %}
-            <div class="reward-scope">
-              <div class="mono small">{{ scope.identifier }}</div>
-              <table class="table">
-                <tbody>
-                {% for tier in scope.reward_tiers.all %}
-                  <tr>
-                    <td><span class="badge {{ tier.severity|severity_class }}">{{ tier.get_severity_display }}</span></td>
-                    <td class="text-right mono small">{{ tier.min_amount|floatformat:0 }} – {{ tier.max_amount|floatformat:0 }} {{ reward_policy.currency }}</td>
-                  </tr>
-                {% endfor %}
-                </tbody>
-              </table>
+            <div class="reward-row">
+              <span class="badge {{ tier.severity|severity_class }}">{{ tier.get_severity_display }}</span>
+              <span class="bar-track"><span class="bar-fill {{ tier.severity|lower }}" style="width: {% widthratio tier.max_amount top 100 %}%"></span></span>
+              <span class="mono small nowrap">{{ tier.min_amount|floatformat:0 }} – {{ tier.max_amount|floatformat:0 }} {{ reward_policy.currency }}</span>
             </div>
           {% endfor %}
-        {% endif %}
-        <p class="small muted">Montants indicatifs. Le montant final est arrêté après
+          {% endwith %}
+        </div>
+        <p class="small muted mt-1">Montants indicatifs. Le montant final est arrêté après
         validation technique et revue.</p>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if hall_of_fame %}
+    <div class="card">
+      <div class="card-header"><h3>Chercheurs crédités</h3></div>
+      <div class="card-body">
+        <div class="credit-chips">
+          {% for name in hall_of_fame %}<span class="chip-credit">{{ name }}</span>{% endfor %}
+        </div>
+        <p class="small muted mt-1">Uniquement les chercheurs ayant choisi d'être crédités
+        publiquement.</p>
       </div>
     </div>
     {% endif %}
@@ -174,10 +140,13 @@
           <dd><a href="{% url 'organizations:detail' program.organization.slug %}">{{ program.organization.name }}</a></dd>
           {% if program.contact_email %}<dt>Email</dt><dd>{{ program.contact_email }}</dd>{% endif %}
           <dt>Signalements anonymes</dt>
-          <dd>{{ program.accepts_anonymous_reports|yesno:"Acceptés,Non acceptés" }}</dd>
+          <dd>{{ program.allows_anonymous_reports|yesno:"Acceptés,Non acceptés" }}</dd>
         </dl>
         {% if program.pgp_public_key %}
-          <p class="small muted">Une clé PGP est publiée pour ce programme.</p>
+          <p class="small muted">Clé PGP de contact direct de l'organisation, hors
+          plateforme eVDP. <strong>Pour signaler via eVDP, utilisez toujours la
+          <a href="{% url 'core:pgp_key' %}">clé publique nationale</a></strong> :
+          chaque dossier doit rester lisible par le CSIRT pour le triage.</p>
           <pre style="max-height:150px;overflow:auto;font-size:.62rem">{{ program.pgp_public_key }}</pre>
         {% endif %}
       </div>

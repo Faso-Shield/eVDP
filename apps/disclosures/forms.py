@@ -53,7 +53,9 @@ class AdvisoryForm(forms.ModelForm):
             "impact": forms.Textarea(attrs={"rows": 4}),
             "solution": forms.Textarea(attrs={"rows": 4}),
             "workaround": forms.Textarea(attrs={"rows": 3}),
-            "scheduled_for": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "scheduled_for": forms.DateTimeInput(
+                attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"
+            ),
         }
 
 
@@ -61,7 +63,9 @@ AdvisoryTimelineFormSet = inlineformset_factory(
     Advisory,
     AdvisoryTimelineEntry,
     fields=["happened_on", "label", "position"],
-    widgets={"happened_on": forms.DateInput(attrs={"type": "date"})},
+    widgets={
+        "happened_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+    },
     extra=1,
     can_delete=True,
 )

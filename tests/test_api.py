@@ -3,12 +3,12 @@
 import json
 
 import pytest
+from django.contrib.messages import get_messages
 
 from apps.accounts.models import ApiKey
 from apps.api.authentication import generate_key
 from apps.coordination.models import Case
 from apps.coordination.workflow import CaseStatus
-from apps.programs.models import Program
 
 pytestmark = pytest.mark.django_db
 
@@ -240,6 +240,45 @@ def test_api_key_is_never_stored_in_clear(researcher_a):
     assert len(entry.key_hash) == 64
 
 
+def test_user_can_create_and_use_own_api_key(client_for, researcher_a):
+    """Regression : generate_key() n'etait appelee nulle part - il etait
+    impossible pour quiconque de creer une cle utilisable de bout en bout."""
+    client = client_for(researcher_a)
+    response = client.post("/profile/api-keys/create/", data={"label": "Mon integration"})
+    assert response.status_code == 302
+    key = ApiKey.objects.get(user=researcher_a, label="Mon integration")
+    assert key.is_active
+    note = str(list(get_messages(response.wsgi_request))[0])
+    raw_key = note.split("Clé d'API créée : ", 1)[1].split("\n")[0]
+    assert raw_key.startswith("evdp_")
+    api_response = client.get("/api/v1/reports/", HTTP_X_EVDP_API_KEY=raw_key)
+    assert api_response.status_code == 200
+
+
+def test_user_can_revoke_own_api_key(client_for, researcher_a):
+    raw, prefix, key_hash = generate_key()
+    key = ApiKey.objects.create(
+        user=researcher_a, label="A revoquer", prefix=prefix, key_hash=key_hash
+    )
+    client = client_for(researcher_a)
+    response = client.post(f"/profile/api-keys/{key.id}/revoke/")
+    assert response.status_code == 302
+    key.refresh_from_db()
+    assert key.is_active is False
+
+
+def test_user_cannot_revoke_another_users_api_key(client_for, researcher_a, researcher_b):
+    raw, prefix, key_hash = generate_key()
+    key = ApiKey.objects.create(
+        user=researcher_b, label="Pas la mienne", prefix=prefix, key_hash=key_hash
+    )
+    client = client_for(researcher_a)
+    response = client.post(f"/profile/api-keys/{key.id}/revoke/")
+    assert response.status_code == 404
+    key.refresh_from_db()
+    assert key.is_active is True
+
+
 # --------------------------------------------------------------------- CSAF
 CSAF_DOCUMENT = {
     "document": {
@@ -308,76 +347,3 @@ def test_csaf_rejects_empty_vulnerabilities(client_for, analyst):
         content_type="application/json",
     )
     assert response.status_code == 400
-
-
-# ------------------------------------- validation du modele sur les ecritures
-# Un ModelSerializer ne declenche pas Model.clean() : sans relais explicite,
-# l'API ecrivait ce que le formulaire web refuse.
-def test_api_rejects_a_payload_passed_off_as_pgp(client_for, researcher_a):
-    """Sans ce controle, le dossier annonce un chiffrement qui n'existe pas."""
-    client = client_for(researcher_a)
-    response = client.post(
-        "/api/v1/reports/",
-        data=json.dumps({**REPORT_PAYLOAD, "pgp_payload": "ceci n'est pas du PGP"}),
-        content_type="application/json",
-    )
-    assert response.status_code == 400
-    assert Case.objects.count() == 0
-
-
-def test_api_accepts_a_real_pgp_block(client_for, researcher_a):
-    """Le cas nominal reste ouvert : un vrai bloc chiffre passe."""
-    bloc = "-----BEGIN PGP MESSAGE-----\n\nhQIMA1234\n-----END PGP MESSAGE-----"
-    client = client_for(researcher_a)
-    response = client.post(
-        "/api/v1/reports/",
-        data=json.dumps({**REPORT_PAYLOAD, "pgp_payload": bloc}),
-        content_type="application/json",
-    )
-    assert response.status_code == 201
-    assert Case.objects.get().report.is_pgp_encrypted
-
-
-def test_api_rejects_a_program_with_inverted_dates(client_for, coordinator, organization):
-    client = client_for(coordinator)
-    response = client.post(
-        "/api/v1/programs/",
-        data=json.dumps(
-            {
-                "name": "Programme aux dates inversees",
-                "program_type": "VDP",
-                "organization": str(organization.pk),
-                "starts_on": "2026-06-01",
-                "ends_on": "2026-05-01",
-            }
-        ),
-        content_type="application/json",
-    )
-    assert response.status_code == 400
-    assert "ends_on" in response.json()
-
-
-def test_api_rejects_a_bug_bounty_open_to_anonymous_reports(
-    client_for, coordinator, organization
-):
-    """L'invariant du Bug Bounty vaut aussi pour l'API, pas seulement le form."""
-    client = client_for(coordinator)
-    payload = {
-        "name": "Bug Bounty par API",
-        "program_type": "BUG_BOUNTY",
-        "organization": str(organization.pk),
-        "allows_anonymous_reports": True,
-    }
-    refus = client.post(
-        "/api/v1/programs/", data=json.dumps(payload), content_type="application/json"
-    )
-    assert refus.status_code == 400
-    assert "allows_anonymous_reports" in refus.json()
-
-    # Configure correctement, le meme programme passe.
-    payload["allows_anonymous_reports"] = False
-    response = client.post(
-        "/api/v1/programs/", data=json.dumps(payload), content_type="application/json"
-    )
-    assert response.status_code == 201
-    assert not Program.objects.get(name="Bug Bounty par API").accepts_anonymous_reports

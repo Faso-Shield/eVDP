@@ -1,119 +1,44 @@
-"""Double authentification par code TOTP (RFC 6238).
+"""Authentification a deux facteurs (TOTP, RFC 6238).
 
-Le second facteur ne vise pas tout le monde. Un compte signaleur n'a acces
-qu'a ses propres rapports : lui imposer un authentificateur ajouterait une
-barriere a l'entree d'un dispositif dont la valeur tient a ce qu'on puisse y
-signaler facilement. Les comptes administrateurs et metiers, eux, voient les
-dossiers d'autrui, changent des statuts, approuvent des recompenses : leur
-compromission porte sur la plateforme entiere.
-
-La regle est donc portee par le role, pas par un reglage par compte : voir
-`is_required`. Elle n'est jamais lue depuis le client.
-
-TOTP uniquement : ni SMS ni email, dont l'acheminement n'est pas maitrise par
-la plateforme et dont l'interception est un scenario documente.
+Le secret est stocke en clair en base (pratique standard pour TOTP, au meme
+titre que la plupart des implementations de reference) ; seule sa lecture est
+sensible, jamais transmise au navigateur apres l'ecran d'activation initial.
 """
 
-import time
+import base64
+import io
 
 import pyotp
-import segno
-from django.conf import settings
+import qrcode
 
-from .roles import BUSINESS_ROLES
-
-#: Longueur du code attendu, et pas de temps en secondes (valeurs RFC 6238
-#: par defaut, celles qu'appliquent les authentificateurs courants).
-CODE_LENGTH = 6
-INTERVAL = 30
-
-#: Tolerance de derive d'horloge, en pas de temps de part et d'autre.
-#: Un pas suffit : au-dela, on accepterait un code vieux d'une minute et demie.
-DRIFT_STEPS = 1
+ISSUER = "eVDP"
 
 
-def is_required(user):
-    """Le second facteur s'applique-t-il a ce compte ?
-
-    Vrai pour tout compte qui n'est pas un signaleur : administrateurs,
-    coordination nationale, analystes, triage, DSI, responsables
-    d'organisation, auditeurs. Ces comptes sont crees par un administrateur,
-    jamais par l'inscription publique.
-    """
-    if user is None or not getattr(user, "is_authenticated", False):
-        return False
-    if not user.is_active:
-        return False
-    return user.role in BUSINESS_ROLES
-
-
-def issuer():
-    return settings.EVDP["PLATFORM_NAME"]
-
-
-def new_secret():
+def generate_secret():
+    """Nouveau secret TOTP, encode en base32 (format standard)."""
     return pyotp.random_base32()
 
 
-def provisioning_uri(user, secret):
-    """URI `otpauth://` a saisir dans l'authentificateur."""
-    return pyotp.TOTP(secret, interval=INTERVAL, digits=CODE_LENGTH).provisioning_uri(
-        name=user.email, issuer_name=issuer()
-    )
+def provisioning_uri(email, secret):
+    """URI otpauth:// a encoder en QR code pour l'application d'authentification."""
+    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=ISSUER)
 
 
-def readable_secret(secret):
-    """Secret en groupes de quatre, pour une saisie manuelle sans faute."""
-    return " ".join(secret[i : i + 4] for i in range(0, len(secret), 4))
-
-
-def qr_data_uri(user, secret):
-    """Code QR de l'URI d'enrolement, en SVG au format `data:`.
-
-    Une URI `data:` dans un `<img>` plutot qu'un SVG injecte dans la page :
-    la valeur reste un attribut, echappe par le gabarit, et ne demande pas de
-    marquer du balisage comme sur. `img-src 'self' data:` est deja autorise
-    par la CSP, aucune dispense n'est ajoutee pour cette page.
-
-    Correction d'erreur au niveau M : la cible est un ecran, pas une etiquette
-    abimee, et un symbole plus dense se scanne moins bien.
-    """
-    code = segno.make(provisioning_uri(user, secret), error="m")
-    return code.svg_data_uri(scale=5, border=2)
-
-
-def matching_step(secret, code, now=None):
-    """Pas de temps auquel `code` est valide, None s'il ne l'est pour aucun.
-
-    On rend le pas plutot qu'un booleen : c'est lui qui permet de refuser le
-    rejeu. `pyotp.verify(valid_window=1)` accepterait le code sans dire a
-    quel instant il correspond, et un code intercepte resterait utilisable
-    pendant toute sa fenetre.
-    """
-    code = (code or "").strip().replace(" ", "")
-    if not secret or not code.isdigit() or len(code) != CODE_LENGTH:
-        return None
-    totp = pyotp.TOTP(secret, interval=INTERVAL, digits=CODE_LENGTH)
-    instant = int(now if now is not None else time.time())
-    for decalage in range(-DRIFT_STEPS, DRIFT_STEPS + 1):
-        candidat = instant + decalage * INTERVAL
-        if totp.verify(code, for_time=candidat):
-            return candidat // INTERVAL
-    return None
-
-
-def consume_code(user, code, now=None):
-    """Verifie un code et le brule. Vrai s'il etait valide et inedit.
-
-    Le pas consomme est enregistre sur le compte : un code rejoue dans sa
-    propre fenetre, ou un code anterieur encore dans la tolerance de derive,
-    est refuse.
-    """
-    pas = matching_step(user.mfa_secret, code, now=now)
-    if pas is None:
+def verify_code(secret, code):
+    """Verifie un code a 6 chiffres, avec une tolerance d'une fenetre de 30s
+    (horloge du telephone legerement en avance ou en retard)."""
+    if not secret or not code:
         return False
-    if user.mfa_last_step and pas <= user.mfa_last_step:
+    code = code.strip().replace(" ", "")
+    if not (code.isdigit() and len(code) == 6):
         return False
-    user.mfa_last_step = pas
-    user.save(update_fields=["mfa_last_step", "updated_at"])
-    return True
+    return pyotp.TOTP(secret).verify(code, valid_window=1)
+
+
+def qr_code_data_uri(uri):
+    """PNG encode en data: URI - jamais ecrit sur disque ni servi par une URL."""
+    image = qrcode.make(uri)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"

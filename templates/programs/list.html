@@ -16,27 +16,29 @@ juridique (Safe Harbor) et, pour le Bug Bounty, une matrice de récompenses.</p>
 
 <div class="grid grid-2">
   {% for program in page_obj %}
-  <div class="card">
+  <div class="card program-card {% if program.program_type == 'BUG_BOUNTY' %}program-card-bounty{% endif %}">
     <div class="card-header">
       <h2 style="font-size:1.1rem">{{ program.name }}</h2>
-      <span class="pill">{{ program.get_program_type_display }}</span>
+      <span class="badge {% if program.program_type == 'BUG_BOUNTY' %}badge-bounty{% else %}badge-vdp{% endif %}">{{ program.get_program_type_display }}</span>
     </div>
     <div class="card-body">
       <p class="small muted">{{ program.organization.name }}</p>
       <p>{{ program.summary|default:program.description|striptags|truncatechars:160 }}</p>
       {% with range=program.reward_range %}
         {% if range %}
-          <p class="small"><strong>Récompenses :</strong>
-            {{ range.min|floatformat:0 }} – {{ range.max|floatformat:0 }} {{ range.currency }}</p>
+          <div class="program-reward">
+            <span class="program-reward-value">{{ range.min|floatformat:0 }} – {{ range.max|floatformat:0 }}</span>
+            <span class="program-reward-currency">{{ range.currency }}</span>
+          </div>
         {% endif %}
       {% endwith %}
-      <div class="flex small muted">
-        <span>Périmètre : {{ program.in_scope_targets.count }} cible(s)</span>
-        <span>Divulgation : {{ program.disclosure_delay_days }} jours</span>
+      <div class="program-meta">
+        <span>{{ program.in_scope_targets.count }} cible{{ program.in_scope_targets.count|pluralize }} dans le périmètre</span>
+        <span>Divulgation à {{ program.disclosure_delay_days }} j</span>
       </div>
     </div>
     <div class="card-footer btn-row">
-      <a class="btn btn-sm" href="{% url 'programs:detail' program.slug %}">Consulter</a>
+      <a class="btn btn-sm btn-outline" href="{% url 'programs:detail' program.slug %}">Consulter</a>
       <a class="btn btn-sm btn-accent" href="{% url 'reports:submit' %}?program={{ program.slug }}">Signaler</a>
     </div>
   </div>

@@ -1,9 +1,7 @@
-{% comment %}
-  Champ de formulaire. Les champs obligatoires portent une etoile rouge ;
-  le title de l'abbr rend l'information accessible aux lecteurs d'ecran.
-{% endcomment %}
 <div class="form-field">
-  <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<abbr class="required" title="Champ obligatoire">*</abbr>{% endif %}{{ field.form.label_suffix }}</label>
+  <div class="field-label-row">
+    {{ field.label_tag }}{% if field.field.required %}<abbr class="required-marker" title="Obligatoire" aria-label="obligatoire">*</abbr>{% endif %}
+  </div>
   {{ field }}
   {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
   {{ field.errors }}

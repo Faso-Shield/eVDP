@@ -7,13 +7,13 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.accounts.permissions import require_capability, require_not_read_only
-from apps.accounts.roles import Capability
+from apps.accounts.roles import Capability, Role
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination import selectors
 
-from .forms import OrganizationForm
-from .models import Organization, OrganizationStatus
+from .forms import OrganizationForm, OrganizationMemberForm
+from .models import Organization, OrganizationMember, OrganizationStatus
 
 
 def organization_list(request):
@@ -118,5 +118,88 @@ def organization_manage(request, slug):
             "cases": selectors.visible_cases(request.user).filter(organization=organization)[
                 :15
             ],
+            "member_form": OrganizationMemberForm(),
         },
     )
+
+
+@login_required
+@require_not_read_only
+@require_capability(Capability.MANAGE_ORGANIZATION, Capability.MANAGE_ALL_ORGANIZATIONS)
+def organization_member_add(request, slug):
+    organization = get_object_or_404(Organization, slug=slug)
+    if not request.user.has_capability(Capability.MANAGE_ALL_ORGANIZATIONS):
+        if organization.id not in set(request.user.organization_ids()):
+            raise Http404("Organisation introuvable.")
+
+    if request.method == "POST":
+        form = OrganizationMemberForm(request.POST)
+        if form.is_valid():
+            invited = form.user is None
+            if invited:
+                from apps.accounts.models import User
+
+                target_user = User.objects.create_user(
+                    email=form.cleaned_data["email"],
+                    password=None,
+                    full_name=form.cleaned_data["full_name"],
+                    role=Role.ORGANIZATION_MANAGER,
+                )
+                log_action(
+                    AuditAction.USER_CREATED,
+                    actor=request.user,
+                    obj=target_user,
+                    request=request,
+                    role=target_user.role,
+                    invited_for_organization=organization.slug,
+                )
+            else:
+                target_user = form.user
+
+            member, created = OrganizationMember.objects.get_or_create(
+                organization=organization,
+                user=target_user,
+                defaults={
+                    "membership_role": form.cleaned_data["membership_role"],
+                    "is_primary": form.cleaned_data["is_primary"],
+                    "invited_by": request.user,
+                },
+            )
+            if created:
+                log_action(
+                    AuditAction.MEMBERSHIP_CHANGED,
+                    actor=request.user,
+                    obj=organization,
+                    request=request,
+                    member_email=target_user.email,
+                    membership_role=member.membership_role,
+                )
+                if invited:
+                    from apps.accounts.views import send_password_setup_link
+
+                    send_password_setup_link(
+                        target_user,
+                        title=f"Invitation à rejoindre {organization.name} sur eVDP",
+                        body=(
+                            f"{request.user.display_name or request.user.email} vous a "
+                            f"rattaché à {organization.name} sur eVDP. Choisissez votre "
+                            "mot de passe pour activer votre compte."
+                        ),
+                    )
+                    messages.success(
+                        request,
+                        f"Invitation envoyée à {target_user.email} — un lien pour "
+                        "choisir son mot de passe lui a été transmis.",
+                    )
+                else:
+                    messages.success(
+                        request, f"{target_user.email} ajouté comme membre de l'organisation."
+                    )
+            else:
+                messages.warning(request, "Cet utilisateur est déjà membre de l'organisation.")
+        else:
+            for error_list in form.errors.values():
+                for error in error_list:
+                    messages.error(request, error)
+
+    return redirect("organizations:manage", slug=organization.slug)

@@ -109,8 +109,8 @@ class Bounty(BaseModel):
     class Meta:
         db_table = "bounties"
         ordering = ["-created_at"]
-        verbose_name = "Recompense"
-        verbose_name_plural = "Recompenses"
+        verbose_name = "Récompense"
+        verbose_name_plural = "Récompenses"
 
     def __str__(self):
         return f"{self.case.case_id} - {self.display_amount}"
@@ -174,8 +174,8 @@ class BountyReview(BaseModel):
     class Meta:
         db_table = "bounty_reviews"
         ordering = ["-created_at"]
-        verbose_name = "Revue de recompense"
-        verbose_name_plural = "Revues de recompense"
+        verbose_name = "Revue de récompense"
+        verbose_name_plural = "Revues de récompense"
 
     def __str__(self):
         return f"{self.bounty} - {self.decision}"
@@ -221,8 +221,8 @@ class BountyPayment(BaseModel):
     class Meta:
         db_table = "bounty_payments"
         ordering = ["-created_at"]
-        verbose_name = "Paiement de recompense"
-        verbose_name_plural = "Paiements de recompense"
+        verbose_name = "Paiement de récompense"
+        verbose_name_plural = "Paiements de récompense"
 
     def __str__(self):
         return f"{self.amount} {self.currency} ({self.status})"

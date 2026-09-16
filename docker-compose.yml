@@ -30,9 +30,9 @@ x-app-env: &app-env
   MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-evdp-minio}
   MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
   MINIO_BUCKET: ${MINIO_BUCKET:-evdp-attachments}
-  EMAIL_HOST: evdp-mailpit
-  EMAIL_PORT: "1025"
-  EMAIL_USE_TLS: "False"
+  EMAIL_HOST: ${EMAIL_HOST:-evdp-mailpit}
+  EMAIL_PORT: ${EMAIL_PORT:-1025}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-False}
   DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-eVDP <no-reply@evdp.bf>}
   SITE_BASE_URL: ${SITE_BASE_URL:-}
   EVDP_NATIONAL_TEAM: ${EVDP_NATIONAL_TEAM:-ANSSI-BF / CSIRT National}
@@ -40,7 +40,7 @@ x-app-env: &app-env
   EVDP_DEFAULT_CURRENCY: ${EVDP_DEFAULT_CURRENCY:-XOF}
   PGP_PUBLIC_KEY: ${PGP_PUBLIC_KEY:-}
   PGP_FINGERPRINT: ${PGP_FINGERPRINT:-}
-  CLAMAV_HOST: ${CLAMAV_HOST:-}
+  CLAMAV_HOST: ${CLAMAV_HOST:-evdp-clamav}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   LOG_FORMAT: ${LOG_FORMAT:-json}
   TIME_ZONE: ${TIME_ZONE:-Africa/Ouagadougou}
@@ -116,7 +116,11 @@ services:
           memory: 384m
 
   evdp-minio:
-    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    # MinIO Inc. a retire ses images de Docker Hub (2025) : distribuees
+    # desormais uniquement sur quay.io. Epingle par empreinte (digest) pour
+    # garder une version figee et reproductible, quay.io ne conservant pas
+    # les memes noms de tag "RELEASE.<date>" que l'ancienne distribution.
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: evdp-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -142,7 +146,8 @@ services:
           memory: 512m
 
   evdp-minio-init:
-    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    # Meme raison que evdp-minio ci-dessus : image deplacee vers quay.io.
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     container_name: evdp-minio-init
     depends_on:
       evdp-minio:
@@ -178,6 +183,29 @@ services:
       resources:
         limits:
           memory: 192m
+
+  evdp-clamav:
+    image: clamav/clamav:1.4.6
+    container_name: evdp-clamav
+    restart: unless-stopped
+    volumes:
+      - evdp-clamav-data:/var/lib/clamav
+    networks:
+      - evdp-backend
+    # Aucun port publie : joignable uniquement par evdp-worker sur le
+    # reseau interne. Le premier demarrage telecharge les signatures
+    # (freshclam) et peut prendre plusieurs minutes avant "healthy" ;
+    # jusque-la, les pieces jointes restent en scan_status=SKIPPED.
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc -w 3 127.0.0.1 3310 | grep -q PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          memory: 2g
 
   # ------------------------------------------------------------ application
   evdp-web:
@@ -238,14 +266,8 @@ services:
     image: nginx:1.27-alpine
     container_name: evdp-nginx
     restart: unless-stopped
-    # L'adresse d'ecoute est explicite : la forme courte "8090:80" fait
-    # publier le port sur 0.0.0.0 *et* sur [::], or Docker Desktop annonce
-    # ce binding IPv6 sans router le trafic. Les clients qui resolvent
-    # "localhost" en ::1 en premier (curl, navigateurs) tombaient alors en
-    # timeout au lieu de basculer sur IPv4. En n'exposant que 0.0.0.0, ::1
-    # refuse immediatement la connexion et le repli IPv4 fonctionne.
     ports:
-      - "0.0.0.0:${HTTP_PORT:-80}:80"
+      - "${HTTP_PORT:-80}:80"
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
@@ -279,3 +301,4 @@ volumes:
   evdp-minio-data:
   evdp-static:
   evdp-media:
+  evdp-clamav-data:

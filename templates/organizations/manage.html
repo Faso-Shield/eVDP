@@ -27,7 +27,16 @@
           <span>{{ member.user.display_name }} <span class="muted">({{ member.user.email }})</span></span>
           <span class="pill">{{ member.get_membership_role_display }}</span>
         </div>
-      {% empty %}<p class="muted">Aucun membre. Ajoutez-les via l'administration Django.</p>{% endfor %}
+      {% empty %}<p class="muted">Aucun membre.</p>{% endfor %}
+
+      <form method="post" action="{% url 'organizations:member_add' organization.slug %}" class="mt-2">
+        {% csrf_token %}
+        <div class="form-grid">{% for field in member_form %}{% include "partials/form_field.html" %}{% endfor %}</div>
+        <button class="btn btn-outline btn-sm" type="submit">Ajouter un membre</button>
+      </form>
+      <p class="small muted mt-1">Si un compte eVDP existe deja avec cet email, il est
+      simplement rattache. Sinon, renseignez le nom complet : une invitation par email
+      est envoyee pour que la personne choisisse son mot de passe.</p>
     </div>
   </div>
   <div class="card">

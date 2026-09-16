@@ -1,0 +1,448 @@
+<title>Le Workflow des Dossiers eVDP</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #101a22; --ink-soft: #45545f; --paper: #eef2f1; --surface: #ffffff;
+    --surface-2: #e4e9e7; --line: #c7d0cd; --accent: #0e6f5c; --accent-soft: #d7ebe4;
+    --ok: #1a7a4c; --ok-soft: #dcf0e3; --warn: #93630a; --warn-soft: #f5e8cc;
+    --gap: #a5341f; --gap-soft: #f5ddd6;
+    --shadow: 0 1px 2px rgba(16,26,34,.06), 0 8px 24px -12px rgba(16,26,34,.18);
+    --evdp-navy: #0d2a49; --evdp-navy-light: #143a63;
+    --vdp: #143a63; --vdp-soft: #dde6ef;
+    --bounty: #0e6f5c; --bounty-soft: #d7ebe4;
+    --dismiss: #6b5a10; --dismiss-soft: #f2ecd0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e7ede9; --ink-soft: #a9b6ac; --paper: #0c1310; --surface: #121b17;
+      --surface-2: #182320; --line: #263531; --accent: #3cbf9e; --accent-soft: #17322a;
+      --ok: #4bc788; --ok-soft: #103524; --warn: #e0ab4c; --warn-soft: #3a2c0f;
+      --gap: #e8785f; --gap-soft: #3a1c15;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+      --vdp: #6f9bd0; --vdp-soft: #17232f;
+      --bounty: #3cbf9e; --bounty-soft: #17322a;
+      --dismiss: #d6b95a; --dismiss-soft: #2c2612;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e7ede9; --ink-soft: #a9b6ac; --paper: #0c1310; --surface: #121b17;
+    --surface-2: #182320; --line: #263531; --accent: #3cbf9e; --accent-soft: #17322a;
+    --ok: #4bc788; --ok-soft: #103524; --warn: #e0ab4c; --warn-soft: #3a2c0f;
+    --gap: #e8785f; --gap-soft: #3a1c15;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+    --vdp: #6f9bd0; --vdp-soft: #17232f;
+    --bounty: #3cbf9e; --bounty-soft: #17322a;
+    --dismiss: #d6b95a; --dismiss-soft: #2c2612;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Public Sans", "Segoe UI", system-ui, sans-serif; font-size: 16px; line-height: 1.6; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+  h1, h2, h3 { font-family: "Public Sans", sans-serif; text-wrap: balance; color: var(--ink); margin: 0; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  p { color: var(--ink-soft); }
+  code { font-family: "IBM Plex Mono", monospace; background: var(--surface-2); padding: .1rem .35rem; border-radius: 4px; font-size: .88em; color: var(--ink); }
+
+  header.masthead { display: flex; flex-direction: column; gap: .9rem; padding-bottom: 1.75rem; margin-bottom: 2.5rem; border-bottom: 3px solid var(--ink); }
+  .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: .72rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: .55rem; }
+  .eyebrow::before { content: ""; width: 22px; height: 2px; background: var(--accent); display: inline-block; }
+  h1.title { font-size: clamp(1.7rem, 3.2vw, 2.3rem); font-weight: 800; letter-spacing: -.01em; }
+  .subtitle { color: var(--ink-soft); font-size: 1.03rem; max-width: 72ch; }
+
+  section { margin-bottom: 3.2rem; }
+  .section-head { margin-bottom: 1.3rem; }
+  .section-head .num { font-family: "IBM Plex Mono", monospace; color: var(--accent); font-size: .8rem; font-weight: 700; }
+  .section-head h2 { font-size: 1.4rem; font-weight: 800; margin-top: .25rem; }
+  .section-head p { margin-top: .4rem; font-size: .95rem; max-width: 74ch; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 1.4rem 1.6rem; }
+
+  /* --------------------------------------------------------------- diagram */
+  .diagram-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 1.3rem; overflow-x: auto; }
+  .diagram-legend { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--line); font-size: .82rem; color: var(--ink-soft); }
+  .diagram-legend .item { display: flex; align-items: center; gap: .45rem; }
+  .diagram-legend .sw { width: 13px; height: 13px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
+
+  /* ----------------------------------------------------------------- table */
+  table.statuses { width: 100%; border-collapse: collapse; font-size: .87rem; }
+  table.statuses th { text-align: left; padding: .5rem .6rem; border-bottom: 2px solid var(--line); font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--ink-soft); }
+  table.statuses td { padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.statuses tr:hover td { background: var(--surface-2); }
+  .phase-row td { background: var(--surface-2); font-weight: 700; color: var(--evdp-navy); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; padding-top: .8rem; }
+  .status-pill { display: inline-block; padding: .12rem .5rem; border-radius: 5px; font-size: .74rem; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+  .status-pill.vdp { background: var(--vdp-soft); color: var(--vdp); }
+  .status-pill.bounty { background: var(--bounty-soft); color: var(--bounty); }
+  .status-pill.shared { background: var(--surface-2); color: var(--ink-soft); }
+  .status-pill.dismiss { background: var(--dismiss-soft); color: var(--dismiss); }
+  .cap-tag { font-family: "IBM Plex Mono", monospace; font-size: .72rem; background: var(--surface-2); color: var(--ink); padding: .1rem .4rem; border-radius: 4px; }
+
+  /* -------------------------------------------------------------- kanban */
+  .kanban { display: grid; grid-template-columns: repeat(7, minmax(110px, 1fr)); gap: .6rem; overflow-x: auto; padding-bottom: .3rem; }
+  .kanban-col { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: .6rem; min-width: 110px; }
+  .kanban-col h4 { font-size: .72rem; font-weight: 800; color: var(--evdp-navy); margin-bottom: .5rem; text-transform: uppercase; letter-spacing: .02em; }
+  .kanban-chip { font-size: .66rem; background: var(--surface-2); border-radius: 5px; padding: .25rem .4rem; margin-bottom: .35rem; color: var(--ink-soft); }
+
+  /* --------------------------------------------------------- simulation */
+  .sim-banner { background: var(--evdp-navy); color: #fff; border-radius: 12px; padding: 1.1rem 1.3rem; margin-bottom: 1.6rem; }
+  .sim-banner .id { font-family: "IBM Plex Mono", monospace; font-size: .76rem; color: #9fc3e0; }
+  .sim-banner .title2 { font-size: 1.02rem; font-weight: 700; margin-top: .2rem; }
+  .sim-step { display: flex; gap: .9rem; padding: .7rem 0; border-bottom: 1px solid var(--surface-2); align-items: flex-start; }
+  .sim-step:last-child { border-bottom: none; }
+  .sim-step .n { width: 26px; height: 26px; border-radius: 50%; background: var(--bounty); color: #fff; display: flex; align-items: center; justify-content: center; font-family: "IBM Plex Mono", monospace; font-weight: 700; font-size: .78rem; flex-shrink: 0; }
+  .sim-step .body { flex: 1; }
+  .sim-step .from-to { font-family: "IBM Plex Mono", monospace; font-size: .78rem; font-weight: 700; }
+  .sim-step .from-to .arrow { color: var(--ink-soft); margin: 0 .35rem; }
+  .sim-step .meta { font-size: .78rem; color: var(--ink-soft); margin-top: .2rem; }
+  .sim-step .comment { font-size: .82rem; color: var(--ink); margin-top: .3rem; font-style: italic; }
+
+  .callout { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: .9rem 1.1rem; font-size: .9rem; color: var(--ink-soft); }
+  .callout b { color: var(--ink); }
+  .callout.warn { border-left-color: var(--warn); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+  footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line); font-size: .8rem; color: var(--ink-soft); }
+
+  @media (max-width: 700px) {
+    .grid2 { grid-template-columns: 1fr; }
+    .kanban { grid-template-columns: repeat(4, minmax(100px,1fr)); }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Documentation technique · CYBER-DEF 2 / FASO SHIELD</div>
+    <h1 class="title">Le workflow des dossiers (« tickets ») sur eVDP</h1>
+    <p class="subtitle">
+      Comment un signalement devient un <b>Case</b>, et comment ce Case traverse une machine à états
+      stricte — de la soumission à la clôture — avec un contrôle d'accès par capacité à chaque étape
+      sensible. Document basé sur le code réel de <code>apps/coordination/workflow.py</code>, illustré
+      par un dossier réellement traité en simulation le 11 septembre 2026.
+    </p>
+  </header>
+
+  <!-- 1. CONCEPT -->
+  <section>
+    <div class="section-head">
+      <div class="num">01</div>
+      <h2>Qu'est-ce qu'un « ticket » dans eVDP ?</h2>
+      <p>Le terme technique est <code>Case</code> (dossier). C'est l'objet qui porte tout le cycle de vie
+      d'un signalement une fois transformé en dossier de traitement — distinct du <code>VulnerabilityReport</code>
+      brut soumis par le déclarant, qui lui n'est jamais modifié après coup.</p>
+    </div>
+    <div class="card">
+      <p style="margin:0 0 .6rem">Chaque Case porte, entre autres :</p>
+      <ul style="margin:0;padding-left:1.3rem;font-size:.9rem;color:var(--ink-soft)">
+        <li>un <code>statut</code> parmi <b>25 valeurs possibles</b> (l'objet de ce document) ;</li>
+        <li>un <code>workflow</code> : <b>CVD/VDP</b> ou <b>Bug Bounty</b> — chacun a ses propres transitions autorisées ;</li>
+        <li>une <code>priorité</code> recalculée automatiquement (sévérité, ancienneté, dépassement SLA) ;</li>
+        <li>un historique complet (<code>CaseStatusHistory</code>) et une chronologie publique-source (<code>CaseTimelineEvent</code>).</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 2. DIAGRAM -->
+  <section>
+    <div class="section-head">
+      <div class="num">02</div>
+      <h2>Diagramme de flux</h2>
+      <p>Un tronc commun (réception, triage, validation) puis une <b>bifurcation</b> selon le type de
+      programme : le VDP part directement en coordination avec l'organisation, le Bug Bounty passe par
+      l'attribution de sévérité puis la revue de récompense. Les deux se rejoignent en remédiation.</p>
+    </div>
+    <div class="diagram-card">
+<pre class="mermaid">
+flowchart TD
+    DRAFT[Brouillon] --> SUBMITTED[Soumis]
+    SUBMITTED --> RECEIVED[Reçu]
+    SUBMITTED --> TRIAGE
+    RECEIVED --> ACKNOWLEDGED[Accusé de réception]
+    RECEIVED --> TRIAGE
+    ACKNOWLEDGED --> TRIAGE[En triage]
+    TRIAGE --> NEEDS_INFO[Informations demandées]
+    NEEDS_INFO --> TRIAGE
+    TRIAGE --> VALIDATED[Validé]
+    TRIAGE -.-> DISMISS{{Doublon / Rejeté /\nHors périmètre /\nNon applicable / Informatif}}
+
+    VALIDATED --> |VDP| VENDOR_CONTACTED[Organisation contactée]
+    VALIDATED --> |VDP| IN_PROGRESS[En cours de traitement]
+    VALIDATED --> |Bug Bounty| SEVERITY[Sévérité attribuée]
+
+    IN_PROGRESS --> VENDOR_CONTACTED
+    VENDOR_CONTACTED --> VENDOR_ACK[Organisation a accusé réception]
+    VENDOR_ACK --> REMEDIATION
+
+    SEVERITY --> BOUNTY_REVIEW[Revue de récompense]
+    BOUNTY_REVIEW --> REWARD_APPROVED[Récompense approuvée]
+    SEVERITY --> REMEDIATION
+    BOUNTY_REVIEW --> REMEDIATION
+    REWARD_APPROVED --> REMEDIATION[Remédiation en cours]
+
+    REMEDIATION --> FIX_AVAILABLE[Correctif disponible]
+    FIX_AVAILABLE --> VERIFICATION[Vérification du correctif]
+    VERIFICATION --> REMEDIATION
+    VERIFICATION --> FIX_VERIFIED[Correctif vérifié]
+
+    FIX_VERIFIED --> DISCLOSURE[Divulgation planifiée]
+    FIX_VERIFIED --> CLOSED[Clos]
+    DISCLOSURE --> PUBLISHED[Publié]
+    DISCLOSURE --> CLOSED
+    PUBLISHED --> CLOSED
+
+    classDef shared fill:#e4e9e7,stroke:#45545f,color:#101a22
+    classDef vdp fill:#dde6ef,stroke:#143a63,color:#0d2a49
+    classDef bounty fill:#d7ebe4,stroke:#0e6f5c,color:#0e4a3d
+    classDef dismiss fill:#f2ecd0,stroke:#93630a,color:#6b5a10
+    classDef terminal fill:#0d2a49,stroke:#0d2a49,color:#fff
+
+    class DRAFT,SUBMITTED,RECEIVED,ACKNOWLEDGED,TRIAGE,NEEDS_INFO,VALIDATED,REMEDIATION,FIX_AVAILABLE,VERIFICATION,FIX_VERIFIED,DISCLOSURE,PUBLISHED shared
+    class VENDOR_CONTACTED,VENDOR_ACK,IN_PROGRESS vdp
+    class SEVERITY,BOUNTY_REVIEW,REWARD_APPROVED bounty
+    class DISMISS dismiss
+    class CLOSED terminal
+</pre>
+      <div class="diagram-legend">
+        <span class="item"><span class="sw" style="background:var(--vdp-soft);border:1px solid var(--vdp)"></span> Spécifique au canal VDP</span>
+        <span class="item"><span class="sw" style="background:var(--bounty-soft);border:1px solid var(--bounty)"></span> Spécifique au canal Bug Bounty</span>
+        <span class="item"><span class="sw" style="background:var(--dismiss-soft);border:1px solid var(--dismiss)"></span> Issues de clôture sans suite</span>
+        <span class="item"><span class="sw" style="background:var(--evdp-navy)"></span> État terminal (Clos)</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3 style="font-size:1rem;margin-bottom:.7rem">Comment lire ce diagramme, étape par étape</h3>
+      <ol style="margin:0;padding-left:1.3rem;font-size:.88rem;color:var(--ink-soft)">
+        <li style="margin-bottom:.5rem"><b style="color:var(--ink)">Tronc commun (gris)</b> — de <code>Soumis</code> à <code>Validé</code>, tout dossier suit exactement le même chemin, quel que soit le canal : réception, accusé, triage, éventuel aller-retour « informations demandées ».</li>
+        <li style="margin-bottom:.5rem"><b style="color:var(--ink)">Sortie de secours en pointillés</b> — depuis <code>En triage</code>, cinq issues de clôture sans suite (doublon, rejeté, hors périmètre, non applicable, informatif) restent accessibles à tout moment sans passer par la validation.</li>
+        <li style="margin-bottom:.5rem"><b style="color:var(--ink)">La bifurcation, au nœud <code>Validé</code></b> — c'est le seul point de divergence réel : le VDP (bleu) part directement en coordination avec l'organisation affectée ; le Bug Bounty (vert) passe d'abord par l'attribution de sévérité, puis la revue de récompense.</li>
+        <li style="margin-bottom:0"><b style="color:var(--ink)">Reconvergence en Remédiation</b> — les deux canaux se rejoignent ensuite sur un chemin unique (correctif, vérification, divulgation, clôture) : la distinction VDP / Bug Bounty n'existe que dans la partie haute du graphe.</li>
+      </ol>
+    </div>
+
+    <div class="callout" style="margin-top:1rem">
+      <b>Règle absolue du moteur :</b> <code>check_transition()</code> refuse toute transition non
+      explicitement déclarée dans <code>VDP_TRANSITIONS</code> ou <code>BOUNTY_TRANSITIONS</code> —
+      y compris rester sur le même état. Aucun saut d'étape n'est possible depuis l'interface, même par erreur.
+    </div>
+    <div class="callout" style="margin-top:.8rem">
+      <b>Voir cette branche en action :</b> l'exemple traité section 05 suit précisément la branche
+      <b style="color:var(--bounty)">Bug Bounty (verte)</b> de ce diagramme, du nœud <code>Validé</code>
+      jusqu'à <code>Clos</code> — chaque flèche franchie y est datée et attribuée à un compte réel.
+    </div>
+  </section>
+
+  <!-- 3. TABLE DES STATUTS -->
+  <section>
+    <div class="section-head">
+      <div class="num">03</div>
+      <h2>Les 25 statuts, regroupés par phase</h2>
+      <p>Chaque transition sensible exige une <b>capacité RBAC</b> précise (au-delà du simple droit de
+      changer un statut) — colonne « Capacité exigée ».</p>
+    </div>
+    <div class="card" style="padding:0;overflow-x:auto">
+      <table class="statuses">
+        <thead><tr><th>Statut</th><th>Canal</th><th>Signification</th><th>Capacité exigée</th></tr></thead>
+        <tbody>
+          <tr class="phase-row"><td colspan="4">Réception</td></tr>
+          <tr><td>Brouillon</td><td><span class="status-pill shared">Partagé</span></td><td>Rapport non encore soumis (usage interne, transitoire)</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Soumis</td><td><span class="status-pill shared">Partagé</span></td><td>Point d'entrée : le dossier vient d'être créé à la soumission</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Reçu</td><td><span class="status-pill shared">Partagé</span></td><td>Accusé de réception donné au déclarant (SLA 72h)</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Accusé de réception</td><td><span class="status-pill shared">Partagé</span></td><td>Variante explicite avant passage en triage</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+
+          <tr class="phase-row"><td colspan="4">Triage</td></tr>
+          <tr><td>En triage</td><td><span class="status-pill shared">Partagé</span></td><td>Équipe CSIRT en cours d'analyse (SLA 5 jours ouvrés)</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Informations demandées</td><td><span class="status-pill shared">Partagé</span></td><td>En attente d'un complément du déclarant, retour possible au triage</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Validé</td><td><span class="status-pill shared">Partagé</span></td><td>Vulnérabilité confirmée réelle par reproduction</td><td class="cap-tag">TRIAGE_CASE</td></tr>
+          <tr><td>Doublon / Rejeté / Hors périmètre / Non applicable / Informatif</td><td><span class="status-pill dismiss">Issues</span></td><td>Clôture sans suite — accessibles depuis presque tout état d'analyse</td><td class="cap-tag">TRIAGE_CASE</td></tr>
+
+          <tr class="phase-row"><td colspan="4">Spécifique VDP</td></tr>
+          <tr><td>En cours de traitement</td><td><span class="status-pill vdp">VDP</span></td><td>Prise en charge interne avant contact formel de l'organisation</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Organisation contactée</td><td><span class="status-pill vdp">VDP</span></td><td>L'organisation affectée a été notifiée du rapport technique</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Organisation a accusé réception</td><td><span class="status-pill vdp">VDP</span></td><td>Confirmation de prise en charge côté organisation</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+
+          <tr class="phase-row"><td colspan="4">Spécifique Bug Bounty</td></tr>
+          <tr><td>Sévérité attribuée</td><td><span class="status-pill bounty">Bug Bounty</span></td><td>Sévérité confirmée, dossier prêt pour proposition de récompense</td><td class="cap-tag">SET_SEVERITY</td></tr>
+          <tr><td>Revue de récompense</td><td><span class="status-pill bounty">Bug Bounty</span></td><td>Un montant a été proposé, en attente de décision</td><td class="cap-tag">PROPOSE_BOUNTY</td></tr>
+          <tr><td>Récompense approuvée</td><td><span class="status-pill bounty">Bug Bounty</span></td><td>Montant validé par un compte distinct de celui qui a proposé</td><td class="cap-tag">APPROVE_BOUNTY</td></tr>
+
+          <tr class="phase-row"><td colspan="4">Remédiation</td></tr>
+          <tr><td>Remédiation en cours</td><td><span class="status-pill shared">Partagé</span></td><td>Le correctif est en cours de développement (SLA 30 à 90 jours selon sévérité)</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Correctif disponible</td><td><span class="status-pill shared">Partagé</span></td><td>Le correctif a été déployé, en attente de vérification</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Vérification du correctif</td><td><span class="status-pill shared">Partagé</span></td><td>Le CSIRT re-teste le scénario original</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Correctif vérifié</td><td><span class="status-pill shared">Partagé</span></td><td>Le correctif est confirmé efficace</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+
+          <tr class="phase-row"><td colspan="4">Divulgation et clôture</td></tr>
+          <tr><td>Divulgation planifiée</td><td><span class="status-pill shared">Partagé</span></td><td>Une date de publication a été fixée (défaut : 90 jours)</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+          <tr><td>Publié</td><td><span class="status-pill shared">Partagé</span></td><td>L'advisory public est en ligne</td><td class="cap-tag">PUBLISH_ADVISORY</td></tr>
+          <tr><td>Clos</td><td><span class="status-pill shared" style="background:var(--evdp-navy);color:#fff">Terminal</span></td><td>Fin de cycle — plus aucune transition sortante</td><td class="cap-tag">CHANGE_CASE_STATUS</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4. KANBAN -->
+  <section>
+    <div class="section-head">
+      <div class="num">04</div>
+      <h2>Vue Kanban : 7 colonnes pour 25 statuts</h2>
+      <p>L'interface ne montre jamais les 25 statuts bruts sur le tableau visuel — <code>kanban_column_for()</code>
+      les regroupe en 7 colonnes compréhensibles d'un coup d'œil.</p>
+    </div>
+    <div class="kanban">
+      <div class="kanban-col"><h4>Soumis</h4><div class="kanban-chip">Soumis</div><div class="kanban-chip">Reçu</div><div class="kanban-chip">Accusé de réception</div></div>
+      <div class="kanban-col"><h4>Triage</h4><div class="kanban-chip">En triage</div><div class="kanban-chip">Infos demandées</div></div>
+      <div class="kanban-col"><h4>Validé</h4><div class="kanban-chip">Validé</div><div class="kanban-chip">Sévérité attribuée</div><div class="kanban-chip">Revue récompense</div><div class="kanban-chip">Récompense approuvée</div></div>
+      <div class="kanban-col"><h4>Remédiation</h4><div class="kanban-chip">En cours</div><div class="kanban-chip">Org. contactée</div><div class="kanban-chip">Org. a répondu</div><div class="kanban-chip">Remédiation</div><div class="kanban-chip">Correctif dispo.</div></div>
+      <div class="kanban-col"><h4>Vérification</h4><div class="kanban-chip">Vérification</div><div class="kanban-chip">Correctif vérifié</div></div>
+      <div class="kanban-col"><h4>Divulgation</h4><div class="kanban-chip">Planifiée</div><div class="kanban-chip">Publié</div></div>
+      <div class="kanban-col"><h4>Clos</h4><div class="kanban-chip">Clos</div><div class="kanban-chip">Rejeté</div><div class="kanban-chip">Doublon</div><div class="kanban-chip">+3 autres</div></div>
+    </div>
+  </section>
+
+  <!-- 5. SIMULATION -->
+  <section>
+    <div class="section-head">
+      <div class="num">05</div>
+      <h2>Simulation à l'appui : un dossier réel, du dépôt à la clôture</h2>
+      <p>Ce n'est pas un exemple théorique : dossier réellement créé et traité sur l'instance de
+      démonstration eVDP le 11 septembre 2026, avec changement de compte à chaque étape pour respecter
+      la séparation des rôles. Il parcourt exactement la branche <b style="color:var(--bounty)">Bug Bounty</b>
+      du diagramme de la section 02, du tronc commun jusqu'à la reconvergence en remédiation.</p>
+    </div>
+
+    <div class="sim-banner">
+      <div class="id">EVDP-2026-000009 · Bug Bounty · Ministère de la Santé et de l'Hygiène Publique</div>
+      <div class="title2">IDOR sur l'API dossier patient permettant de consulter les dossiers d'autres usagers</div>
+    </div>
+
+    <div class="card">
+      <div class="sim-step">
+        <div class="n">1</div>
+        <div class="body">
+          <div class="from-to">— <span class="arrow">→</span> SOUMIS</div>
+          <div class="meta">13:52 · zata_sec (chercheur, compte + email vérifié + MFA)</div>
+          <div class="comment">Signalement créé directement au statut Soumis.</div>
+        </div>
+      </div>
+      <div class="sim-step">
+        <div class="n">2</div>
+        <div class="body">
+          <div class="from-to">SOUMIS <span class="arrow">→</span> REÇU <span class="arrow">→</span> EN TRIAGE</div>
+          <div class="meta">13:55 · Agent de triage · capacité <span class="cap-tag">CHANGE_CASE_STATUS</span></div>
+        </div>
+      </div>
+      <div class="sim-step">
+        <div class="n">3</div>
+        <div class="body">
+          <div class="from-to">EN TRIAGE <span class="arrow">→</span> VALIDÉ</div>
+          <div class="meta">13:57 · Analyste CSIRT · capacité <span class="cap-tag">TRIAGE_CASE</span></div>
+          <div class="comment">Qualification préalable : sévérité Élevée, CVSS 6,5, CWE-639 (IDOR).</div>
+        </div>
+      </div>
+      <div class="sim-step">
+        <div class="n">4</div>
+        <div class="body">
+          <div class="from-to">VALIDÉ <span class="arrow">→</span> SÉVÉRITÉ ATTRIBUÉE</div>
+          <div class="meta">13:57 · Analyste CSIRT · capacité <span class="cap-tag">SET_SEVERITY</span></div>
+        </div>
+      </div>
+      <div class="sim-step">
+        <div class="n">5</div>
+        <div class="body">
+          <div class="from-to">SÉVÉRITÉ ATTRIBUÉE <span class="arrow">→</span> REVUE DE RÉCOMPENSE</div>
+          <div class="meta">14:01 · Analyste CSIRT · capacité <span class="cap-tag">PROPOSE_BOUNTY</span></div>
+          <div class="comment">Proposition de 650 000 XOF (suggestion matrice : 900 000 XOF).</div>
+        </div>
+      </div>
+      <div class="sim-step">
+        <div class="n">6</div>
+        <div class="body">
+          <div class="from-to">REVUE DE RÉCOMPENSE <span class="arrow">→</span> RÉCOMPENSE APPROUVÉE</div>
+          <div class="meta">14:01 · <b>Coordinateur national</b> (compte distinct) · capacité <span class="cap-tag">APPROVE_BOUNTY</span></div>
+          <div class="comment">Séparation des rôles : celui qui propose n'approuve jamais lui-même.</div>
+        </div>
+      </div>
+      <div class="sim-step">
+        <div class="n">7</div>
+        <div class="body">
+          <div class="from-to">RÉCOMPENSE APPROUVÉE <span class="arrow">→</span> REMÉDIATION <span class="arrow">→</span> CORRECTIF DISPO. <span class="arrow">→</span> VÉRIFICATION <span class="arrow">→</span> CORRECTIF VÉRIFIÉ</div>
+          <div class="meta">14:01 – 14:02 · Coordinateur national · capacité <span class="cap-tag">CHANGE_CASE_STATUS</span></div>
+          <div class="comment">Versement de 650 000 XOF enregistré (Mobile Money) entre les étapes 6 et 7.</div>
+        </div>
+      </div>
+      <div class="sim-step">
+        <div class="n">8</div>
+        <div class="body">
+          <div class="from-to">CORRECTIF VÉRIFIÉ <span class="arrow">→</span> DIVULGATION PLANIFIÉE</div>
+          <div class="meta">14:02 · Coordinateur national · date fixée : 10/12/2026</div>
+        </div>
+      </div>
+      <div class="sim-step">
+        <div class="n">9</div>
+        <div class="body">
+          <div class="from-to">DIVULGATION PLANIFIÉE <span class="arrow">→</span> PUBLIÉ <span class="arrow">→</span> CLOS</div>
+          <div class="meta">14:07 · Coordinateur national · capacité <span class="cap-tag">PUBLISH_ADVISORY</span></div>
+          <div class="comment">Advisory EVDP-ADV-2026-000003 publié, crédit rendu au pseudonyme « zata_sec ».</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:1rem">
+      <b>15 minutes, 9 transitions, 4 comptes distincts</b> (chercheur, agent de triage, analyste, coordinateur)
+      — chacune vérifiée par <code>check_transition()</code> avant d'être acceptée. Chronologie et rapports
+      complets disponibles dans <code>parcours-bugbounty-recompense-2026-09-11.html</code>.
+    </div>
+  </section>
+
+  <!-- 6. REGLES -->
+  <section>
+    <div class="section-head">
+      <div class="num">06</div>
+      <h2>Règles structurelles à retenir</h2>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3 style="font-size:1rem;margin-bottom:.5rem">États terminaux</h3>
+        <p style="font-size:.88rem;margin:0">
+          <code>Clos</code>, <code>Rejeté</code>, <code>Doublon</code>, <code>Hors périmètre</code>,
+          <code>Non applicable</code> : aucune transition sortante n'existe depuis ces états dans le code
+          actuel — une réouverture nécessiterait une intervention hors workflow standard.
+        </p>
+      </div>
+      <div class="card">
+        <h3 style="font-size:1rem;margin-bottom:.5rem">Double vérification à chaque transition</h3>
+        <p style="font-size:.88rem;margin:0">
+          <code>check_transition()</code> exige <b>à la fois</b> la capacité spécifique à l'état cible
+          (ex. <code>APPROVE_BOUNTY</code>) <b>et</b> la capacité générale <code>CHANGE_CASE_STATUS</code> —
+          avoir l'une sans l'autre ne suffit pas.
+        </p>
+      </div>
+      <div class="card">
+        <h3 style="font-size:1rem;margin-bottom:.5rem">Vue publique volontairement floue</h3>
+        <p style="font-size:.88rem;margin:0">
+          La page de suivi anonyme ne montre jamais les 25 statuts : <code>PUBLIC_STATUS_BUCKETS</code>
+          les réduit à 5 libellés (Reçu, En cours d'analyse, Correction en cours, Résolu, Clôturé sans suite)
+          — la file d'attente interne et les motifs exacts de clôture restent invisibles au déclarant.
+        </p>
+      </div>
+      <div class="card">
+        <h3 style="font-size:1rem;margin-bottom:.5rem">Aucun raccourci possible</h3>
+        <p style="font-size:.88rem;margin:0">
+          Même un Coordinateur national qui détient toutes les capacités ne peut pas sauter d'étape :
+          <code>can_transition()</code> vérifie l'existence explicite de l'arête dans le dictionnaire de
+          transitions avant toute capacité — la structure du graphe prime sur les droits de l'utilisateur.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Document généré le 11 septembre 2026 à partir du code source réel (<code>apps/coordination/workflow.py</code>)
+    et d'une simulation exécutée en direct sur l'instance de démonstration eVDP.
+    Voir aussi : <code>administration-structures-2026-09-11.html</code>,
+    <code>parcours-bugbounty-recompense-2026-09-11.html</code>, <code>parcours-vdp-anonyme-complet-2026-09-11.html</code>.
+  </footer>
+
+</div>

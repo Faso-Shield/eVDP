@@ -27,6 +27,26 @@ class BaseModel(UUIDPrimaryKeyModel, TimeStampedModel):
         abstract = True
 
 
+class SequenceCounter(models.Model):
+    """Compteur atomique pour les identifiants lisibles sequentiels.
+
+    Une ligne par (prefixe, annee). Contrairement a une derivation du
+    "dernier" enregistrement existant (qui ne verrouille rien en cas
+    d'insertion concurrente), cette ligne est verrouillee et incrementee
+    sur place : deux transactions concurrentes sont serialisees pour de
+    vrai par le verrou ligne, sans collision possible.
+    """
+
+    key = models.CharField(max_length=64, unique=True)
+    last_value = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "core_sequence_counters"
+
+    def __str__(self):
+        return f"{self.key} -> {self.last_value}"
+
+
 class SiteSetting(TimeStampedModel):
     """Parametres editables depuis l'administration (politique, textes legaux).
 
@@ -42,8 +62,8 @@ class SiteSetting(TimeStampedModel):
     class Meta:
         db_table = "site_settings"
         ordering = ["key"]
-        verbose_name = "Parametre de site"
-        verbose_name_plural = "Parametres de site"
+        verbose_name = "Paramètre de site"
+        verbose_name_plural = "Paramètres de site"
 
     def __str__(self):
         return self.label or self.key

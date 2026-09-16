@@ -1,0 +1,365 @@
+<title>Parcours VDP anonyme complet</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #101a22; --ink-soft: #45545f; --paper: #eef2f1; --surface: #ffffff;
+    --surface-2: #e4e9e7; --line: #c7d0cd; --accent: #0e6f5c; --accent-soft: #d7ebe4;
+    --ok: #1a7a4c; --ok-soft: #dcf0e3; --warn: #93630a; --warn-soft: #f5e8cc;
+    --shadow: 0 1px 2px rgba(16,26,34,.06), 0 8px 24px -12px rgba(16,26,34,.18);
+    --evdp-navy: #0d2a49; --evdp-navy-light: #143a63; --evdp-accent-btn: #17966f;
+    --sev-crit-bg: #fbe9e7; --sev-crit-ink: #8b1a13;
+    --anon: #45545f; --anon-soft: #e4e9e7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e7ede9; --ink-soft: #a9b6ac; --paper: #0c1310; --surface: #121b17;
+      --surface-2: #182320; --line: #263531; --accent: #3cbf9e; --accent-soft: #17322a;
+      --ok: #4bc788; --ok-soft: #103524; --warn: #e0ab4c; --warn-soft: #3a2c0f;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+      --sev-crit-bg: #3a1c15; --sev-crit-ink: #e8785f;
+      --anon: #a9b6ac; --anon-soft: #182320;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e7ede9; --ink-soft: #a9b6ac; --paper: #0c1310; --surface: #121b17;
+    --surface-2: #182320; --line: #263531; --accent: #3cbf9e; --accent-soft: #17322a;
+    --ok: #4bc788; --ok-soft: #103524; --warn: #e0ab4c; --warn-soft: #3a2c0f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+    --sev-crit-bg: #3a1c15; --sev-crit-ink: #e8785f;
+    --anon: #a9b6ac; --anon-soft: #182320;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Public Sans", "Segoe UI", system-ui, sans-serif; font-size: 16px; line-height: 1.55; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+  h1, h2, h3 { font-family: "Public Sans", sans-serif; text-wrap: balance; color: var(--ink); margin: 0; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  header.masthead { display: flex; flex-direction: column; gap: .9rem; padding-bottom: 1.75rem; margin-bottom: 2rem; border-bottom: 3px solid var(--ink); }
+  .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: .72rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: .55rem; }
+  .eyebrow::before { content: ""; width: 22px; height: 2px; background: var(--accent); display: inline-block; }
+  h1.title { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -.01em; }
+  .subtitle { color: var(--ink-soft); font-size: 1.02rem; max-width: 70ch; }
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .5rem; }
+  .legend-item { display: flex; align-items: center; gap: .5rem; font-size: .82rem; color: var(--ink-soft); }
+  .legend-dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  .case-banner { background: var(--evdp-navy); color: #fff; border-radius: 12px; padding: 1.2rem 1.4rem; margin-bottom: 2.5rem; display: flex; flex-wrap: wrap; gap: 1.2rem; align-items: center; justify-content: space-between; }
+  .case-banner .id { font-family: "IBM Plex Mono", monospace; font-size: .78rem; color: #9fc3e0; }
+  .case-banner .title2 { font-size: 1.05rem; font-weight: 700; margin-top: .2rem; max-width: 52ch; }
+  .case-banner .stats { display: flex; gap: 1.6rem; }
+  .case-banner .stat { text-align: center; }
+  .case-banner .stat .v { font-size: 1.3rem; font-weight: 800; }
+  .case-banner .stat .l { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #9fc3e0; }
+
+  .step { display: grid; grid-template-columns: 42px 1fr; gap: 1.1rem; margin-bottom: 2.2rem; position: relative; }
+  .step::before { content: ""; position: absolute; left: 20px; top: 46px; bottom: -2.2rem; width: 2px; background: var(--line); }
+  .step:last-of-type::before { display: none; }
+  .step-num { width: 42px; height: 42px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-family: "IBM Plex Mono", monospace; font-weight: 700; font-size: 1.05rem; flex-shrink: 0; z-index: 1; }
+  .step-num.anon { background: var(--anon); }
+  .step-num.coord { background: var(--evdp-navy); }
+  .step-body { min-width: 0; }
+  .step-tag { font-family: "IBM Plex Mono", monospace; font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; padding: .22rem .55rem; border-radius: 5px; display: inline-block; margin-bottom: .5rem; }
+  .step-tag.anon { background: var(--anon-soft); color: var(--anon); }
+  .step-tag.coord { background: #dde6ef; color: var(--evdp-navy); }
+  .step h3 { font-size: 1.12rem; font-weight: 700; margin-bottom: .4rem; }
+  .step p.narration { color: var(--ink-soft); font-size: .92rem; max-width: 66ch; margin: 0 0 1rem; }
+  .step p.narration b { color: var(--ink); font-weight: 600; }
+
+  .mockup-frame { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: var(--surface); max-width: 660px; }
+  .mockup-chrome { background: var(--surface-2); padding: .5rem .7rem; display: flex; align-items: center; gap: .5rem; border-bottom: 1px solid var(--line); }
+  .mockup-dots { display: flex; gap: 4px; }
+  .mockup-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--line); display: inline-block; }
+  .mockup-url { font-family: "IBM Plex Mono", monospace; font-size: .68rem; color: var(--ink-soft); background: var(--surface); border-radius: 5px; padding: .2rem .6rem; flex: 1; }
+  .mockup-body { background: #f4f6f9; }
+  .evdp-nav { background: var(--evdp-navy); color: #fff; padding: .55rem .9rem; display: flex; align-items: center; gap: .5rem; font-size: .72rem; }
+  .evdp-nav .brand { font-weight: 700; font-size: .82rem; }
+  .evdp-notice { background: var(--ok-soft); border-bottom: 1px solid var(--ok); color: var(--ok); font-size: .72rem; padding: .5rem .9rem; font-weight: 600; }
+  .evdp-content { padding: .9rem; }
+  .mock-h1 { font-size: 1rem; font-weight: 800; color: var(--evdp-navy); margin: 0 0 .3rem; }
+  .mock-muted { font-size: .74rem; color: var(--ink-soft); margin: 0 0 .7rem; }
+  .mock-field { margin-bottom: .5rem; }
+  .mock-label { font-size: .66rem; font-weight: 600; color: var(--evdp-navy); margin-bottom: .18rem; display: block; }
+  .mock-input { border: 1px solid var(--line); border-radius: 6px; padding: .38rem .55rem; font-size: .73rem; background: #fff; color: var(--ink); font-weight: 500; }
+  .mock-input.mono2 { font-family: "IBM Plex Mono", monospace; font-size: .68rem; }
+  .mock-checkbox { display: flex; align-items: center; gap: .4rem; font-size: .74rem; margin-bottom: .3rem; }
+  .mock-checkbox .box { width: 14px; height: 14px; border: 1.5px solid var(--evdp-navy); border-radius: 3px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: .6rem; color: #fff; }
+  .mock-checkbox .box.checked { background: var(--evdp-accent-btn); border-color: var(--evdp-accent-btn); }
+  .mock-btn { display: inline-block; background: var(--evdp-accent-btn); color: #fff; font-size: .74rem; font-weight: 700; padding: .4rem .8rem; border-radius: 6px; }
+  .mock-dl { font-size: .72rem; }
+  .mock-dl-row { display: flex; justify-content: space-between; padding: .3rem 0; border-bottom: 1px dashed var(--line); gap: 1rem; }
+  .mock-dl-row .k { color: var(--ink-soft); flex-shrink: 0; }
+  .mock-dl-row .v { font-weight: 600; color: var(--ink); text-align: right; }
+
+  .badge-pill { font-size: .64rem; font-weight: 700; padding: .18rem .5rem; border-radius: 5px; display: inline-block; margin-right: .3rem; text-transform: uppercase; letter-spacing: .02em; }
+  .badge-crit { background: var(--sev-crit-bg); color: var(--sev-crit-ink); }
+  .badge-status { background: #e4e9ef; color: var(--evdp-navy); }
+  .badge-done { background: var(--ok-soft); color: var(--ok); }
+  .badge-anon { background: var(--anon-soft); color: var(--anon); }
+
+  .mock-tracking-box { background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 8px; padding: .7rem .8rem; margin: .5rem 0; }
+  .mock-tracking-code { font-family: "IBM Plex Mono", monospace; font-size: .68rem; word-break: break-all; color: var(--warn); font-weight: 600; }
+  .mock-tracking-label { font-size: .64rem; color: var(--warn); text-transform: uppercase; letter-spacing: .03em; font-weight: 700; margin-bottom: .3rem; }
+
+  .callout { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: .8rem 1rem; margin-top: .8rem; font-size: .86rem; color: var(--ink-soft); }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout b { color: var(--ink); }
+
+  .section-head { margin: 3rem 0 1.5rem; }
+  .section-head h2 { font-size: 1.3rem; font-weight: 800; }
+  .section-head p { color: var(--ink-soft); font-size: .9rem; margin-top: .3rem; }
+
+  .mock-timeline-full { font-size: .78rem; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.1rem 1.3rem; box-shadow: var(--shadow); }
+  .tl-item { display: flex; gap: .8rem; padding: .45rem 0; border-bottom: 1px solid var(--surface-2); }
+  .tl-item:last-child { border-bottom: none; }
+  .tl-item .date { font-family: "IBM Plex Mono", monospace; font-size: .68rem; color: var(--ink-soft); min-width: 60px; flex-shrink: 0; }
+  .tl-item .label { font-weight: 600; }
+  .tl-item .actor { color: var(--ink-soft); font-size: .74rem; }
+
+  .sla-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; margin-top: .6rem; }
+  .sla-item { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: .6rem .7rem; }
+  .sla-item .name { font-size: .7rem; color: var(--ink-soft); margin-bottom: .2rem; }
+  .sla-item .state { font-size: .78rem; font-weight: 700; }
+  .sla-item .state.met { color: var(--ok); }
+  .sla-item .state.cancel { color: var(--ink-soft); }
+
+  .recap { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.3rem 1.5rem; box-shadow: var(--shadow); }
+  .recap ul { margin: .6rem 0 0; padding-left: 1.2rem; font-size: .88rem; color: var(--ink-soft); }
+  .recap li { margin-bottom: .4rem; }
+  .recap li b { color: var(--ink); }
+
+  footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line); font-size: .8rem; color: var(--ink-soft); }
+
+  @media (max-width: 560px) { .case-banner { flex-direction: column; align-items: flex-start; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Rapport 3 / 3 · CYBER-DEF 2 / FASO SHIELD</div>
+    <h1 class="title">Un signalement anonyme, de la découverte à la clôture — sans jamais révéler d'identité</h1>
+    <p class="subtitle">
+      Reconstitution fidèle d'un cycle complet réellement exécuté le 11 septembre 2026 sur le canal VDP
+      national : soumission sans compte ni email, réception, qualification critique, coordination avec
+      l'organisation affectée, remédiation, attribution d'un CVE, divulgation publique — et vérification
+      finale que le déclarant peut suivre tout cela sans jamais avoir révélé qui il est.
+    </p>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--anon)"></span> Déclarant anonyme (aucun compte)</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--evdp-navy)"></span> Coordinateur national (CSIRT)</span>
+    </div>
+  </header>
+
+  <div class="case-banner">
+    <div>
+      <div class="id">EVDP-2026-000010 · Programme National VDP</div>
+      <div class="title2">Injection SQL sur le formulaire de recherche du portail des marchés publics</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v">Critique</div><div class="l">Sévérité</div></div>
+      <div class="stat"><div class="v">9,1</div><div class="l">CVSS</div></div>
+      <div class="stat"><div class="v" style="font-size:.85rem">CVE-2026<br>-48213</div><div class="l">Identifiant</div></div>
+      <div class="stat"><div class="v">Clos</div><div class="l">Statut final</div></div>
+    </div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-num anon">1</div>
+    <div class="step-body">
+      <span class="step-tag anon">Déclarant anonyme</span>
+      <h3>Soumission sans compte ni email</h3>
+      <p class="narration">Aucune inscription, aucune adresse email. La case <b>« Signaler de manière
+      anonyme »</b> est cochée, ainsi que <b>« Je demande l'attribution d'un CVE »</b> — un CVE identifie
+      la faille elle-même, jamais son auteur, donc reste disponible même sous anonymat complet.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/report/?program=programme-national-vdp</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-h1">Signaler une vulnérabilité</div>
+            <div class="mock-field"><span class="mock-label">Titre *</span><div class="mock-input">Injection SQL sur le formulaire de recherche du portail des marchés publics</div></div>
+            <div class="mock-field"><span class="mock-label">Sévérité estimée *</span><div class="mock-input">Critique</div></div>
+            <div class="mock-checkbox"><span class="box checked">✓</span> Signaler de manière anonyme</div>
+            <div class="mock-checkbox"><span class="box"></span> Je souhaite être crédité publiquement</div>
+            <div class="mock-checkbox"><span class="box checked">✓</span> Je demande l'attribution d'un CVE</div>
+            <span class="mock-btn">Envoyer le signalement</span>
+          </div>
+        </div>
+      </div>
+      <div class="callout warn">
+        <div class="mock-tracking-label">Code de suivi — affiché une seule fois</div>
+        <div class="mock-tracking-code">9uZEzyyI8SyoQunt8xgNaWm4UoXsFM0duJTbaWnPR0U</div>
+        <p style="margin:.5rem 0 0;font-size:.82rem">Dossier <b>EVDP-2026-000010</b> créé. Sans compte ni email,
+        ce code est le <b>seul</b> moyen de consulter l'avancement plus tard — personne ne peut le renvoyer
+        s'il est perdu.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-num coord">2</div>
+    <div class="step-body">
+      <span class="step-tag coord">Coordinateur national</span>
+      <h3>Réception, triage, qualification critique</h3>
+      <p class="narration">Le dossier passe de <b>Soumis</b> à <b>Reçu</b> puis <b>En triage</b>. La
+      sévérité <b>Critique</b> est confirmée (CVSS 9,1, CWE-89 — injection SQL), portant la priorité
+      interne à <b>80/100</b>, puis le dossier est <b>Validé</b>.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/cases/EVDP-2026-000010/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-content">
+            <span class="badge-pill badge-crit">Critique</span><span class="badge-pill badge-status">CVSS 9,1</span><span class="badge-pill badge-status">CWE-89</span>
+            <div class="mock-dl" style="margin-top:.5rem">
+              <div class="mock-dl-row"><span class="k">Déclarant</span><span class="v">Déclarant anonyme</span></div>
+              <div class="mock-dl-row"><span class="k">Organisation</span><span class="v">Ministère de démonstration</span></div>
+              <div class="mock-dl-row"><span class="k">Priorité</span><span class="v">80 / 100</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-num coord">3</div>
+    <div class="step-body">
+      <span class="step-tag coord">Coordinateur national</span>
+      <h3>Coordination avec l'organisation affectée</h3>
+      <p class="narration">Étapes propres au canal VDP, absentes du Bug Bounty vu précédemment :
+      <b>Organisation contactée</b> puis <b>Organisation a accusé réception</b> — la DSI du ministère
+      concerné est formellement notifiée et confirme la prise en charge, vu la criticité.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/cases/EVDP-2026-000010/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-notice">Statut mis à jour : Organisation a accusé réception.</div>
+          <div class="evdp-content">
+            <div class="mock-h1">Participants</div>
+            <div class="mock-dl">
+              <div class="mock-dl-row"><span class="k">DSI Ministère demo</span><span class="v">DSI</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step">
+    <div class="step-num coord">4</div>
+    <div class="step-body">
+      <span class="step-tag coord">Coordinateur national</span>
+      <h3>Remédiation, vérification, CVE attribué</h3>
+      <p class="narration">L'équipe technique migre vers des requêtes paramétrées ; le correctif est
+      vérifié par re-test du payload d'origine. Un identifiant <b>CVE-2026-48213</b> est associé au
+      dossier — identifiant public de la faille, dissocié de toute identité de déclarant.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/cases/EVDP-2026-000010/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-notice">CVE CVE-2026-48213 associé au dossier.</div>
+          <div class="evdp-content">
+            <span class="badge-pill badge-status">Correctif vérifié</span>
+            <div class="mock-muted" style="margin-top:.5rem">Payload d'injection rejoué : requête désormais correctement échappée, aucune donnée supplémentaire retournée.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step">
+    <div class="step-num coord">5</div>
+    <div class="step-body">
+      <span class="step-tag coord">Coordinateur national</span>
+      <h3>Divulgation coordonnée et publication</h3>
+      <p class="narration">Divulgation planifiée au <b>15 décembre 2026</b> (délai de 90 jours). L'advisory
+      <span class="mono">EVDP-ADV-2026-000004</span> est rédigé sous forme assainie et publié, avec la
+      mention <b>« Chercheur anonyme »</b> — le déclarant n'ayant pas demandé de crédit, son anonymat est
+      respecté jusqu'au bout, y compris dans le document public.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/advisories/EVDP-ADV-2026-000004/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-notice">Advisory EVDP-ADV-2026-000004 publié.</div>
+          <div class="evdp-content">
+            <span class="badge-pill badge-done">Publié</span>
+            <div class="mock-h1" style="margin-top:.4rem">Injection SQL — portail des marchés publics</div>
+            <div class="mock-muted">CVE-2026-48213 · Crédit : Chercheur anonyme</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <h2>Échéances SLA du dossier</h2>
+    <p>Chaque étape contractuelle a été respectée avant sa clôture anticipée.</p>
+  </div>
+  <div class="sla-grid">
+    <div class="sla-item"><div class="name">Accusé de réception</div><div class="state met">Respecté</div></div>
+    <div class="sla-item"><div class="name">Premier triage</div><div class="state met">Respecté</div></div>
+    <div class="sla-item"><div class="name">Réponse de l'organisation</div><div class="state met">Respecté</div></div>
+    <div class="sla-item"><div class="name">Remédiation</div><div class="state met">Respecté</div></div>
+    <div class="sla-item"><div class="name">Divulgation</div><div class="state cancel">Annulé (clos avant échéance)</div></div>
+  </div>
+
+  <div class="section-head">
+    <h2>Ce que voit le déclarant, avec son seul code de suivi</h2>
+    <p>Aucune connexion, aucun compte — juste le code noté à l'étape 1.</p>
+  </div>
+
+  <div class="mockup-frame" style="max-width:560px">
+    <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/suivi/9uZEzyyI8SyoQ.../</div></div>
+    <div class="mockup-body">
+      <div class="evdp-nav"><span class="brand">eVDP</span></div>
+      <div class="evdp-content">
+        <div class="mock-h1">Dossier EVDP-2026-000010</div>
+        <div class="mock-muted">Signalé le 11/09/2026</div>
+        <span class="badge-pill badge-done">Résolu</span>
+        <p style="font-size:.8rem;color:var(--ink-soft);margin-top:.6rem">Le traitement de ce dossier est terminé.
+        Merci pour votre contribution à la sécurité de la plateforme.</p>
+        <p style="font-size:.68rem;color:var(--ink-soft);font-style:italic">Statut simplifié, en lecture seule —
+        cette page ne permet pas d'envoyer de message.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <h2>Chronologie complète du dossier</h2>
+    <p>16 événements, du dépôt anonyme à la clôture (11/09/2026, 14:08 → 14:12).</p>
+  </div>
+
+  <div class="mock-timeline-full">
+    <div class="tl-item"><div class="date">14:08</div><div><div class="label">Rapport reçu</div><div class="actor">Déclarant anonyme</div></div></div>
+    <div class="tl-item"><div class="date">14:09</div><div><div class="label">Reçu · En triage</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:09</div><div><div class="label">Sévérité retenue : Critique · Validé</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:10</div><div><div class="label">Organisation contactée</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:10</div><div><div class="label">Organisation a accusé réception</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:10</div><div><div class="label">Remédiation → Correctif disponible → Vérification → Correctif vérifié</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:11</div><div><div class="label">Divulgation planifiée (15/12/2026)</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:12</div><div><div class="label">Advisory publié · Publié · Clos</div><div class="actor">Coordinateur national</div></div></div>
+  </div>
+
+  <div class="recap" style="margin-top:2.5rem">
+    <h2 style="font-size:1.1rem">Ce que cette session démontre</h2>
+    <ul>
+      <li><b>L'anonymat tient sur toute la chaîne</b> : « Déclarant anonyme » côté CSIRT, « Chercheur anonyme » dans l'advisory public — jamais une identité n'apparaît là où elle ne devrait pas.</li>
+      <li><b>Le canal VDP a ses propres étapes</b> absentes du Bug Bounty : contact et accusé de réception de l'organisation affectée, sans jamais parler de récompense.</li>
+      <li><b>Un CVE reste attribuable sans identité</b> : la demande de CVE et l'anonymat ne sont pas incompatibles, la plateforme les traite indépendamment.</li>
+      <li><b>Le code de suivi est réellement à usage unique</b> : affiché une fois à la soumission, seul moyen de suivi ensuite — perdu, il n'est jamais renvoyable.</li>
+    </ul>
+  </div>
+
+  <footer>
+    Rapport 3/3 — généré le 11 septembre 2026 à partir d'une session de test réelle sur l'instance de démonstration eVDP.
+    Voir aussi : <span class="mono">administration-structures-2026-09-11.html</span> et
+    <span class="mono">parcours-bugbounty-recompense-2026-09-11.html</span>.
+  </footer>
+
+</div>

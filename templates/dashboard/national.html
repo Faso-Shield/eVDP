@@ -88,28 +88,15 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><h2>Administrations les plus affectées</h2></div>
+    <div class="card-header"><h2>Risques</h2></div>
     <div class="card-body small">
-      {% for row in top_organizations %}
-        <div class="flex-between" style="padding:.25rem 0;border-bottom:1px solid var(--border)">
-          <span>{{ row.organization__acronym|default:row.organization__name|truncatechars:30 }}</span>
-          <strong class="mono">{{ row.total }}</strong>
-        </div>
-      {% empty %}<p class="muted">Aucune donnée.</p>{% endfor %}
+      <div class="flex-between"><span>Dossiers en dépassement d'échéance (SLA)</span>
+        <strong class="mono">{{ overdue_count }}</strong></div>
+      <p class="muted mt-2">Cette vue nationale reste strictement agrégée : aucun
+      identifiant de dossier ni nom d'organisation n'est affiché ici. Le détail
+      par dossier ou par organisation est disponible dans le tableau de bord
+      CSIRT, réservé aux rôles opérationnels habilités.</p>
     </div>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-header"><h2>Risques : dossiers en dépassement</h2></div>
-  <div class="card-body table-wrap">
-    <table class="table">
-      <thead><tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>Statut</th><th>Organisation</th><th>Créé</th></tr></thead>
-      <tbody>
-        {% for case in overdue %}{% include "partials/case_row.html" %}{% empty %}
-        <tr><td colspan="6" class="muted">Aucun dépassement d'échéance.</td></tr>{% endfor %}
-      </tbody>
-    </table>
   </div>
 </div>
 {% endblock %}

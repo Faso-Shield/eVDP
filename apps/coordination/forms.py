@@ -6,7 +6,6 @@ from django.core.exceptions import ValidationError
 from apps.accounts.models import User
 from apps.accounts.roles import NATIONAL_ROLES
 from apps.organizations.models import Organization, OrganizationStatus
-from apps.programs.models import ProgramScope
 from apps.vulnerabilities.constants import Severity
 from apps.vulnerabilities.cvss import CVSSError, base_score
 from apps.vulnerabilities.models import CVE, CWE
@@ -65,40 +64,29 @@ class StatusTransitionForm(forms.Form):
 
 
 class TriageForm(forms.Form):
-    """Qualification technique lors du triage.
-
-    Le champ `scope` n'existe que pour un case rattache a un programme : il
-    designe l'actif du perimetre concerne, dont depend la grille de
-    recompense quand celle-ci varie par actif.
-    """
+    """Qualification technique lors du triage."""
 
     severity = forms.ChoiceField(label="Sévérité retenue", choices=Severity.choices)
-    scope = forms.ModelChoiceField(
-        label="Actif du périmètre",
-        queryset=ProgramScope.objects.none(),
-        required=False,
-        help_text="Détermine la grille de récompense lorsqu'elle varie par actif.",
-    )
     cvss_vector = forms.CharField(label="Vecteur CVSS v3.1", required=False)
-    cwe = forms.ModelChoiceField(label="CWE", queryset=CWE.objects.all(), required=False)
+    cwe = forms.ModelChoiceField(
+        label="CWE",
+        queryset=CWE.objects.all(),
+        required=False,
+        widget=forms.Select(
+            attrs={"class": "ts-select", "data-placeholder": "Rechercher un CWE…"}
+        ),
+    )
     organization = forms.ModelChoiceField(
         label="Organisation affectée",
         queryset=Organization.objects.filter(status=OrganizationStatus.ACTIVE),
         required=False,
+        widget=forms.Select(
+            attrs={"class": "ts-select", "data-placeholder": "Rechercher une organisation…"}
+        ),
     )
     tags = forms.CharField(
         label="Étiquettes", required=False, help_text="Séparées par des virgules."
     )
-
-    def __init__(self, *args, case=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        program = getattr(case, "program", None)
-        if program is None:
-            # Un case hors programme n'a pas de perimetre : le champ
-            # n'aurait aucun choix a proposer.
-            del self.fields["scope"]
-        else:
-            self.fields["scope"].queryset = program.in_scope_targets()
 
     def clean_cvss_vector(self):
         vector = (self.cleaned_data.get("cvss_vector") or "").strip()
@@ -120,6 +108,9 @@ class AssignmentForm(forms.Form):
         label="Analyste",
         queryset=User.objects.filter(is_active=True, role__in=NATIONAL_ROLES),
         required=False,
+        widget=forms.Select(
+            attrs={"class": "ts-select", "data-placeholder": "Rechercher un analyste…"}
+        ),
     )
     note = forms.CharField(label="Note", required=False, max_length=255)
 
@@ -130,9 +121,18 @@ class DuplicateForm(forms.Form):
         label="Commentaire interne", required=False, widget=forms.Textarea(attrs={"rows": 2})
     )
 
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
     def clean_original_case_id(self):
         case_id = (self.cleaned_data.get("original_case_id") or "").strip().upper()
-        original = Case.objects.filter(case_id=case_id).first()
+        queryset = (
+            Case.objects.visible_to(self.user)
+            if self.user is not None
+            else Case.objects.none()
+        )
+        original = queryset.filter(case_id=case_id).first()
         if original is None:
             raise ValidationError("Aucun case ne correspond à cette référence.")
         return original
@@ -140,7 +140,8 @@ class DuplicateForm(forms.Form):
 
 class DisclosureScheduleForm(forms.Form):
     disclosure_date = forms.DateField(
-        label="Date de divulgation", widget=forms.DateInput(attrs={"type": "date"})
+        label="Date de divulgation",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
     )
 
 
@@ -161,15 +162,21 @@ class CaseFilterForm(forms.Form):
         label="Statut",
         required=False,
         choices=[("", "Tous les statuts")] + list(CaseStatus.choices),
+        widget=forms.Select(
+            attrs={"class": "ts-select", "data-placeholder": "Rechercher un statut…"}
+        ),
     )
     severity = forms.ChoiceField(
         label="Sévérité",
         required=False,
-        choices=[("", "Toutes severites")] + list(Severity.choices),
+        choices=[("", "Toutes sévérités")] + list(Severity.choices),
     )
     organization = forms.ModelChoiceField(
         label="Organisation",
         required=False,
         queryset=Organization.objects.all(),
         empty_label="Toutes les organisations",
+        widget=forms.Select(
+            attrs={"class": "ts-select", "data-placeholder": "Rechercher une organisation…"}
+        ),
     )

@@ -118,8 +118,8 @@ class VulnerabilityReference(BaseModel):
     class Meta:
         db_table = "vulnerability_references"
         ordering = ["kind", "title"]
-        verbose_name = "Reference"
-        verbose_name_plural = "References"
+        verbose_name = "Référence"
+        verbose_name_plural = "Références"
 
     def __str__(self):
         return self.title

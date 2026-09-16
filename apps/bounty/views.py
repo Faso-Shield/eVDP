@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
+from django.db import models
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 
@@ -12,7 +13,7 @@ from apps.accounts.roles import Capability
 from apps.coordination.models import Case
 
 from .forms import BountyDecisionForm, BountyProposalForm, BountyReviewForm, PaymentForm
-from .models import Bounty
+from .models import Bounty, BountyStatus
 from .services import (
     approve_bounty,
     propose_bounty,
@@ -41,33 +42,30 @@ def _get_bounty(request, bounty_id):
     return bounty
 
 
-def _instruit_les_recompenses(user):
-    """Le compte participe-t-il a l'instruction d'une recompense ?
-
-    C'est la frontiere entre celui qui decide et celui qui recoit. Un
-    signaleur voit sa recompense parce qu'elle le concerne ; il n'a pas a
-    savoir qui l'a proposee, qui en a debattu, ni qui l'a signee. La
-    deliberation d'un jury ne se communique pas au candidat.
-    """
-    return user.has_capability(Capability.PROPOSE_BOUNTY) or user.has_capability(
-        Capability.APPROVE_BOUNTY
-    )
-
-
 @login_required
 def bounty_list(request):
-    queryset = _visible_bounties(request.user).order_by("-created_at")
+    visible = _visible_bounties(request.user)
     status = request.GET.get("status", "").upper()
-    if status:
-        queryset = queryset.filter(status=status)
-    page = Paginator(queryset, 25).get_page(request.GET.get("page"))
+    queryset = visible.filter(status=status) if status else visible
+    page = Paginator(queryset.order_by("-created_at"), 25).get_page(request.GET.get("page"))
+
+    paid_total = visible.filter(status=BountyStatus.PAID).aggregate(
+        total=models.Sum("approved_amount")
+    )["total"] or 0
     return render(
         request,
         "bounty/list.html",
         {
             "page_obj": page,
             "selected_status": status,
-            "peut_instruire": _instruit_les_recompenses(request.user),
+            "statuses": BountyStatus.choices,
+            "stats": {
+                "total": visible.count(),
+                "pending": visible.filter(status=BountyStatus.PENDING).count(),
+                "approved": visible.filter(status=BountyStatus.APPROVED).count(),
+                "paid": visible.filter(status=BountyStatus.PAID).count(),
+                "paid_total": paid_total,
+            },
         },
     )
 
@@ -75,29 +73,26 @@ def bounty_list(request):
 @login_required
 def bounty_detail(request, bounty_id):
     bounty = _get_bounty(request, bounty_id)
-    peut_instruire = _instruit_les_recompenses(request.user)
-    contexte = {
+    # Un chercheur consultant sa propre recompense ne doit voir ni les notes
+    # de triage interne (avis, justifications, references de paiement), ni
+    # l'identite des agents CSIRT qui l'ont traitee : seuls le montant, le
+    # statut et la date lui sont opposables. C'est le montant, jamais la
+    # deliberation, qui doit etre visible (norme HackerOne/Bugcrowd).
+    is_staff_viewer = request.user.is_national or request.user.is_organization_user
+    context = {
         "bounty": bounty,
+        "is_staff_viewer": is_staff_viewer,
         "payments": bounty.payments.select_related("recorded_by"),
-        "peut_instruire": peut_instruire,
         "can_approve": request.user.has_capability(Capability.APPROVE_BOUNTY),
         "can_pay": request.user.has_capability(Capability.RECORD_PAYMENT),
+        "within_policy": bounty.within_policy(),
     }
-    # Les elements d'instruction ne sont pas seulement masques par le gabarit :
-    # ils ne quittent pas la base pour un compte qui n'a pas a les lire.
-    if peut_instruire:
-        contexte.update(
-            {
-                "reviews": bounty.reviews.select_related("reviewer"),
-                "decision_form": BountyDecisionForm(
-                    initial={"amount": bounty.proposed_amount}
-                ),
-                "review_form": BountyReviewForm(),
-                "payment_form": PaymentForm(initial={"amount": bounty.approved_amount}),
-                "within_policy": bounty.within_policy(),
-            }
-        )
-    return render(request, "bounty/detail.html", contexte)
+    if is_staff_viewer:
+        context["reviews"] = bounty.reviews.select_related("reviewer")
+        context["decision_form"] = BountyDecisionForm(initial={"amount": bounty.proposed_amount})
+        context["review_form"] = BountyReviewForm()
+        context["payment_form"] = PaymentForm(initial={"amount": bounty.approved_amount})
+    return render(request, "bounty/detail.html", context)
 
 
 @login_required
@@ -217,7 +212,7 @@ def payment(request, bounty_id):
             )
             messages.success(
                 request,
-                "Versement enregistre. Aucun flux financier réel n'est déclenché "
+                "Versement enregistré. Aucun flux financier réel n'est déclenché "
                 "par la plateforme.",
             )
         except (PermissionDenied, ValidationError) as exc:

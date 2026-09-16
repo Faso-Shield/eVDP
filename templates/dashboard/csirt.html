@@ -11,16 +11,6 @@
   </div>
 </div>
 
-{% if comptes_a_relancer %}
-<div class="notice">
-  <strong>{{ comptes_a_relancer }}</strong> compte{{ comptes_a_relancer|pluralize }}
-  non vérifié{{ comptes_a_relancer|pluralize }} {{ comptes_a_relancer|pluralize:"perd,perdent" }}
-  l'accès aux programmes Bug Bounty. La relance automatique par email ne les
-  atteint pas forcément : une adresse jamais vérifiée peut être morte.
-  <a href="{% url 'dashboard:export_unverified_accounts_csv' %}">Exporter la liste (CSV)</a>
-</div>
-{% endif %}
-
 <div class="grid grid-4 mb-2">
   <div class="stat"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">Total rapports</div></div>
   <div class="stat"><div class="stat-value">{{ stats.new }}</div><div class="stat-label">Nouveaux</div></div>

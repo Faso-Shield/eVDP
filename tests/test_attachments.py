@@ -27,7 +27,7 @@ def test_blocked_extension_is_rejected():
 
 
 def test_unlisted_extension_is_rejected():
-    with pytest.raises(ValidationError, match="non autorisée"):
+    with pytest.raises(ValidationError, match="non autorisee"):
         validate_upload(upload("archive.tar.zst", b"data"))
 
 
@@ -44,18 +44,132 @@ def test_svg_upload_is_rejected():
 
 def test_executable_content_is_rejected_despite_safe_extension():
     """Un binaire renomme en .txt est detecte par sa signature."""
-    with pytest.raises(ValidationError, match="exécutable"):
+    with pytest.raises(ValidationError, match="executable"):
         validate_upload(upload("innocent.txt", b"MZ\x90\x00\x03binaire"))
 
 
 def test_elf_content_is_rejected():
-    with pytest.raises(ValidationError, match="exécutable"):
+    with pytest.raises(ValidationError, match="executable"):
         validate_upload(upload("innocent.log", b"\x7fELF\x02\x01binaire"))
 
 
 def test_shell_script_content_is_rejected():
-    with pytest.raises(ValidationError, match="exécutable"):
+    with pytest.raises(ValidationError, match="executable"):
         validate_upload(upload("notes.txt", b"#!/bin/sh\nrm -rf /"))
+
+
+# ------------------------------------------------------- signature positive
+def test_png_with_real_png_signature_is_accepted():
+    content = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    metadata = validate_upload(upload("capture.png", content))
+    assert metadata["extension"] == "png"
+
+
+def test_png_extension_with_mismatched_content_is_rejected():
+    """Regression : la verification de signature n'etait qu'une liste noire
+    d'executables, jamais une correspondance positive avec l'extension."""
+    with pytest.raises(ValidationError, match="ne correspond pas"):
+        validate_upload(upload("capture.png", b"ceci n'est pas une image PNG du tout"))
+
+
+def test_pdf_with_real_pdf_signature_is_accepted():
+    content = b"%PDF-1.7\n" + b"\x00" * 32
+    metadata = validate_upload(upload("rapport.pdf", content))
+    assert metadata["extension"] == "pdf"
+
+
+def test_pdf_extension_with_mismatched_content_is_rejected():
+    with pytest.raises(ValidationError, match="ne correspond pas"):
+        validate_upload(upload("rapport.pdf", b"pas du tout un PDF"))
+
+
+def test_gif_with_real_signature_is_accepted():
+    metadata = validate_upload(upload("anim.gif", b"GIF89a" + b"\x00" * 32))
+    assert metadata["extension"] == "gif"
+
+
+def test_webp_with_real_signature_is_accepted():
+    content = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 16
+    metadata = validate_upload(upload("photo.webp", content))
+    assert metadata["extension"] == "webp"
+
+
+def test_heic_with_real_signature_is_accepted():
+    """Format par defaut de l'appareil photo de nombreux telephones."""
+    content = b"\x00\x00\x00\x18ftypheic" + b"\x00" * 32
+    metadata = validate_upload(upload("photo.heic", content))
+    assert metadata["extension"] == "heic"
+
+
+def test_heif_with_generic_mif1_brand_is_accepted():
+    content = b"\x00\x00\x00\x18ftypmif1" + b"\x00" * 32
+    metadata = validate_upload(upload("photo.heif", content))
+    assert metadata["extension"] == "heif"
+
+
+def test_heic_extension_with_mismatched_content_is_rejected():
+    with pytest.raises(ValidationError, match="ne correspond pas"):
+        validate_upload(upload("photo.heic", b"ceci n'est pas un fichier HEIC"))
+
+
+def test_text_formats_have_no_signature_requirement():
+    """Les formats texte (txt, md, json, csv...) n'ont pas de signature
+    binaire fiable : aucune verification positive ne doit les bloquer."""
+    for name, content in [
+        ("notes.md", b"# Titre\n\nContenu Markdown."),
+        ("data.json", b'{"cle": "valeur"}'),
+        ("export.csv", b"colonne1,colonne2\nvaleur1,valeur2"),
+    ]:
+        metadata = validate_upload(upload(name, content))
+        assert metadata["extension"] == name.rsplit(".", 1)[1]
+
+
+# --------------------------------------------------------------- zip / bombe
+def _build_zip(entries, compression=None):
+    import io
+    import zipfile as zf
+
+    buffer = io.BytesIO()
+    with zf.ZipFile(buffer, "w", compression or zf.ZIP_DEFLATED) as archive:
+        for entry_name, entry_content in entries:
+            archive.writestr(entry_name, entry_content)
+    buffer.seek(0)
+    return buffer.read()
+
+
+def test_normal_zip_is_accepted():
+    content = _build_zip([("readme.txt", b"contenu normal de preuve")])
+    metadata = validate_upload(upload("preuve.zip", content))
+    assert metadata["extension"] == "zip"
+
+
+def test_zip_with_mismatched_content_is_rejected():
+    with pytest.raises(ValidationError, match="ne correspond pas"):
+        validate_upload(upload("preuve.zip", b"pas une archive ZIP"))
+
+
+def test_zip_with_too_many_entries_is_rejected():
+    from apps.attachments.services import MAX_ZIP_ENTRIES
+
+    entries = [(f"fichier-{i}.txt", b"x") for i in range(MAX_ZIP_ENTRIES + 1)]
+    content = _build_zip(entries)
+    with pytest.raises(ValidationError, match="ZIP refusee"):
+        validate_upload(upload("gros.zip", content))
+
+
+def test_zip_bomb_like_compression_ratio_is_rejected():
+    """Un seul fichier hautement compressible (ex. des zeros repetes) peut
+    gonfler de facon disproportionnee une fois decompresse : c'est le
+    principe d'une bombe zip."""
+    import io
+    import zipfile as zf
+
+    buffer = io.BytesIO()
+    with zf.ZipFile(buffer, "w", zf.ZIP_DEFLATED, compresslevel=9) as archive:
+        archive.writestr("zeros.bin", b"\x00" * (5 * 1024 * 1024))
+    content = buffer.getvalue()
+    with pytest.raises(ValidationError, match="ZIP refusee"):
+        validate_upload(upload("suspect.zip", content))
 
 
 def test_oversized_file_is_rejected(settings):
@@ -97,6 +211,26 @@ def test_sha256_is_computed(case_alpha, researcher_a):
 def test_upload_is_audited(case_alpha, researcher_a):
     store_attachment(upload("p.txt"), researcher_a, case=case_alpha)
     assert AuditLog.objects.filter(action=AuditAction.ATTACHMENT_UPLOADED).exists()
+
+
+def test_pgp_encrypted_attachment_is_detected_even_when_large(case_alpha, researcher_a):
+    """Regression : le pied de page d'un bloc PGP arme se trouve en fin de
+    fichier, jamais dans les tout premiers octets pour un contenu de taille
+    normale -- la detection doit verifier les deux extremites du fichier,
+    pas seulement son debut."""
+    padding = "x" * 5000
+    content = (
+        f"-----BEGIN PGP MESSAGE-----\n\n{padding}\n-----END PGP MESSAGE-----\n"
+    ).encode()
+    attachment = store_attachment(upload("preuve.txt", content), researcher_a, case=case_alpha)
+    assert attachment.is_pgp_encrypted is True
+
+
+def test_non_encrypted_attachment_is_not_flagged(case_alpha, researcher_a):
+    attachment = store_attachment(
+        upload("p.txt", b"contenu tout a fait normal"), researcher_a, case=case_alpha
+    )
+    assert attachment.is_pgp_encrypted is False
 
 
 def test_upload_denied_outside_case_scope(case_beta, researcher_a):

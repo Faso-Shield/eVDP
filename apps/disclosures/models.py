@@ -167,7 +167,7 @@ class AdvisoryTimelineEntry(BaseModel):
     class Meta:
         db_table = "advisory_timeline_entries"
         ordering = ["happened_on", "position"]
-        verbose_name = "Etape de chronologie"
+        verbose_name = "Étape de chronologie"
         verbose_name_plural = "Chronologie publique"
 
     def __str__(self):
@@ -184,8 +184,8 @@ class AdvisoryReference(BaseModel):
     class Meta:
         db_table = "advisory_references"
         ordering = ["title"]
-        verbose_name = "Reference d'advisory"
-        verbose_name_plural = "References d'advisory"
+        verbose_name = "Référence d'advisory"
+        verbose_name_plural = "Références d'advisory"
 
     def __str__(self):
         return self.title

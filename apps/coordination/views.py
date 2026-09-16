@@ -81,19 +81,20 @@ def case_list(request):
     return render(
         request,
         "coordination/case_list.html",
-        {"page_obj": page, "form": form, "stats": selectors.case_statistics(request.user)},
+        {
+            "page_obj": page,
+            "form": form,
+            "stats": selectors.case_statistics(request.user),
+            # Un chercheur ne voit que ses propres dossiers : la colonne
+            # organisation/analyste/priorite et le filtre par organisation
+            # n'ont aucun sens pour lui, ce sont des outils de triage CSIRT.
+            "researcher_view": not (request.user.is_national or request.user.is_organization_user),
+        },
     )
 
 
 @login_required
-@require_capability(Capability.VIEW_ALL_CASES, Capability.VIEW_ORG_CASES)
 def kanban(request):
-    """Tableau de triage : l'outil de ceux qui traitent les dossiers d'autrui.
-
-    La vue n'exigeait que d'etre connecte. Un signaleur y accedait donc, pour
-    y trouver un tableau reduit a ses propres rapports, que son espace lui
-    presente deja mieux.
-    """
     return render(
         request,
         "coordination/kanban.html",
@@ -115,6 +116,7 @@ def case_detail(request, case_id):
 
     is_reporter = case.reporter_id == request.user.id
     can_manage = request.user.has_capability(Capability.CHANGE_CASE_STATUS)
+    can_draft_advisory = request.user.has_capability(Capability.DRAFT_ADVISORY)
 
     context = {
         "case": case,
@@ -132,15 +134,13 @@ def case_detail(request, case_id):
         ),
         "triage_form": (
             TriageForm(
-                case=case,
                 initial={
                     "severity": case.severity,
                     "cvss_vector": case.cvss_vector,
                     "cwe": case.cwe_id,
                     "organization": case.organization_id,
-                    "scope": case.scope_id,
                     "tags": ", ".join(case.tags or []),
-                },
+                }
             )
             if request.user.has_capability(Capability.TRIAGE_CASE)
             else None
@@ -151,7 +151,9 @@ def case_detail(request, case_id):
             else None
         ),
         "duplicate_form": (
-            DuplicateForm() if request.user.has_capability(Capability.TRIAGE_CASE) else None
+            DuplicateForm(user=request.user)
+            if request.user.has_capability(Capability.TRIAGE_CASE)
+            else None
         ),
         "disclosure_form": (
             DisclosureScheduleForm(initial={"disclosure_date": case.disclosure_date})
@@ -163,6 +165,7 @@ def case_detail(request, case_id):
         "allowed_targets": allowed_targets(case.status, case.workflow),
         "is_reporter": is_reporter,
         "can_manage": can_manage,
+        "can_draft_advisory": can_draft_advisory,
         "bounty": getattr(case, "bounty", None),
         "advisories": case.advisories.all(),
         # Le case original d'un doublon n'est jamais expose au declarant.
@@ -221,7 +224,7 @@ def change_status(request, case_id):
 @require_capability(Capability.TRIAGE_CASE)
 def triage(request, case_id):
     case = _get_case(request, case_id)
-    form = TriageForm(request.POST, case=case)
+    form = TriageForm(request.POST)
     if form.is_valid():
         try:
             set_severity(
@@ -242,11 +245,6 @@ def triage(request, case_id):
         if form.cleaned_data.get("organization"):
             case.organization = form.cleaned_data["organization"]
             updates.append("organization")
-        if "scope" in form.fields:
-            # Affecte sans condition : le triage doit aussi pouvoir retirer
-            # l'actif retenu, ce qu'un test de verite empecherait.
-            case.scope = form.cleaned_data.get("scope")
-            updates.append("scope")
         tags = form.cleaned_data.get("tags")
         if tags is not None:
             case.tags = tags
@@ -291,7 +289,7 @@ def assign(request, case_id):
 @require_capability(Capability.TRIAGE_CASE)
 def mark_as_duplicate(request, case_id):
     case = _get_case(request, case_id)
-    form = DuplicateForm(request.POST)
+    form = DuplicateForm(request.POST, user=request.user)
     if form.is_valid():
         try:
             mark_duplicate(
@@ -341,7 +339,7 @@ def link_cve(request, case_id):
             request=request,
             cve=case.cve_id,
         )
-        messages.success(request, f"CVE {case.cve_id} associe au dossier.")
+        messages.success(request, f"CVE {case.cve_id} associé au dossier.")
     else:
         messages.error(request, form.errors.as_text())
     return redirect("coordination:case_detail", case_id=case.case_id)

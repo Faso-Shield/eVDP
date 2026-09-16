@@ -1,6 +1,10 @@
 {% extends "base_dashboard.html" %}
-{% load evdp_tags humanize %}
+{% load static evdp_tags humanize %}
 {% block title %}{{ case.case_id }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/vendor/tom-select.default.min.css' %}">
+{% endblock %}
 
 {% block dashboard_content %}
 <div class="flex-between mb-2">
@@ -21,7 +25,7 @@
     {% if user.is_national or user.is_organization_user %}
       <a class="btn btn-sm btn-outline" href="{% url 'dashboard:export_case_pdf' case.case_id %}">Export PDF</a>
     {% endif %}
-    {% if can_manage %}
+    {% if can_draft_advisory %}
       <a class="btn btn-sm btn-accent" href="{% url 'disclosures:create_from_case' case.case_id %}">Rédiger un advisory</a>
     {% endif %}
   </div>
@@ -46,7 +50,7 @@
 </div>
 {% endif %}
 
-<div class="grid" style="grid-template-columns: 2fr 1fr">
+<div class="grid split-layout">
   <div>
     <div class="card">
       <div class="card-header"><h2>Rapport</h2><span class="pill">Privé</span></div>
@@ -81,6 +85,11 @@
                 {{ message.created_at|date:"d/m/Y H:i" }}
               </span>
             </div>
+            {% if not message.integrity_ok %}
+              <div class="pill pill-danger" title="L'empreinte SHA-256 enregistree ne correspond plus au contenu actuel de ce message.">
+                ⚠ Integrite non verifiee : ce message a ete modifie apres son envoi
+              </div>
+            {% endif %}
             <div class="msg-body prose">{{ message.body|markdown }}</div>
             {% if message.attachments.exists %}
               <div class="small mt-1">
@@ -114,7 +123,11 @@
             <tbody>
             {% for attachment in attachments %}
               <tr>
-                <td>{{ attachment.original_filename }}</td>
+                <td>{{ attachment.original_filename }}
+                  {% if attachment.is_pgp_encrypted %}
+                    <span class="pill" title="Fichier chiffre PGP avant depot : illisible sans la cle privee correspondante">🔒 PGP</span>
+                  {% endif %}
+                </td>
                 <td class="small nowrap">{{ attachment.human_size }}</td>
                 <td class="mono small">{{ attachment.sha256|slice:":16" }}…</td>
                 <td class="small">
@@ -330,4 +343,9 @@
     </div>
   </aside>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/vendor/tom-select.complete.min.js' %}" defer></script>
+<script src="{% static 'js/select-enhance.js' %}" defer></script>
 {% endblock %}

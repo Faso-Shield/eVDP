@@ -1,0 +1,50 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Activer la double authentification{% endblock %}
+{% block dashboard_content %}
+<h1>Activer la double authentification</h1>
+{% if mfa_enforced %}
+<div class="notice notice-secure">
+  Votre rôle donne accès à des dossiers sensibles : la double authentification
+  est <strong>obligatoire</strong> et bloque le reste de la plateforme tant
+  qu'elle n'est pas activée.
+</div>
+{% endif %}
+<p class="muted">Ajoutez une étape de vérification à la connexion, avec une
+application d'authentification sur votre téléphone (Google Authenticator,
+Authy, andOTP, etc.).</p>
+
+<div class="grid grid-2" style="gap:1.5rem">
+  <div class="card">
+    <div class="card-header"><h2>1. Scannez ce QR code</h2></div>
+    <div class="card-body text-center">
+      <img src="{{ qr_data_uri }}" alt="QR code d'activation de la double authentification"
+           style="max-width:220px;width:100%;background:#fff;padding:.5rem;border-radius:var(--radius)">
+      <p class="small muted mt-1">Ou saisissez cette clé manuellement dans votre application :</p>
+      <p class="mono" style="word-break:break-all;font-size:.85rem">{{ secret }}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>2. Confirmez avec un code</h2></div>
+    <div class="card-body">
+      <p class="small muted">Saisissez le code à 6 chiffres actuellement affiché
+      par votre application pour confirmer que l'activation fonctionne.</p>
+      {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% include "partials/form_field.html" with field=form.code %}
+        <button class="btn btn-accent" type="submit">Activer</button>
+        {% if not mfa_enforced %}
+        <a class="btn btn-outline" href="{% url 'accounts:profile' %}">Annuler</a>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="notice mt-2">
+  <strong>Avant de continuer :</strong> conservez la clé ci-dessus dans un endroit
+  sûr. Si vous perdez l'accès à votre application d'authentification, seul un
+  administrateur pourra réactiver l'accès à votre compte.
+</div>
+{% endblock %}

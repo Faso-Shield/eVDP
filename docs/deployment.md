@@ -47,7 +47,7 @@ sudo -iu evdp
 ## 3. Installation
 
 ```bash
-git clone <url-du-depot> /home/evdp/evdp
+git clone https://github.com/wendiouedraogo8-art/evdp.git /home/evdp/evdp
 cd /home/evdp/evdp
 cp .env.example .env
 chmod 600 .env
@@ -155,10 +155,18 @@ docker compose build
 docker compose up -d
 docker compose ps
 docker compose exec evdp-web python manage.py createsuperuser
+docker compose exec evdp-web python manage.py seed_reference
 docker compose exec evdp-web python manage.py check --deploy
 ```
 
 `check --deploy` doit être exempt d'avertissement.
+
+`seed_reference` charge le référentiel CWE, la politique SLA par défaut,
+les textes de la plateforme et les organisations réelles (ANSSI-BF, CSIRT
+National, ministères) — sans aucun compte ni mot de passe fictif. Ajoutez
+`--with-programs` pour créer aussi un programme VDP national et deux
+programmes Bug Bounty réalistes (toujours sans faux compte ni faux dossier).
+Idempotente, sans risque de la relancer.
 
 > **N'exécutez jamais `seed_demo` en production** : il crée des comptes dont
 > le mot de passe est publié dans la documentation.
@@ -268,7 +276,62 @@ docker compose build && docker compose up -d
 
 ---
 
-## 10. Supervision
+## 10. Rotation de la clé PGP nationale
+
+`PGP_PUBLIC_KEY` et `PGP_FINGERPRINT` (`.env`) ne sont **volontairement pas**
+modifiables depuis l'interface web, contrairement à la politique de
+divulgation ou au texte « À propos ». Un changement exige un accès serveur
+et un redémarrage — c'est un choix de sécurité assumé : si ce champ était
+modifiable depuis un simple formulaire admin, un seul compte Coordinateur
+compromis (hameçonnage, etc.) suffirait à substituer discrètement la clé
+nationale et à intercepter tous les signalements chiffrés suivants. Exiger
+un accès infrastructure ajoute une barrière supplémentaire, indépendante
+d'un compte applicatif compromis.
+
+### Quand tourner la clé
+
+- À l'approche de sa date d'expiration (fixée à la génération — 2 à 3 ans
+  est une durée raisonnable)
+- Immédiatement en cas de compromission suspectée ou confirmée de la clé
+  privée (poste volé, phrase secrète potentiellement exposée)
+- Selon une cadence régulière décidée par l'équipe (ex. tous les 2 ans),
+  même sans incident, par hygiène de sécurité
+
+### Procédure recommandée
+
+1. **Générer la nouvelle paire de clés** (Kleopatra ou `gpg --full-generate-key`)
+   suffisamment à l'avance — jamais dans l'urgence, sauf compromission avérée.
+2. **Limite technique à connaître** : eVDP ne publie qu'**une seule** clé à la
+   fois (`PGP_PUBLIC_KEY`) — le code ne prévoit pas d'afficher simultanément
+   une ancienne et une nouvelle clé « en transition ». La période de
+   recouvrement doit donc se gérer **par la communication**, pas par la
+   plateforme :
+   - Annoncer la date de bascule à l'avance, par un canal indépendant
+     d'eVDP (communiqué officiel, réseaux sociaux institutionnels ANSSI-BF).
+   - À la date prévue, publier la nouvelle clé sur eVDP (étape 3) — à partir
+     de ce moment, tout signalement chiffré avec l'ancienne clé reste
+     déchiffrable (la clé privée correspondante est conservée), mais
+     l'ancienne clé n'est plus proposée aux nouveaux déclarants.
+3. **Appliquer le changement** :
+   ```bash
+   cd ~/evdp
+   nano .env    # remplacer PGP_PUBLIC_KEY et PGP_FINGERPRINT
+   docker compose up -d
+   curl -fsS https://vdp.exemple.bf/pgp-key.asc   # verifier la nouvelle cle publiee
+   ```
+4. **Publier l'empreinte de la nouvelle clé sur un canal indépendant** de la
+   plateforme elle-même (communiqué, document officiel) — un chercheur
+   sérieux doit pouvoir vérifier que la clé affichée sur eVDP correspond
+   bien à l'empreinte annoncée ailleurs, sans devoir faire confiance
+   uniquement au serveur qui la sert.
+5. **Consigner la rotation** : date, motif, empreintes de l'ancienne et de
+   la nouvelle clé — dans un registre interne à l'équipe (`.env` n'étant pas
+   versionné, cette trace doit vivre ailleurs que dans Git).
+6. **Conserver l'ancienne clé privée** en lieu sûr tant que d'anciens
+   signalements chiffrés avec elle pourraient nécessiter un déchiffrement —
+   ne jamais la détruire immédiatement après la bascule.
+
+## 11. Supervision
 
 | À surveiller | Seuil |
 |--------------|-------|
@@ -296,7 +359,7 @@ scrape_configs:
 
 ---
 
-## 11. Checklist de mise en production
+## 12. Checklist de mise en production
 
 - [ ] `SECRET_KEY` unique, généré aléatoirement, jamais commité
 - [ ] `DEBUG=False`
@@ -313,4 +376,5 @@ scrape_configs:
 - [ ] Pare-feu actif, SSH restreint
 - [ ] Supervision et alertes en place
 - [ ] Clé publique PGP nationale publiée (`PGP_PUBLIC_KEY`)
+- [ ] Date d'expiration de la clé PGP suivie, prochaine rotation planifiée (§10)
 - [ ] Politique de divulgation relue et adaptée dans l'administration
