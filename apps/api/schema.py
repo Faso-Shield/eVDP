@@ -15,8 +15,8 @@ class ApiKeyAuthenticationScheme(OpenApiAuthenticationExtension):
             "in": "header",
             "name": "X-eVDP-Api-Key",
             "description": (
-                "Clé d'API eVDP. Seul son hachage SHA-256 est conservé par la "
-                "plateforme : la valeur en clair n'est affichée qu'a la création. "
-                "Une clé peut être révoquée ou expirer."
+                "Cle d'API eVDP. Seul son hachage SHA-256 est conserve par la "
+                "plateforme : la valeur en clair n'est affichee qu'a la creation. "
+                "Une cle peut etre revoquee ou expirer."
             ),
         }

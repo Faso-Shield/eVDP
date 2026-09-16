@@ -31,6 +31,7 @@ class NotificationKind(models.TextChoices):
     BOUNTY_REJECTED = "BOUNTY_REJECTED", "Récompense rejetée"
     BOUNTY_PAID = "BOUNTY_PAID", "Récompense payée"
     ACCOUNT = "ACCOUNT", "Compte"
+    TRACKING_LINK = "TRACKING_LINK", "Lien de suivi (déclarant sans compte)"
 
 
 class Notification(BaseModel):
@@ -84,8 +85,8 @@ class EmailTemplate(TimeStampedModel):
     class Meta:
         db_table = "email_templates"
         ordering = ["code"]
-        verbose_name = "Modele d'email"
-        verbose_name_plural = "Modeles d'email"
+        verbose_name = "Modèle d'email"
+        verbose_name_plural = "Modèles d'email"
 
     def __str__(self):
         return self.code

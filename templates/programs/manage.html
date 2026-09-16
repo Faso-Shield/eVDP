@@ -10,12 +10,80 @@
 
 <form method="post">
   {% csrf_token %}
+
   <div class="card">
-    <div class="card-header"><h2>Paramètres du programme</h2></div>
+    <div class="card-header"><h2>Identification</h2></div>
+    <div class="card-body">
+      {% include "partials/form_field.html" with field=form.name %}
+      <div class="form-grid">
+        {% include "partials/form_field.html" with field=form.program_type %}
+        {% include "partials/form_field.html" with field=form.organization %}
+        {% include "partials/form_field.html" with field=form.status %}
+        {% include "partials/form_field.html" with field=form.confidentiality %}
+      </div>
+      {% if program.program_type == "BUG_BOUNTY" %}
+      <div class="notice">
+        Programme Bug Bounty : le signalement anonyme y est toujours désactivé,
+        la matrice de récompenses ci-dessous s'applique.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Présentation publique</h2></div>
+    <div class="card-body">
+      {% include "partials/form_field.html" with field=form.summary %}
+      {% include "partials/form_field.html" with field=form.description %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Règles et périmètre légal</h2></div>
+    <div class="card-body">
+      {% include "partials/form_field.html" with field=form.rules %}
+      {% include "partials/form_field.html" with field=form.out_of_scope_notes %}
+      {% include "partials/form_field.html" with field=form.eligibility %}
+      {% include "partials/form_field.html" with field=form.safe_harbor %}
+      {% include "partials/form_field.html" with field=form.disclosure_policy %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Calendrier et SLA</h2></div>
     <div class="card-body">
       <div class="form-grid">
-        {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+        {% include "partials/form_field.html" with field=form.starts_on %}
+        {% include "partials/form_field.html" with field=form.ends_on %}
+        {% include "partials/form_field.html" with field=form.sla_policy %}
+        {% include "partials/form_field.html" with field=form.disclosure_delay_days %}
       </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Contact et sécurité</h2></div>
+    <div class="card-body">
+      {% include "partials/form_field.html" with field=form.contact_email %}
+      {% include "partials/form_field.html" with field=form.pgp_public_key %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Réception des signalements</h2></div>
+    <div class="card-body">
+      <div class="checkbox-field">
+        {{ form.allows_anonymous_reports }}
+        <label for="{{ form.allows_anonymous_reports.id_for_label }}">
+          {{ form.allows_anonymous_reports.label }}</label>
+      </div>
+      <div class="help">{{ form.allows_anonymous_reports.help_text }}</div>
+      <div class="checkbox-field mt-1">
+        {{ form.requires_verified_email }}
+        <label for="{{ form.requires_verified_email.id_for_label }}">
+          {{ form.requires_verified_email.label }}</label>
+      </div>
+      <div class="help">{{ form.requires_verified_email.help_text }}</div>
     </div>
   </div>
 

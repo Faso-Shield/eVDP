@@ -19,52 +19,8 @@ Guide d'exploitation quotidienne à destination des équipes ANSSI-BF / CSIRT.
 | `BUG_BOUNTY_RESEARCHER` | Chasseurs de bugs | Ses rapports |
 | `PUBLIC_USER` | Compte créé sans qualification | Ses rapports |
 
-### Le menu latéral suit les capacités
-
-Le menu de l'espace authentifié n'est pas écrit dans le gabarit : il est
-calculé dans `apps/core/navigation.py`, chaque entrée déclarant la capacité
-qu'elle exige. Un compte ne voit donc que ce qu'il peut ouvrir, et un titre de
-rubrique n'apparaît que si la rubrique a du contenu.
-
-Un compte signaleur s'y réduit à **Tableau de bord**, **Récompenses**,
-**Advisories publiés** et **Mon profil**.
-
-`Tableau de bord` n'affiche rien par lui-même : il aiguille vers la vue du
-rôle (`apps/core/navigation.py::landing_route`, que la vue d'aiguillage et le
-menu lisent tous deux). Une entrée « Vue X » n'est donc listée que si elle
-mène ailleurs : un analyste atterrissant sur la vue CSIRT ne la voit pas
-proposée une seconde fois, tandis qu'un auditeur, qui atterrit sur la vue
-nationale, la garde.
-
-Les capacités du menu sont celles que les vues ciblées contrôlent : un test
-parcourt le menu de six rôles et suit chaque lien, de sorte que les deux ne
-peuvent pas diverger sans que la suite échoue. Ajouter une entrée demande donc
-de garder la vue correspondante — et l'inverse.
-
----
-
-### Deux listes, pas une
-
-L'administration présente les comptes en **deux listes distinctes**, parce
-qu'il s'agit de deux populations sans cycle de vie commun :
-
-| Liste | Qui | Ce qu'elle montre |
-|-------|-----|-------------------|
-| **Comptes métiers et administrateurs** | Les sept rôles hors signaleur, créés par un administrateur | Organisation de rattachement, état du second facteur, dernière connexion |
-| **Comptes signaleurs** | Chercheurs et utilisateurs publics, inscrits librement | Identité publique, adresse vérifiée, réputation, rapports soumis |
-
-L'action « Réinitialiser la double authentification » et le filtre
-correspondant n'existent que sur la première : un compte signaleur n'y est
-jamais soumis. La frontière est `BUSINESS_ROLES` dans
-`apps/accounts/roles.py`, définie comme le complément des rôles signaleurs —
-un rôle ajouté rejoint donc la population protégée par défaut, et il faut une
-décision explicite pour l'en dispenser. C'est la même frontière que lit la
-double authentification.
-
-Le rôle se modifie **uniquement** depuis ces listes. Tout changement est
-journalisé (`ROLE_CHANGED`) ; s'il fait passer le compte d'une population à
-l'autre, un message le signale, faute de quoi le compte semblerait disparaître
-de la liste.
+Le rôle se modifie **uniquement** depuis `/admin/` → Utilisateurs. Tout
+changement est journalisé (`ROLE_CHANGED`).
 
 > Attribuez `AUDITOR` pour toute mission d'inspection : le rôle voit tout et
 > ne peut rien écrire.

@@ -9,7 +9,6 @@ proprement pour eviter un score errone).
 """
 
 import math
-from decimal import Decimal
 
 PREFIX_31 = "CVSS:3.1"
 PREFIX_30 = "CVSS:3.0"
@@ -19,15 +18,15 @@ METRIC_ORDER = ["AV", "AC", "PR", "UI", "S", "C", "I", "A"]
 METRIC_LABELS = {
     "AV": (
         "Vecteur d'attaque",
-        {"N": "Réseau", "A": "Adjacent", "L": "Local", "P": "Physique"},
+        {"N": "Reseau", "A": "Adjacent", "L": "Local", "P": "Physique"},
     ),
-    "AC": ("Complexité d'attaque", {"L": "Faible", "H": "Élevée"}),
-    "PR": ("Privilèges requis", {"N": "Aucun", "L": "Faibles", "H": "Élevés"}),
+    "AC": ("Complexite d'attaque", {"L": "Faible", "H": "Elevee"}),
+    "PR": ("Privileges requis", {"N": "Aucun", "L": "Faibles", "H": "Eleves"}),
     "UI": ("Interaction utilisateur", {"N": "Aucune", "R": "Requise"}),
-    "S": ("Portée", {"U": "Inchangée", "C": "Modifiée"}),
-    "C": ("Confidentialité", {"H": "Élevée", "L": "Faible", "N": "Aucune"}),
-    "I": ("Intégrité", {"H": "Élevée", "L": "Faible", "N": "Aucune"}),
-    "A": ("Disponibilité", {"H": "Élevée", "L": "Faible", "N": "Aucune"}),
+    "S": ("Portee", {"U": "Inchangee", "C": "Modifiee"}),
+    "C": ("Confidentialite", {"H": "Elevee", "L": "Faible", "N": "Aucune"}),
+    "I": ("Integrite", {"H": "Elevee", "L": "Faible", "N": "Aucune"}),
+    "A": ("Disponibilite", {"H": "Elevee", "L": "Faible", "N": "Aucune"}),
 }
 
 WEIGHTS = {
@@ -118,21 +117,6 @@ def base_score(vector):
     else:
         score = min(impact + exploitability, 10)
     return _round_up1(score)
-
-
-def score_as_decimal(score):
-    """Score au format du champ modele : Decimal arrondi au dixieme.
-
-    `base_score` rend un float, et un float assigne a un
-    `DecimalField(max_digits=3, decimal_places=1)` porte le bruit de sa
-    representation binaire : sa validation le refuse. La base quantifie a
-    l'ecriture, la valeur stockee est donc juste, mais l'instance en memoire
-    ne passe pas `full_clean()`. On convertit ici, au moment ou le score
-    devient une valeur de champ.
-    """
-    if score is None:
-        return None
-    return Decimal(str(score)).quantize(Decimal("0.1"))
 
 
 def severity_from_score(score):

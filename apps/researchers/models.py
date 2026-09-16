@@ -63,7 +63,7 @@ class ResearcherProfile(BaseModel):
         return super().save(*args, **kwargs)
 
     def public_identity(self):
-        """Nom affichable selon le mode d'identite choisi par le chercheur."""
+        """Nom affichable selon le mode d'identité choisi par le chercheur."""
         if self.identity_mode == IdentityMode.PUBLIC:
             return self.user.full_name or self.user.display_name or self.user.email
         if self.identity_mode == IdentityMode.PSEUDONYM:

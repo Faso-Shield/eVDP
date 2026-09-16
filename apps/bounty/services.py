@@ -26,52 +26,38 @@ from .models import (
 
 
 def suggested_amount(case):
-    """Montant suggere par la matrice du programme (jamais code en dur).
-
-    La grille peut varier par actif : une faille critique sur une API de
-    production ne vaut pas la meme chose que sur un site vitrine. On passe
-    donc l'actif retenu au triage ; sans actif, ou sans palier propre a cet
-    actif, la grille par defaut du programme s'applique.
-    """
+    """Montant suggere par la matrice du programme (jamais code en dur)."""
     program = case.program
     policy = getattr(program, "reward_policy", None) if program else None
     if not policy or not policy.is_active:
         return Decimal("0"), "XOF"
-    return policy.suggested_amount(case.severity, case.scope), policy.currency
+    return policy.suggested_amount(case.severity), policy.currency
 
 
 @transaction.atomic
 def propose_bounty(case, actor, amount=None, justification="", request=None):
     """Cree ou met a jour la proposition de recompense d'un case Bug Bounty."""
     if not actor.has_capability(Capability.PROPOSE_BOUNTY):
-        raise PermissionDenied("Capacité requise pour proposer une récompense.")
+        raise PermissionDenied("Capacite requise pour proposer une recompense.")
     if not case.program_id or case.program.program_type != ProgramType.BUG_BOUNTY:
         raise ValidationError(
-            "Une récompense ne peut être proposée que sur un programme Bug Bounty."
+            "Une recompense ne peut etre proposee que sur un programme Bug Bounty."
         )
     if case.reporter_id is None:
         raise ValidationError(
-            "Aucun chercheur identifié : impossible d'attribuer une récompense."
-        )
-    # Second controle, apres celui de la soumission : le programme a pu
-    # devenir exigeant depuis, et une recompense ne doit jamais partir vers
-    # une adresse dont personne n'a prouve le controle.
-    if case.program.requires_verified_email and not case.reporter.email_verified:
-        raise ValidationError(
-            "Le chercheur n'a pas vérifié son adresse email : aucune récompense "
-            "ne peut lui être attribuée sur ce programme."
+            "Aucun chercheur identifie : impossible d'attribuer une recompense."
         )
 
     default_amount, currency = suggested_amount(case)
     amount = Decimal(amount) if amount is not None else default_amount
     if amount < 0:
-        raise ValidationError({"amount": "Montant négatif interdit."})
+        raise ValidationError({"amount": "Montant negatif interdit."})
 
     bounty = getattr(case, "bounty", None)
     if bounty is None:
         bounty = Bounty(case=case, program=case.program, researcher=case.reporter)
     elif bounty.is_final:
-        raise ValidationError("Cette récompense a déjà fait l'objet d'une décision finale.")
+        raise ValidationError("Cette recompense a deja fait l'objet d'une decision finale.")
 
     bounty.severity = case.severity
     bounty.proposed_amount = amount
@@ -99,7 +85,7 @@ def propose_bounty(case, actor, amount=None, justification="", request=None):
 def review_bounty(bounty, reviewer, decision, comment="", suggested=None, request=None):
     """Enregistre un avis de revue (sans decision finale)."""
     if not reviewer.has_capability(Capability.PROPOSE_BOUNTY):
-        raise PermissionDenied("Capacité requise pour participer à la revue.")
+        raise PermissionDenied("Capacite requise pour participer a la revue.")
     review = BountyReview.objects.create(
         bounty=bounty,
         reviewer=reviewer,
@@ -124,14 +110,18 @@ def review_bounty(bounty, reviewer, decision, comment="", suggested=None, reques
 def approve_bounty(bounty, approver, amount=None, note="", request=None):
     """Approuve une recompense. Seul un valideur habilite peut le faire."""
     if not approver.has_capability(Capability.APPROVE_BOUNTY):
-        raise PermissionDenied("Capacité requise pour approuver une récompense.")
+        raise PermissionDenied("Capacite requise pour approuver une recompense.")
+    if bounty.proposed_by_id and bounty.proposed_by_id == approver.id:
+        raise PermissionDenied(
+            "Le proposeur d'une recompense ne peut pas l'approuver lui-meme."
+        )
     if not bounty.can_transition_to(BountyStatus.APPROVED):
         raise ValidationError(
-            f"Transition interdite depuis l'état {bounty.get_status_display()}."
+            f"Transition interdite depuis l'etat {bounty.get_status_display()}."
         )
     amount = Decimal(amount) if amount is not None else bounty.proposed_amount
     if amount < 0:
-        raise ValidationError({"amount": "Montant négatif interdit."})
+        raise ValidationError({"amount": "Montant negatif interdit."})
 
     bounty.approved_amount = amount
     bounty.status = BountyStatus.APPROVED
@@ -184,7 +174,11 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
 @transaction.atomic
 def reject_bounty(bounty, approver, note="", request=None):
     if not approver.has_capability(Capability.APPROVE_BOUNTY):
-        raise PermissionDenied("Capacité requise pour statuer sur une récompense.")
+        raise PermissionDenied("Capacite requise pour statuer sur une recompense.")
+    if bounty.proposed_by_id and bounty.proposed_by_id == approver.id:
+        raise PermissionDenied(
+            "Le proposeur d'une recompense ne peut pas statuer sur sa propre proposition."
+        )
     if not bounty.can_transition_to(BountyStatus.REJECTED):
         raise ValidationError("Transition interdite.")
     bounty.status = BountyStatus.REJECTED
@@ -215,9 +209,9 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
     prestataire de paiement se branchera ici.
     """
     if not actor.has_capability(Capability.RECORD_PAYMENT):
-        raise PermissionDenied("Capacité requise pour enregistrer un paiement.")
+        raise PermissionDenied("Capacite requise pour enregistrer un paiement.")
     if bounty.status != BountyStatus.APPROVED:
-        raise ValidationError("Seule une récompense approuvée peut être versée.")
+        raise ValidationError("Seule une recompense approuvee peut etre versee.")
 
     payment = BountyPayment.objects.create(
         bounty=bounty,

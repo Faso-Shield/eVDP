@@ -9,7 +9,7 @@ class WorkflowType(models.TextChoices):
 
 
 class Confidentiality(models.TextChoices):
-    """Niveau de confidentialite d'un message de case (inspire du TLP)."""
+    """Niveau de confidentialité d'un message de case (inspiré du TLP)."""
 
     PARTICIPANTS = "PARTICIPANTS", "Participants du case"
     INTERNAL = "INTERNAL", "Interne CSIRT"
@@ -49,7 +49,7 @@ class SLAKind(models.TextChoices):
 class SLAState(models.TextChoices):
     PENDING = "PENDING", "En cours"
     APPROACHING = "APPROACHING", "Échéance proche"
-    MET = "MET", "Respecte"
+    MET = "MET", "Respecté"
     BREACHED = "BREACHED", "Dépassé"
     CANCELLED = "CANCELLED", "Annulé"
 

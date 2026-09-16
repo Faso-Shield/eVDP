@@ -32,6 +32,7 @@ django-storages==1.14.6
 django-timezone-field==7.2.2
 djangorestframework==3.18.0
 drf-spectacular==0.30.0
+drf-spectacular-sidecar==2026.9.1
 et_xmlfile==2.0.0
 filelock==3.32.5
 gunicorn==26.2.0
@@ -73,6 +74,7 @@ python-crontab==3.4.0
 python-dateutil==2.9.0.post0
 pytokens==0.4.1
 PyYAML==6.0.3
+qrcode==8.2
 redis==6.4.0
 referencing==0.37.0
 reportlab==5.0.1
@@ -81,7 +83,6 @@ rich==15.0.0
 rpds-py==2026.6.3
 ruff==0.16.6
 s3transfer==0.19.2
-segno==1.6.6
 six==1.17.0
 sortedcontainers==2.4.0
 sqlparse==0.6.0

@@ -13,6 +13,23 @@
     {% else %}
       <p>Votre signalement a bien été transmis à l'équipe de coordination.</p>
     {% endif %}
+
+    {% if tracking_code %}
+    <div class="notice text-left mt-2">
+      <strong>Notez ce code de suivi maintenant — il ne sera plus jamais affiché :</strong>
+      <p class="mono" style="font-size:1.3rem;font-weight:700;color:var(--evdp-navy);word-break:break-all">{{ tracking_code }}</p>
+      <p class="small">Vous avez signalé de manière anonyme : ce code est le
+      <strong>seul moyen</strong> de consulter l'avancement de votre dossier plus tard,
+      sur la page <a href="{% url 'reports:track_lookup' %}">Suivre mon signalement</a>.
+      Personne ne peut vous le renvoyer si vous le perdez.</p>
+    </div>
+    {% elif emailed_link %}
+    <div class="notice notice-secure text-left mt-2">
+      <strong>Un lien de suivi personnel vous a été envoyé par email.</strong>
+      Il vous permettra de consulter l'avancement de ce dossier, sans créer de compte.
+    </div>
+    {% endif %}
+
     <div class="notice notice-secure text-left mt-2">
       <strong>Ce qui va se passer.</strong> L'équipe accuse réception sous 72 heures,
       qualifie la vulnérabilité, puis contacte l'organisation affectée. Votre rapport

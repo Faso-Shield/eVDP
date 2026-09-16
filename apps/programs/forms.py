@@ -49,15 +49,15 @@ class ProgramForm(forms.ModelForm):
             "starts_on": "Date de début",
             "ends_on": "Date de fin",
             "contact_email": "Email de contact",
-            "pgp_public_key": "Clé publique PGP",
+            "pgp_public_key": "Clé publique PGP (contact direct, hors eVDP)",
             "sla_policy": "Politique SLA",
             "disclosure_delay_days": "Délai de divulgation (jours)",
             "requires_verified_email": "Exiger un email vérifié",
             "allows_anonymous_reports": "Accepter les signalements anonymes",
         }
         widgets = {
-            "starts_on": forms.DateInput(attrs={"type": "date"}),
-            "ends_on": forms.DateInput(attrs={"type": "date"}),
+            "starts_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "ends_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "description": forms.Textarea(attrs={"rows": 6}),
             "rules": forms.Textarea(attrs={"rows": 5}),
             "out_of_scope_notes": forms.Textarea(attrs={"rows": 4}),
@@ -74,6 +74,9 @@ class ProgramForm(forms.ModelForm):
         if user is not None and not user.is_national:
             queryset = queryset.filter(id__in=user.organization_ids())
         self.fields["organization"].queryset = queryset
+        self.fields["organization"].widget.attrs.update(
+            {"class": "ts-select", "data-placeholder": "Rechercher une organisation…"}
+        )
 
 
 class ProgramScopeForm(forms.ModelForm):

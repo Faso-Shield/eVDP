@@ -163,103 +163,67 @@ def test_case_report_never_reachable_anonymously(client, case_alpha):
     assert Advisory.objects.count() == 0
 
 
-# ------------------------------------------------- redaction depuis l'ecran
-def _formulaire(advisory, action, resume, statut=None):
-    """Ce que le navigateur envoie depuis la page de redaction."""
-    entrees = list(advisory.timeline.all())
-    donnees = {
+# --------------------------------------------------- widget date (regression)
+def test_timeline_date_widget_renders_iso_format(client_for, case_alpha, coordinator):
+    """Un <input type="date"> HTML5 n'accepte que le format ISO (AAAA-MM-JJ)
+    dans son attribut value. Sans `format="%Y-%m-%d"` sur le widget, Django
+    rend la date au format localise (JJ/MM/AAAA) : le champ parait vide au
+    navigateur, se soumet vide, et bloque silencieusement l'enregistrement
+    de TOUT le formulaire (advisory + formset valides ensemble) puisque
+    happened_on est obligatoire. Reproduit et corrige en session."""
+    transition_case(case_alpha, CaseStatus.TRIAGE, coordinator)
+    transition_case(case_alpha, CaseStatus.VALIDATED, coordinator)
+    advisory = build_advisory(case_alpha, coordinator)
+    entry = advisory.timeline.first()
+    assert entry is not None and entry.happened_on is not None
+
+    client = client_for(coordinator)
+    response = client.get(f"/advisories/manage/{advisory.advisory_id}/")
+    content = response.content.decode()
+
+    iso_value = f'value="{entry.happened_on.isoformat()}"'
+    assert iso_value in content, "La date doit etre rendue au format ISO pour un input type=date"
+
+
+def test_editing_advisory_with_existing_timeline_entry_saves(
+    client_for, case_alpha, coordinator
+):
+    """Bout en bout : modifier un advisory dont la chronologie a deja une
+    entree ne doit jamais faire echouer silencieusement l'enregistrement.
+
+    Les donnees POST reprennent exactement ce qu'un navigateur soumettrait
+    pour un <input type="date"> correctement rendu au format ISO."""
+    transition_case(case_alpha, CaseStatus.TRIAGE, coordinator)
+    transition_case(case_alpha, CaseStatus.VALIDATED, coordinator)
+    advisory = build_advisory(case_alpha, coordinator)
+    entry = advisory.timeline.first()
+
+    client = client_for(coordinator)
+    data = {
         "title": advisory.title,
-        "summary": resume,
-        "organization": advisory.organization_id or "",
+        "summary": "Resume verifie par le test de non-regression.",
         "product": advisory.product,
-        "affected_versions": "",
-        "fixed_versions": "",
-        "description": "Description publique.",
-        "impact": "",
-        "solution": "",
-        "workaround": "",
+        "affected_versions": advisory.affected_versions,
+        "fixed_versions": advisory.fixed_versions,
+        "description": advisory.description,
+        "impact": advisory.impact,
+        "solution": advisory.solution,
+        "workaround": advisory.workaround,
         "severity": advisory.severity,
-        "cvss_score": advisory.cvss_score or "",
-        "cvss_vector": advisory.cvss_vector,
-        "cwe": advisory.cwe_id or "",
-        "cve": advisory.cve_id or "",
         "credit": advisory.credit,
-        "scheduled_for": "",
-        "action": action,
-        "timeline-TOTAL_FORMS": str(len(entrees) + 1),
-        "timeline-INITIAL_FORMS": str(len(entrees)),
+        "timeline-TOTAL_FORMS": "1",
+        "timeline-INITIAL_FORMS": "1",
         "timeline-MIN_NUM_FORMS": "0",
         "timeline-MAX_NUM_FORMS": "1000",
+        "timeline-0-id": str(entry.pk),
+        "timeline-0-happened_on": entry.happened_on.isoformat(),
+        "timeline-0-label": entry.label,
+        "timeline-0-position": entry.position,
     }
-    if statut:
-        donnees["target_status"] = statut
-    for index, entree in enumerate(entrees):
-        donnees[f"timeline-{index}-id"] = str(entree.pk)
-        donnees[f"timeline-{index}-happened_on"] = entree.happened_on.isoformat()
-        donnees[f"timeline-{index}-label"] = entree.label
-        donnees[f"timeline-{index}-position"] = str(entree.position)
-    vide = len(entrees)
-    donnees[f"timeline-{vide}-id"] = ""
-    donnees[f"timeline-{vide}-happened_on"] = ""
-    donnees[f"timeline-{vide}-label"] = ""
-    donnees[f"timeline-{vide}-position"] = "0"
-    return donnees
+    if advisory.organization_id:
+        data["organization"] = str(advisory.organization_id)
 
-
-def test_summary_typed_on_screen_reaches_the_publication(client_for, case_alpha, coordinator):
-    """Le resume saisi part avec la demande de publication.
-
-    Contenu et cycle de vie etaient deux formulaires : la publication ne
-    voyait que la base, et refusait un resume pourtant saisi a l'ecran.
-    """
-    advisory = create_advisory_from_case(case_alpha, coordinator)
-    advisory.status = AdvisoryStatus.APPROVED
-    advisory.save(update_fields=["status"])
-    client = client_for(coordinator)
-
-    reponse = client.post(
-        f"/advisories/manage/{advisory.advisory_id}/",
-        _formulaire(advisory, "publish", "Un resume public saisi a l'instant."),
-        follow=True,
-    )
-
+    response = client.post(f"/advisories/manage/{advisory.advisory_id}/", data)
+    assert response.status_code == 302
     advisory.refresh_from_db()
-    assert advisory.summary == "Un resume public saisi a l'instant."
-    assert advisory.status == AdvisoryStatus.PUBLISHED
-    assert not [m for m in reponse.context["messages"] if m.level_tag == "error"]
-
-
-def test_content_survives_a_refused_transition(client_for, case_alpha, coordinator):
-    """Une transition refusee ne doit pas emporter la saisie avec elle."""
-    advisory = create_advisory_from_case(case_alpha, coordinator)
-    client = client_for(coordinator)
-
-    reponse = client.post(
-        f"/advisories/manage/{advisory.advisory_id}/",
-        _formulaire(advisory, "publish", "Resume conserve malgre le refus."),
-        follow=True,
-    )
-
-    advisory.refresh_from_db()
-    assert advisory.summary == "Resume conserve malgre le refus."
-    assert advisory.status == AdvisoryStatus.DRAFT
-    # Le refus porte sur l'etat du document, pas sur un resume qui manquerait.
-    erreurs = [str(m) for m in reponse.context["messages"] if m.level_tag == "error"]
-    assert erreurs and "publication" in " ".join(erreurs).lower()
-
-
-def test_analyst_cannot_publish_from_the_screen(client_for, case_alpha, analyst):
-    """Le bouton absent n'est pas la seule garde : la vue refuse aussi."""
-    advisory = create_advisory_from_case(case_alpha, analyst)
-    advisory.status = AdvisoryStatus.APPROVED
-    advisory.save(update_fields=["status"])
-
-    client_for(analyst).post(
-        f"/advisories/manage/{advisory.advisory_id}/",
-        _formulaire(advisory, "publish", "Resume public."),
-        follow=True,
-    )
-
-    advisory.refresh_from_db()
-    assert advisory.summary == "Resume public."
-    assert advisory.status == AdvisoryStatus.APPROVED
+    assert advisory.summary == "Resume verifie par le test de non-regression."

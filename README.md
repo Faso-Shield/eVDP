@@ -49,12 +49,9 @@ Signaler  →  Analyser  →  Coordonner  →  Corriger  →  Publier
 ### Bug Bounty
 
 - Programmes avec périmètre structuré (in/out of scope, priorités P1–P4)
-- **Matrice de récompenses configurable** — aucun montant codé en dur,
-  montants ajustables par actif du périmètre
+- **Matrice de récompenses configurable** — aucun montant codé en dur
 - Cycle proposition → revue → approbation → versement
 - Séparation stricte des rôles : proposer ≠ approuver ≠ payer
-- Participation réservée aux comptes dont l'adresse email est vérifiée,
-  avec délai de grâce et relance pour les comptes antérieurs à la règle
 - Aucun flux financier réel n'est déclenché par la plateforme (MVP)
 
 ### Publication
@@ -70,7 +67,7 @@ Signaler  →  Analyser  →  Coordonner  →  Corriger  →  Publier
 - Tableaux de bord chercheur, organisation/DSI, CSIRT et **posture nationale**
 - Recherche globale sur le périmètre autorisé
 - Exports CSV, Excel et PDF soumis aux permissions et audités
-- Journal d'audit **immuable** couvrant 40 types d'actions
+- Journal d'audit **immuable** couvrant 41 types d'actions
 
 ---
 
@@ -84,7 +81,7 @@ Signaler  →  Analyser  →  Coordonner  →  Corriger  →  Publier
 ### Installation
 
 ```bash
-git clone <url-du-depot> evdp
+git clone https://github.com/wendiouedraogo8-art/evdp.git
 cd evdp
 
 # 1. Configuration
@@ -98,11 +95,14 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"
 # 3. Démarrer la plateforme
 docker compose up -d
 
-# 4. Charger les données de démonstration (optionnel)
-docker compose run --rm evdp-web seed
-
-# 5. Créer un compte administrateur
+# 4. Créer un compte administrateur
 docker compose exec evdp-web python manage.py createsuperuser
+
+# 5. Charger les données de référence (recommandé) : CWE, SLA, ministères...
+docker compose exec evdp-web python manage.py seed_reference
+
+# 5bis. OU charger des données de démonstration fictives (tests uniquement)
+docker compose run --rm evdp-web seed
 ```
 
 La plateforme est disponible sur **http://localhost/**.
@@ -131,6 +131,30 @@ docker compose ps                      # tous les services en "healthy"
 curl -fsS http://localhost/health/     # {"status": "ok", ...}
 curl -fsS http://localhost/ready/      # base et cache disponibles
 ```
+
+---
+
+## Données de référence (sans compte fictif)
+
+`docker compose exec evdp-web python manage.py seed_reference` charge
+uniquement des données réelles et réutilisables — aucun compte, aucun mot
+de passe de démonstration :
+
+- Le référentiel CWE (13 catégories courantes)
+- La politique SLA nationale par défaut (72h / 5j / 90j)
+- Les textes de la plateforme (politique de divulgation, à propos)
+- L'ANSSI-BF et le CSIRT National
+- Les 15 principaux ministères du Burkina Faso
+
+Ajoutez `--with-programs` pour créer en plus un programme VDP national
+(ANSSI-BF) et deux programmes Bug Bounty réalistes (CSIRT National ;
+Ministère de la Santé — plateforme e-santé), avec périmètre, règles et
+matrice de récompenses en XOF. Toujours aucun faux compte ni faux dossier.
+
+Idempotente (relançable sans doublon). Les coordonnées de contact de
+chaque organisation sont volontairement vides : à compléter depuis
+l'interface, ou en invitant le vrai responsable depuis la fiche de
+l'organisation (**Ajouter un membre**).
 
 ---
 
@@ -189,7 +213,7 @@ appliqués sans exception.
 | Principe | Mise en œuvre |
 |----------|---------------|
 | **Privé par défaut** | Aucun rapport n'est publié automatiquement ; seul un advisory assaini est publiable |
-| **Moindre privilège** | 10 rôles, 23 capacités, isolation appliquée au niveau du queryset |
+| **Moindre privilège** | 10 rôles, 22 capacités, isolation appliquée au niveau du queryset |
 | **Tout est auditable** | Journal append-only ; les refus sont journalisés durablement |
 | **Ne jamais exposer les données internes** | La vue publique est un objet distinct du dossier privé |
 | **Aucune clé privée côté serveur** | Seules les clés publiques PGP sont stockées ; tout bloc privé est refusé |
@@ -204,6 +228,29 @@ ASVS / Top 10 et le modèle de menaces.
 
 **Signaler une vulnérabilité sur eVDP lui-même :** utilisez le canal décrit
 dans `/.well-known/security.txt`.
+
+### Cadre légal et normatif
+
+La politique de divulgation publique (`/disclosure-policy/`) cite le socle
+juridique burkinabè réel sur lequel repose la plateforme, et non une simple
+formule :
+
+- **Loi n°014-2024/ALT** du 9 juillet 2024 portant sécurité des systèmes
+  d'information (rôle de l'ANSSI) ;
+- **Loi n°025-2018/AN** du 31 mai 2018 (Code pénal, Livre VII) — fonde la
+  clause Safe Harbor ;
+- **Loi n°001-2021/AN** du 30 mars 2021 sur la protection des données à
+  caractère personnel (autorité : CIL) ;
+- **Loi n°045-2009/AN** du 10 novembre 2009 sur les transactions
+  électroniques ;
+- **Décret n°2013-1053** portant création de l'ANSSI (dont dépend le
+  CIRT-BF).
+
+Sur le plan normatif, le processus de traitement suit **ISO/IEC 29147:2018**
+(réception des rapports, publication des advisories) et **ISO/IEC
+30111:2019** (traitement interne : triage, priorisation, correction) — voir
+`apps/core/views.py::DEFAULT_DISCLOSURE_POLICY` pour le détail et la
+correspondance avec les statuts de `apps/coordination/workflow.py`.
 
 ---
 
@@ -250,7 +297,7 @@ docker compose run --rm -e DB_ENGINE=postgres evdp-web \
 pytest --cov=apps --cov-report=term-missing
 ```
 
-**235 tests** couvrant l'authentification, le RBAC, le workflow CVD et Bug
+**205 tests** couvrant l'authentification, le RBAC, le workflow CVD et Bug
 Bounty, les doublons, les pièces jointes, les récompenses, les advisories,
 l'API, le journal d'audit, le calculateur CVSS et la sécurité applicative
 (XSS, CSRF, IDOR, élévation de privilèges, mass assignment, upload).

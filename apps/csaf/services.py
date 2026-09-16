@@ -15,7 +15,7 @@ from django.db import transaction
 from apps.reports.models import VulnerabilityReport
 from apps.reports.services import submit_report
 from apps.vulnerabilities.constants import ReportSource, Severity, VulnerabilityType
-from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
+from apps.vulnerabilities.cvss import CVSSError, evaluate
 from apps.vulnerabilities.models import CVE, CWE
 
 SUPPORTED_CATEGORIES = {
@@ -36,11 +36,11 @@ def _require(mapping, key, path):
 def validate_document(document):
     """Verifie la structure minimale d'un document CSAF 2.0."""
     if not isinstance(document, dict):
-        raise ValidationError("Le document CSAF doit être un objet JSON.")
+        raise ValidationError("Le document CSAF doit etre un objet JSON.")
 
     csaf_document = _require(document, "document", "$")
     if not isinstance(csaf_document, dict):
-        raise ValidationError("$.document doit être un objet.")
+        raise ValidationError("$.document doit etre un objet.")
 
     version = csaf_document.get("csaf_version")
     if version != "2.0":
@@ -48,7 +48,7 @@ def validate_document(document):
 
     category = csaf_document.get("category", "")
     if category not in SUPPORTED_CATEGORIES:
-        raise ValidationError(f"Catégorie CSAF non prise en charge : {category!r}.")
+        raise ValidationError(f"Categorie CSAF non prise en charge : {category!r}.")
 
     _require(csaf_document, "title", "$.document")
     tracking = _require(csaf_document, "tracking", "$.document")
@@ -56,10 +56,10 @@ def validate_document(document):
 
     vulnerabilities = document.get("vulnerabilities", [])
     if not isinstance(vulnerabilities, list) or not vulnerabilities:
-        raise ValidationError("Le document ne déclare aucune vulnérabilité.")
+        raise ValidationError("Le document ne declare aucune vulnerabilite.")
     if len(vulnerabilities) > MAX_VULNERABILITIES:
         raise ValidationError(
-            f"Trop de vulnérabilités dans un seul document (max {MAX_VULNERABILITIES})."
+            f"Trop de vulnerabilites dans un seul document (max {MAX_VULNERABILITIES})."
         )
     return document
 
@@ -75,7 +75,7 @@ def _extract_cvss(vulnerability):
             value, severity = evaluate(vector)
         except CVSSError:
             continue
-        return vector, score_as_decimal(value), severity
+        return vector, value, severity
     return "", None, Severity.MEDIUM
 
 

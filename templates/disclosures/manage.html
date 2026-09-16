@@ -21,17 +21,11 @@
   {% if advisory.case %}Dossier source : <span class="mono">{{ advisory.case.case_id }}</span>.{% endif %}
 </div>
 
-{% comment %}
-Contenu et cycle de vie ne forment qu'un seul formulaire. Séparés, la
-publication ignorait ce qui venait d'être saisi : un résumé public tapé puis
-publié sans enregistrement préalable était refusé comme absent.
-{% endcomment %}
 <form method="post">
   {% csrf_token %}
   <div class="card">
     <div class="card-header"><h2>Contenu de l'advisory</h2></div>
     <div class="card-body">
-      {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
       <div class="form-grid">{% for field in form %}{% include "partials/form_field.html" %}{% endfor %}</div>
     </div>
   </div>
@@ -40,7 +34,6 @@ publié sans enregistrement préalable était refusé comme absent.
     <div class="card-header"><h2>Chronologie publique</h2></div>
     <div class="card-body">
       {{ formset.management_form }}
-      {% if formset.non_form_errors %}<div class="alert alert-error">{{ formset.non_form_errors }}</div>{% endif %}
       <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Date</th><th>Étape</th><th>Ordre</th><th>Suppr.</th></tr></thead>
@@ -48,62 +41,65 @@ publié sans enregistrement préalable était refusé comme absent.
           {% for entry_form in formset %}
             <tr>
               {{ entry_form.id }}
-              <td>{{ entry_form.happened_on }}{{ entry_form.happened_on.errors }}</td>
-              <td>{{ entry_form.label }}{{ entry_form.label.errors }}</td>
-              <td>{{ entry_form.position }}{{ entry_form.position.errors }}</td>
+              <td>{{ entry_form.happened_on }}</td>
+              <td>{{ entry_form.label }}</td>
+              <td>{{ entry_form.position }}</td>
               <td>{{ entry_form.DELETE }}</td>
             </tr>
           {% endfor %}
           </tbody>
         </table>
       </div>
-      <p class="small muted mt-1">Une ligne n'est enregistrée que si sa date et son
-      étape sont toutes deux renseignées.</p>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-header"><h2>Cycle de vie</h2></div>
-    <div class="card-body">
-      <p class="small muted">Chaque bouton enregistre d'abord le contenu ci-dessus,
-      puis applique l'action demandée.</p>
-      <div class="btn-row">
-        <button class="btn btn-accent" type="submit" name="action" value="save">Enregistrer</button>
-      </div>
-      <hr>
-      <div class="filters">
-        <div class="form-field">
-          <label for="target_status">Nouveau statut</label>
-          <select name="target_status" id="target_status">
-            {% for value, label in statuses %}
-              <option value="{{ value }}"{% if value == advisory.status %} selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <button class="btn btn-outline" type="submit" name="action" value="status">Enregistrer et appliquer</button>
-      </div>
-
-      {% if can_publish %}
-      <hr>
-      <div class="btn-row">
-        <button class="btn btn-accent" type="submit" name="action" value="publish">Enregistrer et publier</button>
-      </div>
-      {% if advisory.status == "PUBLISHED" %}
-      <div class="filters mt-1">
-        <div class="form-field">
-          <label for="reason">Motif de retrait</label>
-          <input type="text" name="reason" id="reason">
-        </div>
-        <button class="btn btn-danger" type="submit" name="action" value="retract">Retirer</button>
-      </div>
-      {% endif %}
-      <p class="small muted mt-1">La publication exige un résumé public et un advisory
-      approuvé ou planifié. Elle est irréversible hors retrait explicite et journalisé.</p>
-      {% else %}
-      <p class="small muted">Votre rôle ne permet pas de publier. Un coordinateur national
-      doit valider la publication.</p>
-      {% endif %}
-    </div>
+  <div class="btn-row mb-3">
+    <button class="btn btn-accent" type="submit">Enregistrer</button>
   </div>
 </form>
+
+<div class="card">
+  <div class="card-header"><h2>Cycle de vie</h2></div>
+  <div class="card-body">
+    <div class="btn-row">
+      <form method="post" action="{% url 'disclosures:transition' advisory.advisory_id %}">
+        {% csrf_token %}
+        <div class="filters">
+          <div class="form-field">
+            <label for="target_status">Nouveau statut</label>
+            <select name="target_status" id="target_status">
+              {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <button class="btn btn-outline" type="submit">Appliquer</button>
+        </div>
+      </form>
+    </div>
+
+    {% if can_publish %}
+    <hr>
+    <div class="btn-row">
+      <form method="post" action="{% url 'disclosures:publish' advisory.advisory_id %}">
+        {% csrf_token %}
+        <button class="btn btn-accent" type="submit">Publier l'advisory</button>
+      </form>
+      {% if advisory.status == "PUBLISHED" %}
+      <form method="post" action="{% url 'disclosures:retract' advisory.advisory_id %}" class="filters">
+        {% csrf_token %}
+        <div class="form-field">
+          <label for="reason">Motif de retrait</label>
+          <input type="text" name="reason" id="reason" required>
+        </div>
+        <button class="btn btn-danger" type="submit">Retirer</button>
+      </form>
+      {% endif %}
+    </div>
+    <p class="small muted mt-1">La publication est irréversible hors retrait explicite
+    et journalisé.</p>
+    {% else %}
+    <p class="small muted">Votre rôle ne permet pas de publier. Un coordinateur national
+    doit valider la publication.</p>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}

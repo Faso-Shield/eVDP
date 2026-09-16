@@ -1,14 +1,118 @@
 {% extends "base_dashboard.html" %}
-{% block title %}Nouveau programme{% endblock %}
+{% load static %}
+{% block title %}{% if creating %}Créer un programme{% else %}Modifier le programme{% endif %}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/vendor/tom-select.default.min.css' %}">
+{% endblock %}
 {% block dashboard_content %}
 <h1>{% if creating %}Créer un programme{% else %}Modifier le programme{% endif %}</h1>
-<div class="card"><div class="card-body">
-  <form method="post" novalidate>
-    {% csrf_token %}
-    <div class="form-grid">
-      {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+{% if creating %}
+<p class="muted">Un programme VDP accepte les signalements sans contrepartie financière.
+Un programme Bug Bounty ajoute une matrice de récompenses — configurable juste après
+la création de ce programme.</p>
+{% endif %}
+
+{% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+
+<form method="post" novalidate>
+  {% csrf_token %}
+
+  <div class="card">
+    <div class="card-header"><h2>Identification</h2></div>
+    <div class="card-body">
+      {% include "partials/form_field.html" with field=form.name %}
+      <div class="form-grid">
+        {% include "partials/form_field.html" with field=form.program_type %}
+        {% include "partials/form_field.html" with field=form.organization %}
+        {% include "partials/form_field.html" with field=form.status %}
+        {% include "partials/form_field.html" with field=form.confidentiality %}
+      </div>
+      <div class="notice" id="bounty-hint" hidden>
+        Un programme Bug Bounty exige un chercheur identifié pour chaque
+        dossier éligible à une récompense : le signalement anonyme y est
+        toujours désactivé, quel que soit le réglage ci-dessous.
+      </div>
     </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Présentation publique</h2></div>
+    <div class="card-body">
+      {% include "partials/form_field.html" with field=form.summary %}
+      {% include "partials/form_field.html" with field=form.description %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Règles et périmètre légal</h2></div>
+    <div class="card-body">
+      {% include "partials/form_field.html" with field=form.rules %}
+      {% include "partials/form_field.html" with field=form.out_of_scope_notes %}
+      {% include "partials/form_field.html" with field=form.eligibility %}
+      {% include "partials/form_field.html" with field=form.safe_harbor %}
+      {% include "partials/form_field.html" with field=form.disclosure_policy %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Calendrier et SLA</h2></div>
+    <div class="card-body">
+      <div class="form-grid">
+        {% include "partials/form_field.html" with field=form.starts_on %}
+        {% include "partials/form_field.html" with field=form.ends_on %}
+        {% include "partials/form_field.html" with field=form.sla_policy %}
+        {% include "partials/form_field.html" with field=form.disclosure_delay_days %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Contact et sécurité</h2></div>
+    <div class="card-body">
+      {% include "partials/form_field.html" with field=form.contact_email %}
+      {% include "partials/form_field.html" with field=form.pgp_public_key %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Réception des signalements</h2></div>
+    <div class="card-body">
+      <div class="checkbox-field">
+        {{ form.allows_anonymous_reports }}
+        <label for="{{ form.allows_anonymous_reports.id_for_label }}" id="anonymous-reports-label">
+          {{ form.allows_anonymous_reports.label }}</label>
+      </div>
+      <div class="help" id="anonymous-reports-help">{{ form.allows_anonymous_reports.help_text }}</div>
+      <div class="checkbox-field mt-1">
+        {{ form.requires_verified_email }}
+        <label for="{{ form.requires_verified_email.id_for_label }}">
+          {{ form.requires_verified_email.label }}</label>
+      </div>
+      <div class="help">{{ form.requires_verified_email.help_text }}</div>
+    </div>
+  </div>
+
+  <div class="btn-row mb-3">
     <button class="btn btn-accent" type="submit">Enregistrer</button>
-  </form>
-</div></div>
+    {% if not creating %}
+    <a class="btn btn-outline" href="{% url 'programs:detail' program.slug %}">Voir la fiche publique</a>
+    {% endif %}
+  </div>
+</form>
+
+{% if creating %}
+<div class="card">
+  <div class="card-body small muted">
+    <strong>Après l'enregistrement :</strong> vous pourrez déclarer le périmètre
+    (cibles dans/hors périmètre) et, pour un programme Bug Bounty, configurer la
+    matrice de récompenses par palier de sévérité — sur cette même page de gestion.
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/vendor/tom-select.complete.min.js' %}" defer></script>
+<script src="{% static 'js/select-enhance.js' %}" defer></script>
+<script src="{% static 'js/program-form.js' %}" defer></script>
 {% endblock %}

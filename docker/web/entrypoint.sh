@@ -90,7 +90,8 @@ case "${ROLE}" in
         ;;
     seed)
         python manage.py migrate --no-input
-        exec python manage.py seed_demo
+        shift
+        exec python manage.py seed_demo "$@"
         ;;
     shell)
         exec python manage.py shell

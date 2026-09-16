@@ -6,10 +6,43 @@
 {% block content %}
 <div class="layout">
   <aside class="sidebar">
-    {% for titre, liens in sidebar_sections %}
-      {% if titre %}<div class="sidebar-title">{{ titre }}</div>{% endif %}
-      {% for lien in liens %}<a href="{{ lien.url }}">{{ lien.label }}</a>{% endfor %}
-    {% endfor %}
+    <div class="sidebar-title">Espace</div>
+    {% if nav.national_dashboard %}<a href="{% url 'dashboard:home' %}">Tableau de bord</a>{% endif %}
+    {% if perms_national or user.is_national %}
+      <a href="{% url 'dashboard:csirt' %}">Vue CSIRT</a>
+    {% endif %}
+    {% if user.is_organization_user %}
+      <a href="{% url 'dashboard:organization' %}">Vue organisation</a>
+    {% endif %}
+    {% if user.is_researcher %}
+      <a href="{% url 'dashboard:researcher' %}">Espace chercheur</a>
+    {% endif %}
+
+    {% if nav.coordination %}
+    <div class="sidebar-title">Coordination</div>
+    <a href="{% url 'coordination:case_list' %}">Dossiers</a>
+    <a href="{% url 'coordination:kanban' %}">Kanban</a>
+    <a href="{% url 'dashboard:search' %}">Recherche globale</a>
+    {% endif %}
+
+    {% if user.is_researcher or user.is_national or user.is_organization_user %}
+    <div class="sidebar-title">Bug Bounty</div>
+    <a href="{% url 'bounty:list' %}">Récompenses</a>
+    {% if nav.manage_programs %}<a href="{% url 'programs:my_programs' %}">Mes programmes</a>{% endif %}
+    {% endif %}
+
+    <div class="sidebar-title">Publication</div>
+    <a href="{% url 'disclosures:advisory_list' %}">Advisories publiés</a>
+    {% if nav.draft_advisory %}<a href="{% url 'disclosures:manage_list' %}">Rédaction d'advisories</a>{% endif %}
+
+    {% if nav.manage_organizations or nav.view_audit_log or nav.manage_users or user.is_staff %}
+    <div class="sidebar-title">Administration</div>
+    {% if nav.manage_organizations %}<a href="{% url 'organizations:manage_list' %}">Organisations</a>{% endif %}
+    {% if nav.manage_users %}<a href="{% url 'accounts:user_manage_list' %}">Utilisateurs</a>{% endif %}
+    {% if nav.view_audit_log %}<a href="{% url 'audit:list' %}">Journal d'audit</a>{% endif %}
+    {% if user.is_staff %}<a href="/admin/">Administration Django</a>{% endif %}
+    {% endif %}
+    <a href="{% url 'accounts:profile' %}">Mon profil</a>
   </aside>
 
   <section>

@@ -1,0 +1,18 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Créer un compte{% endblock %}
+{% block dashboard_content %}
+<h1>Créer un compte</h1>
+<p class="muted">La personne choisit elle-même son mot de passe via un lien envoyé par
+email — aucun mot de passe n'est saisi ou connu ici.</p>
+
+<div class="card"><div class="card-body">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+    <div class="btn-row">
+      <button class="btn btn-accent" type="submit">Créer et envoyer l'invitation</button>
+      <a class="btn btn-outline" href="{% url 'accounts:user_manage_list' %}">Annuler</a>
+    </div>
+  </form>
+</div></div>
+{% endblock %}

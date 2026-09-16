@@ -1,0 +1,44 @@
+{% extends "base_dashboard.html" %}
+{% block title %}{{ target.email }}{% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">{{ target.full_name|default:target.email }}</h1>
+  {% if target.is_active %}<span class="status status-open">Actif</span>
+  {% else %}<span class="status status-closed">Désactivé</span>{% endif %}
+</div>
+<p class="muted mono small">{{ target.email }}</p>
+
+<div class="grid split-layout">
+  <div>
+    <div class="card">
+      <div class="card-header"><h2>Rôle et statut</h2></div>
+      <div class="card-body">
+        <form method="post" novalidate>
+          {% csrf_token %}
+          {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-accent" type="submit">Enregistrer</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <div class="card-header"><h3>Accès au compte</h3></div>
+      <div class="card-body small">
+        <p>Double authentification : {% if target.mfa_enabled %}activée{% else %}non activée{% endif %}</p>
+        <p>Email vérifié : {% if target.email_verified %}oui{% else %}non{% endif %}</p>
+        <p>Dernière connexion : {{ target.last_login|default:"jamais" }}</p>
+        <form method="post" action="{% url 'accounts:user_manage_resend_link' target.pk %}">
+          {% csrf_token %}
+          <button class="btn btn-outline btn-sm btn-block" type="submit">
+            Envoyer un lien de connexion
+          </button>
+        </form>
+        <p class="help mt-1">Utile si la personne n'a pas encore choisi son mot de passe,
+        ou l'a perdu. Aucun mot de passe n'est visible ni modifiable depuis cet écran.</p>
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}

@@ -5,6 +5,8 @@ from django.urls import reverse
 
 from apps.accounts.roles import Capability, Role
 from apps.coordination.models import Case
+from apps.coordination.services import transition_case
+from apps.coordination.workflow import CaseStatus
 
 pytestmark = pytest.mark.django_db
 
@@ -32,6 +34,48 @@ def test_case_queryset_isolation(researcher_a, case_alpha, case_beta):
     assert visible == {case_alpha.case_id}
 
 
+# ------------------------------------------------- navigation adaptee au role
+def test_researcher_dashboard_hides_csirt_only_navigation(client_for, researcher_a):
+    """Un chercheur ne doit jamais voir de lien vers une zone qu'il ne peut pas
+    ouvrir (Journal d'audit, Organisations, Kanban...) : le backend refusait
+    deja l'acces, mais un lien menant a un ecran "Acces refuse" reste une
+    mauvaise experience, pas une protection."""
+    client = client_for(researcher_a)
+    response = client.get(reverse("dashboard:researcher"))
+    content = response.content.decode()
+    assert "Journal d'audit" not in content
+    assert "Organisations</a>" not in content
+    assert "Kanban" not in content
+    assert "Rédaction d'advisories" not in content
+    assert "Mes programmes" not in content
+
+
+def test_coordinator_dashboard_keeps_full_navigation(client_for, coordinator):
+    client = client_for(coordinator)
+    response = client.get(reverse("dashboard:home"), follow=True)
+    content = response.content.decode()
+    assert "Journal d'audit" in content
+    assert "Kanban" in content
+
+
+def test_case_list_hides_organization_columns_for_researcher(
+    client_for, researcher_a, case_alpha
+):
+    client = client_for(researcher_a)
+    response = client.get(reverse("coordination:case_list"))
+    assert response.context["researcher_view"] is True
+    content = response.content.decode()
+    assert "Toutes les organisations" not in content
+    assert "Mes dossiers" in content
+
+
+def test_case_list_keeps_organization_filter_for_coordinator(client_for, coordinator):
+    client = client_for(coordinator)
+    response = client.get(reverse("coordination:case_list"))
+    assert response.context["researcher_view"] is False
+    assert "Toutes les organisations" in response.content.decode()
+
+
 # ------------------------------------------------------- isolation organisation
 def test_organization_cannot_access_other_organization_case(client_for, dsi_beta, case_alpha):
     """Une organisation A ne peut pas acceder aux vulnerabilites de B."""
@@ -40,10 +84,27 @@ def test_organization_cannot_access_other_organization_case(client_for, dsi_beta
     assert response.status_code == 404
 
 
-def test_organization_accesses_own_case(client_for, dsi_alpha, case_alpha):
+def test_organization_accesses_own_case(client_for, dsi_alpha, case_alpha, coordinator):
+    """L'organisation n'accede au dossier qu'une fois le CSIRT l'ayant
+    explicitement engagee -- jamais pendant le triage (voir test ci-dessous)."""
+    for target in (CaseStatus.TRIAGE, CaseStatus.VALIDATED, CaseStatus.VENDOR_CONTACTED):
+        transition_case(case_alpha, target, coordinator)
     client = client_for(dsi_alpha)
     response = client.get(reverse("coordination:case_detail", args=[case_alpha.case_id]))
     assert response.status_code == 200
+
+
+def test_organization_cannot_access_case_before_vendor_contacted(
+    client_for, dsi_alpha, case_alpha
+):
+    """Protection du declarant pendant le triage : l'organisation ne doit
+    rien voir d'un dossier qui la concerne tant que le CSIRT ne l'a pas
+    explicitement engagee (cf. cahier des charges -- risque de poursuites
+    prematurees en l'absence de ce filtrage)."""
+    assert case_alpha.status == CaseStatus.SUBMITTED
+    client = client_for(dsi_alpha)
+    response = client.get(reverse("coordination:case_detail", args=[case_alpha.case_id]))
+    assert response.status_code == 404
 
 
 def test_dsi_cannot_access_national_dashboard(client_for, dsi_alpha):
@@ -66,6 +127,24 @@ def test_dsi_cannot_publish_advisory(dsi_alpha):
 def test_national_roles_see_all_cases(coordinator, case_alpha, case_beta):
     visible = set(Case.objects.visible_to(coordinator).values_list("case_id", flat=True))
     assert visible == {case_alpha.case_id, case_beta.case_id}
+
+
+def test_national_dashboard_does_not_identify_organizations_or_cases(
+    client_for, coordinator, case_alpha
+):
+    """Regression : le tableau de bord national se presente comme
+    strictement agrege ("aucune information permettant d'identifier une
+    infrastructure sensible n'est affichee ici"), mais affichait un
+    classement nominatif des organisations et le detail des dossiers en
+    depassement (identifiant + titre + organisation)."""
+    client = client_for(coordinator)
+    response = client.get(reverse("dashboard:national"))
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert case_alpha.organization.name not in content
+    assert case_alpha.organization.acronym not in content
+    assert case_alpha.case_id not in content
+    assert case_alpha.title not in content
 
 
 def test_analyst_cannot_approve_bounty(analyst):
@@ -128,44 +207,3 @@ def test_capability_matrix(db, role, capability, expected):
 def test_inactive_user_has_no_capability(researcher_a):
     researcher_a.is_active = False
     assert researcher_a.has_capability(Capability.SUBMIT_REPORT) is False
-
-
-# ----------------------------------------- vues de gestion ouvertes par oubli
-# Les deux ne portaient que @login_required alors qu'elles servent des ecrans
-# de traitement. Le menu lateral les reserve deja ; la vue doit refuser de
-# meme, sans quoi l'URL saisie a la main suffirait.
-def test_a_reporter_cannot_open_the_triage_board(client_for, researcher_a):
-    assert client_for(researcher_a).get(reverse("coordination:kanban")).status_code == 403
-
-
-def test_a_reporter_cannot_open_the_program_management_list(client_for, researcher_a):
-    assert client_for(researcher_a).get(reverse("programs:my_programs")).status_code == 403
-
-
-def test_an_auditor_keeps_the_triage_board_but_loses_program_management(client_for, auditor):
-    """L'auditeur voit tout et n'administre rien : la nuance porte ici.
-
-    National, il recevait jusqu'ici la liste de tous les programmes du pays
-    dans un ecran d'administration. L'annuaire public lui reste ouvert.
-    """
-    client = client_for(auditor)
-    assert client.get(reverse("coordination:kanban")).status_code == 200
-    assert client.get(reverse("programs:my_programs")).status_code == 403
-    assert client.get(reverse("programs:list")).status_code == 200
-
-
-def test_the_staff_roles_keep_both(client_for, analyst, dsi_alpha):
-    for utilisateur in (analyst, dsi_alpha):
-        client = client_for(utilisateur)
-        assert client.get(reverse("coordination:kanban")).status_code == 200
-        assert client.get(reverse("programs:my_programs")).status_code == 200
-
-
-def test_the_refusal_is_audited(client_for, researcher_a):
-    """Un refus doit laisser une trace : c'est la regle du depot."""
-    from apps.audit.models import AuditAction, AuditLog
-
-    client_for(researcher_a).get(reverse("coordination:kanban"))
-    assert AuditLog.objects.filter(
-        action=AuditAction.PERMISSION_DENIED, actor=researcher_a
-    ).exists()

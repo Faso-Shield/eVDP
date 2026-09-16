@@ -50,6 +50,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "django_filters",
     "drf_spectacular",
+    "drf_spectacular_sidecar",
     "django_celery_beat",
 ]
 
@@ -84,10 +85,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.core.middleware.RequestContextMiddleware",
-    # Apres AuthenticationMiddleware : la session n'est elevee qu'une fois le
-    # second facteur valide. Place ici, la regle couvre toute la plateforme,
-    # y compris /admin/ qui a sa propre page de connexion.
-    "apps.accounts.middleware.MfaEnforcementMiddleware",
+    "apps.accounts.middleware.MFAEnforcementMiddleware",
     "apps.core.middleware.SecurityHeadersMiddleware",
 ]
 
@@ -238,10 +236,6 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.accounts.tasks.purge_expired_tokens",
         "schedule": crontab(minute=0, hour=3),
     },
-    "evdp-relance-comptes-non-verifies": {
-        "task": "apps.accounts.tasks.remind_unverified_accounts",
-        "schedule": crontab(minute=30, hour=8),
-    },
 }
 
 # ---------------------------------------------------------------------------
@@ -354,6 +348,13 @@ SPECTACULAR_SETTINGS = {
         "SectorEnum": "apps.organizations.models.Sector.choices",
         "MessageConfidentialityEnum": ("apps.coordination.constants.Confidentiality.choices"),
     },
+    # Sert Swagger UI/Redoc depuis les fichiers statiques locaux
+    # (drf-spectacular-sidecar) plutot que depuis un CDN : le CSP de la
+    # plateforme (script-src/style-src/img-src 'self') bloquait sinon
+    # silencieusement toute la page de documentation (ecran blanc).
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
 }
 
 # ---------------------------------------------------------------------------
@@ -369,14 +370,6 @@ EVDP = {
     "ADVISORY_PREFIX": "EVDP-ADV",
     "DEFAULT_CURRENCY": env("EVDP_DEFAULT_CURRENCY", default="XOF"),
     "DEFAULT_DISCLOSURE_DELAY_DAYS": env.int("EVDP_DISCLOSURE_DELAY_DAYS", default=90),
-    # Exigence d'adresse verifiee : date de bascule, sursis accorde aux seuls
-    # comptes anterieurs, et jalons de relance exprimes en jours restants.
-    # Voir apps/accounts/verification.py.
-    "VERIFICATION_ENFORCED_FROM": env("EVDP_VERIFICATION_ENFORCED_FROM", default=""),
-    "VERIFICATION_GRACE_DAYS": env.int("EVDP_VERIFICATION_GRACE_DAYS", default=30),
-    "VERIFICATION_REMINDER_DAYS": env.list(
-        "EVDP_VERIFICATION_REMINDER_DAYS", default=["14", "7", "1"]
-    ),
     "MAX_ATTACHMENT_SIZE": env.int("EVDP_MAX_ATTACHMENT_SIZE", default=25 * 1024 * 1024),
     "ATTACHMENT_ALLOWED_EXTENSIONS": env.list(
         "EVDP_ATTACHMENT_EXTENSIONS",
@@ -386,6 +379,8 @@ EVDP = {
             "jpeg",
             "gif",
             "webp",
+            "heic",
+            "heif",
             "pdf",
             "txt",
             "md",
@@ -430,6 +425,12 @@ EVDP = {
         "htm",
     ],
     "MAX_ATTACHMENTS_PER_CASE": env.int("EVDP_MAX_ATTACHMENTS_PER_CASE", default=20),
+    # Plafond specifique a l'envoi initial (formulaire public) : plus bas que
+    # le total par dossier (20) car un declarant sans compte n'a ensuite
+    # aucun moyen de revenir en ajouter d'autres.
+    "MAX_ATTACHMENTS_PER_SUBMISSION": env.int(
+        "EVDP_MAX_ATTACHMENTS_PER_SUBMISSION", default=10
+    ),
     "CAPTCHA_ENABLED": env("EVDP_CAPTCHA_ENABLED"),
     "PGP_PUBLIC_KEY": env("PGP_PUBLIC_KEY", default=""),
     "PGP_FINGERPRINT": env("PGP_FINGERPRINT", default=""),
@@ -442,13 +443,20 @@ EVDP = {
     },
     "RATE_LIMITS": {
         "login": env("EVDP_RL_LOGIN", default="10/5m"),
+        # Meme regle que "login", mais indexee sur le compte cible plutot que
+        # sur l'IP source : sans elle, un brute-force distribue sur de
+        # nombreuses IP contre un seul compte n'est freine par rien.
+        "login_account": env("EVDP_RL_LOGIN_ACCOUNT", default="10/15m"),
         "register": env("EVDP_RL_REGISTER", default="5/1h"),
         "report": env("EVDP_RL_REPORT", default="10/1h"),
         "password_reset": env("EVDP_RL_PASSWORD_RESET", default="5/1h"),
-        # Second facteur : limite par compte, pas par IP. Un code a six
-        # chiffres se devine en 10^6 essais ; la limite les rend hors de
-        # portee sans bloquer le titulaire legitime qui se trompe.
-        "mfa": env("EVDP_RL_MFA", default="10/5m"),
+        # Code a 6 chiffres, fenetre de validite courte : une limite stricte
+        # est indispensable pour rendre le brute-force impraticable.
+        "mfa_verify": env("EVDP_RL_MFA_VERIFY", default="5/5m"),
+        # Jeton de suivi long et aleatoire (haute entropie) : la limite sert
+        # surtout a ralentir le crawl/scraping, pas a empecher un brute-force
+        # qui serait de toute facon impraticable vu l'espace de recherche.
+        "track_lookup": env("EVDP_RL_TRACK_LOOKUP", default="20/5m"),
     },
 }
 

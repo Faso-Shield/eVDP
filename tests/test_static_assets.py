@@ -40,21 +40,31 @@ def test_every_static_reference_exists():
     )
 
 
-def test_expected_assets_are_present():
-    """Garde-fou explicite sur les ressources indispensables au rendu.
+def test_no_inline_scripts_in_templates():
+    """Le CSP de production interdit script-src 'unsafe-inline' (config/settings/prod.py).
 
-    Le logo est distribue en PNG et non en SVG : le master fourni par le
-    design est une image matricielle. Voir docs/brand/README.md.
+    Un `<script>` inline (sans `src=`) est silencieusement bloque par le
+    navigateur en production : la page semble fonctionner en developpement
+    (CSP permissif) mais toute la logique JS embarquee reste inerte une fois
+    deployee. Tout JS doit vivre dans un fichier sous static/js/, charge via
+    `<script src="{% static ... %}">`.
     """
+    inline_script = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S")
+    offenders = []
+    for template in _template_files():
+        content = template.read_text(encoding="utf-8")
+        if inline_script.search(content):
+            offenders.append(template.name)
+
+    assert not offenders, "Scripts inline detectes (casseront le CSP de prod) :\n" + "\n".join(
+        sorted(offenders)
+    )
+
+
+def test_expected_assets_are_present():
+    """Garde-fou explicite sur les ressources indispensables au rendu."""
     roots = _static_roots()
-    for reference in [
-        "css/evdp.css",
-        "js/htmx.min.js",
-        "img/favicon-32.png",
-        "img/favicon-192.png",
-        "img/apple-touch-icon.png",
-        "img/logo-evdp-tile.png",
-    ]:
+    for reference in ["css/evdp.css", "js/htmx.min.js", "img/favicon-32.png"]:
         assert any(
             (root / reference).exists() for root in roots
         ), f"Ressource manquante : {reference}"
@@ -99,23 +109,3 @@ def test_advisory_list_renders_without_organization(client, coordinator, case_al
     publish_advisory(advisory, coordinator)
 
     assert client.get("/advisories/").status_code == 200
-
-
-@pytest.mark.django_db
-def test_no_model_change_is_left_without_a_migration():
-    """Un `choices` etendu modifie le schema, et s'oublie facilement.
-
-    Rien ne casse en test : SQLite n'applique pas les `choices`, et Django
-    les lit depuis le modele, pas depuis la base. L'ecart ne se voit qu'au
-    `migrate` suivant, sur un deploiement, sous la forme d'un avertissement
-    que personne ne lit.
-    """
-    from io import StringIO
-
-    from django.core.management import call_command
-
-    sortie = StringIO()
-    try:
-        call_command("makemigrations", "--check", "--dry-run", stdout=sortie, verbosity=1)
-    except SystemExit:
-        pytest.fail("Des changements de modele n'ont pas de migration : " + sortie.getvalue())

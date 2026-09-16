@@ -105,14 +105,13 @@ class VulnerabilityReport(BaseModel):
     requests_cve = models.BooleanField(default=False)
     accepted_policy = models.BooleanField(default=False)
 
-    # --- Confidentialite ----------------------------------------------------
+    # --- Confidentialité ----------------------------------------------------
     is_pgp_encrypted = models.BooleanField(default=False)
     pgp_payload = models.TextField(
         blank=True,
         help_text="Bloc PGP chiffré. eVDP ne détient aucune clé privée : "
         "le déchiffrement est effectué hors ligne par l'équipe destinataire.",
     )
-    pgp_signature_verified = models.BooleanField(default=False)
 
     # --- Metadonnees --------------------------------------------------------
     status = models.CharField(
@@ -131,8 +130,8 @@ class VulnerabilityReport(BaseModel):
     class Meta:
         db_table = "vulnerability_reports"
         ordering = ["-created_at"]
-        verbose_name = "Rapport de vulnerabilite"
-        verbose_name_plural = "Rapports de vulnerabilite"
+        verbose_name = "Rapport de vulnérabilité"
+        verbose_name_plural = "Rapports de vulnérabilité"
         indexes = [
             models.Index(fields=["-created_at"]),
             models.Index(fields=["vulnerability_type"]),
@@ -161,10 +160,10 @@ class VulnerabilityReport(BaseModel):
     @property
     def reporter_display(self):
         if self.is_anonymous:
-            return "Declarant anonyme"
+            return "Déclarant anonyme"
         if self.reporter:
             return self.reporter.public_identity()
-        return self.reporter_name or self.reporter_email or "Declarant externe"
+        return self.reporter_name or self.reporter_email or "Déclarant externe"
 
     @property
     def notification_email(self):

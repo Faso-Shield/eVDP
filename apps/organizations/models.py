@@ -72,7 +72,13 @@ class Organization(BaseModel):
     dsi_email = models.EmailField(blank=True)
     manager_name = models.CharField(max_length=150, blank=True)
     manager_email = models.EmailField(blank=True)
-    pgp_public_key = models.TextField(blank=True)
+    pgp_public_key = models.TextField(
+        blank=True,
+        help_text="Contact direct de l'organisation, hors plateforme eVDP. Le "
+        "formulaire de signalement eVDP propose toujours la clé nationale, "
+        "jamais celle-ci : chaque dossier doit rester lisible par le CSIRT "
+        "national pour le triage.",
+    )
     description = models.TextField(blank=True)
     accepts_vdp = models.BooleanField(
         default=True, help_text="Accepte de recevoir des signalements via eVDP."
@@ -169,14 +175,20 @@ class SecurityContact(BaseModel):
     role = models.CharField(max_length=120, blank=True)
     email = models.EmailField()
     phone = models.CharField(max_length=32, blank=True)
-    pgp_public_key = models.TextField(blank=True)
+    pgp_public_key = models.TextField(
+        blank=True,
+        help_text="Contact direct de ce point de contact, hors plateforme eVDP. "
+        "Le formulaire de signalement eVDP propose toujours la clé nationale, "
+        "jamais celle-ci : chaque dossier doit rester lisible par le CSIRT "
+        "national pour le triage.",
+    )
     is_primary = models.BooleanField(default=False)
 
     class Meta:
         db_table = "organization_security_contacts"
         ordering = ["-is_primary", "name"]
-        verbose_name = "Contact securite"
-        verbose_name_plural = "Contacts securite"
+        verbose_name = "Contact sécurité"
+        verbose_name_plural = "Contacts sécurité"
 
     def __str__(self):
         return f"{self.name} <{self.email}>"

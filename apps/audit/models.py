@@ -15,13 +15,9 @@ class AuditAction(models.TextChoices):
     LOGIN = "LOGIN", "Connexion"
     LOGIN_FAILED = "LOGIN_FAILED", "Échec de connexion"
     LOGOUT = "LOGOUT", "Déconnexion"
-    PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED", "Réinitialisation demandee"
+    PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED", "Réinitialisation demandée"
     PASSWORD_CHANGED = "PASSWORD_CHANGED", "Mot de passe modifié"
     EMAIL_VERIFIED = "EMAIL_VERIFIED", "Email vérifié"
-    MFA_ENROLLED = "MFA_ENROLLED", "Double authentification activée"
-    MFA_VERIFIED = "MFA_VERIFIED", "Second facteur validé"
-    MFA_FAILED = "MFA_FAILED", "Second facteur refusé"
-    MFA_RESET = "MFA_RESET", "Double authentification réinitialisée"
     USER_CREATED = "USER_CREATED", "Utilisateur créé"
     USER_UPDATED = "USER_UPDATED", "Utilisateur modifié"
     ROLE_CHANGED = "ROLE_CHANGED", "Rôle modifié"
@@ -32,7 +28,7 @@ class AuditAction(models.TextChoices):
     PROGRAM_UPDATED = "PROGRAM_UPDATED", "Programme modifié"
     REPORT_SUBMITTED = "REPORT_SUBMITTED", "Rapport soumis"
     CASE_CREATED = "CASE_CREATED", "Case créé"
-    CASE_VIEWED = "CASE_VIEWED", "Case consulte"
+    CASE_VIEWED = "CASE_VIEWED", "Case consulté"
     CASE_UPDATED = "CASE_UPDATED", "Case modifié"
     CASE_ASSIGNED = "CASE_ASSIGNED", "Case assigné"
     STATUS_CHANGED = "STATUS_CHANGED", "Statut modifié"
@@ -55,6 +51,8 @@ class AuditAction(models.TextChoices):
     PERMISSION_DENIED = "PERMISSION_DENIED", "Accès refusé"
     SLA_BREACHED = "SLA_BREACHED", "SLA dépassé"
     CSAF_IMPORTED = "CSAF_IMPORTED", "Import CSAF"
+    API_KEY_CREATED = "API_KEY_CREATED", "Clé d'API créée"
+    API_KEY_REVOKED = "API_KEY_REVOKED", "Clé d'API révoquée"
 
 
 class AuditResult(models.TextChoices):
@@ -102,7 +100,7 @@ class AuditLog(models.Model):
     class Meta:
         db_table = "audit_logs"
         ordering = ["-timestamp"]
-        verbose_name = "Entree d'audit"
+        verbose_name = "Entrée d'audit"
         verbose_name_plural = "Journal d'audit"
         indexes = [
             models.Index(fields=["object_type", "object_id"]),

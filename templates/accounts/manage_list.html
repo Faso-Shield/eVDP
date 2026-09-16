@@ -1,0 +1,44 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Utilisateurs{% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Utilisateurs</h1>
+  <a class="btn btn-accent" href="{% url 'accounts:user_manage_create' %}">Créer un compte</a>
+</div>
+<p class="muted">Création de compte et changement de rôle, sans passer par l'administration
+Django. Le mot de passe n'est jamais visible ni défini ici : la personne le choisit elle-même
+via un lien envoyé par email.</p>
+
+<form method="get" class="filters mb-2">
+  <div class="form-field" style="min-width:280px">
+    <label for="q">Rechercher</label>
+    <input type="search" name="q" id="q" value="{{ query }}" placeholder="Email ou nom">
+  </div>
+  <button class="btn" type="submit">Rechercher</button>
+</form>
+
+<div class="card"><div class="card-body table-wrap">
+  <table class="table">
+    <thead><tr><th>Email</th><th>Nom</th><th>Rôle</th><th>Statut</th><th>MFA</th><th></th></tr></thead>
+    <tbody>
+    {% for target in page_obj %}
+      <tr>
+        <td class="mono small">{{ target.email }}</td>
+        <td>{{ target.full_name|default:"—" }}</td>
+        <td class="small">{{ target.get_role_display }}</td>
+        <td>
+          {% if target.is_active %}<span class="status status-open">Actif</span>
+          {% else %}<span class="status status-closed">Désactivé</span>{% endif %}
+        </td>
+        <td class="small">{% if target.mfa_enabled %}Activée{% else %}—{% endif %}</td>
+        <td><a class="btn btn-sm btn-outline" href="{% url 'accounts:user_manage_detail' target.pk %}">Gérer</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="muted">Aucun utilisateur.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+{% include "partials/pagination.html" %}
+{% endblock %}

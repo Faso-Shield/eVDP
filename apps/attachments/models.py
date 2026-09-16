@@ -78,8 +78,8 @@ class Attachment(BaseModel):
     class Meta:
         db_table = "attachments"
         ordering = ["-created_at"]
-        verbose_name = "Piece jointe"
-        verbose_name_plural = "Pieces jointes"
+        verbose_name = "Pièce jointe"
+        verbose_name_plural = "Pièces jointes"
         indexes = [models.Index(fields=["case", "-created_at"])]
 
     def __str__(self):

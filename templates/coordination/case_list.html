@@ -1,12 +1,16 @@
 {% extends "base_dashboard.html" %}
-{% load evdp_tags %}
-{% block title %}Dossiers{% endblock %}
+{% load static evdp_tags %}
+{% block title %}{% if researcher_view %}Mes dossiers{% else %}Dossiers{% endif %}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/vendor/tom-select.default.min.css' %}">
+{% endblock %}
 
 {% block dashboard_content %}
 <div class="flex-between mb-2">
-  <h1 class="mb-0">Dossiers de vulnérabilité</h1>
+  <h1 class="mb-0">{% if researcher_view %}Mes dossiers{% else %}Dossiers de vulnérabilité{% endif %}</h1>
   <div class="btn-row">
-    <a class="btn btn-sm btn-outline" href="{% url 'coordination:kanban' %}">Vue Kanban</a>
+    {% if not researcher_view %}<a class="btn btn-sm btn-outline" href="{% url 'coordination:kanban' %}">Vue Kanban</a>{% endif %}
     {% if user.is_national or user.is_organization_user %}
       <a class="btn btn-sm btn-outline" href="{% url 'dashboard:export_cases_csv' %}">Export CSV</a>
       <a class="btn btn-sm btn-outline" href="{% url 'dashboard:export_cases_xlsx' %}">Export Excel</a>
@@ -23,7 +27,9 @@
 
 <div class="card"><div class="card-body">
   <form method="get" class="filters">
-    {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+    {% for field in form %}
+      {% if not researcher_view or field.name != "organization" %}{% include "partials/form_field.html" %}{% endif %}
+    {% endfor %}
     <button class="btn" type="submit">Filtrer</button>
     <a class="btn btn-outline" href="{% url 'coordination:case_list' %}">Réinitialiser</a>
   </form>
@@ -33,7 +39,8 @@
   <table class="table">
     <thead>
       <tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>Statut</th>
-      <th>Organisation</th><th>Analyste</th><th>Priorité</th><th>Créé le</th></tr>
+      {% if not researcher_view %}<th>Organisation</th><th>Analyste</th><th>Priorité</th>{% endif %}
+      <th>Créé le</th></tr>
     </thead>
     <tbody>
       {% for case in page_obj %}
@@ -43,17 +50,26 @@
           {% if case.workflow == "BUG_BOUNTY" %}<span class="pill">BB</span>{% endif %}</td>
         <td><span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span></td>
         <td><span class="status">{{ case.get_status_display }}</span></td>
+        {% if not researcher_view %}
         <td class="small">{% firstof case.organization.acronym case.organization.name "—" %}</td>
         <td class="small">{{ case.assignee.display_name|default:"—" }}</td>
         <td class="mono small">{{ case.priority_score }}</td>
+        {% endif %}
         <td class="small nowrap">{{ case.created_at|date:"d/m/Y" }}</td>
       </tr>
       {% empty %}
-      <tr><td colspan="8" class="muted">Aucun dossier dans votre périmètre.</td></tr>
+      <tr><td colspan="{% if researcher_view %}5{% else %}8{% endif %}" class="muted">
+        {% if researcher_view %}Vous n'avez soumis aucun dossier pour le moment.{% else %}Aucun dossier dans votre périmètre.{% endif %}
+      </td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div></div>
 
 {% include "partials/pagination.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/vendor/tom-select.complete.min.js' %}" defer></script>
+<script src="{% static 'js/select-enhance.js' %}" defer></script>
 {% endblock %}

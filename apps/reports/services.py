@@ -5,7 +5,6 @@ rapport, ouvre le Case correspondant, initialise la chronologie, les
 participants, les SLA et notifie les parties prenantes.
 """
 
-from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -17,6 +16,7 @@ from apps.coordination.services import (
     add_participant,
     add_timeline_event,
     ensure_default_participants,
+    generate_tracking_token,
     schedule_initial_sla,
 )
 from apps.coordination.workflow import CaseStatus
@@ -26,7 +26,7 @@ from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify_external, notify_many
 from apps.programs.models import ProgramType
 from apps.vulnerabilities.constants import ReportSource, Severity
-from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
+from apps.vulnerabilities.cvss import CVSSError, evaluate
 
 from .models import ReportStatus, VulnerabilityReport
 
@@ -41,7 +41,7 @@ def _severity_for(report):
     if report.cvss_vector:
         try:
             score, severity = evaluate(report.cvss_vector)
-            return severity, score_as_decimal(score)
+            return severity, score
         except CVSSError:
             pass
     return report.reported_severity or Severity.MEDIUM, report.cvss_score
@@ -55,17 +55,6 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
     """
     if reporter is not None and reporter.is_authenticated:
         report.reporter = reporter
-
-    # Conditions d'acces du programme. Controlees ici et non seulement dans le
-    # formulaire : ce service est le point d'entree commun au web, a l'API et
-    # a l'import CSAF, et la regle doit valoir pour les trois.
-    if report.program_id is not None:
-        motif = report.program.reporter_rejection(
-            report.reporter, is_anonymous=report.is_anonymous
-        )
-        if motif:
-            raise ValidationError({"program": motif})
-
     report.source = source
     report.status = ReportStatus.SUBMITTED
     report.submitted_at = timezone.now()
@@ -73,11 +62,6 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
         client_ip = get_client_ip(request)
         if client_ip:
             report.submitter_ip_hash = hash_text(client_ip)
-    # Un ModelSerializer et un import ne declenchent pas la validation du
-    # modele : sans cet appel, VulnerabilityReport.clean() ne s'executait que
-    # pour le formulaire web, seul chemin a passer par un ModelForm. Le
-    # controle du bloc PGP est ici le seul garde-fou de l'API.
-    report.full_clean()
     report.save()
 
     severity, score = _severity_for(report)
@@ -136,7 +120,15 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
 
 
 def _notify_new_case(case, report):
-    """Avise l'equipe de coordination et accuse reception au declarant."""
+    """Avise l'equipe de coordination et accuse reception au declarant.
+
+    Un declarant sans compte (avec ou sans email) recoit un jeton de suivi
+    lui permettant de consulter l'avancement de son dossier sans jamais
+    creer de compte ni lever son anonymat. La valeur en clair transite une
+    seule fois : par email s'il a laisse un contact, sinon elle est exposee
+    sur `case.tracking_token_raw` pour un affichage unique a l'ecran (voir
+    apps.reports.views.submit).
+    """
     from apps.accounts.models import User
     from apps.accounts.roles import Role
 
@@ -150,8 +142,17 @@ def _notify_new_case(case, report):
         from apps.notifications.services import notify
 
         notify(report.reporter, NotificationKind.ACKNOWLEDGEMENT, case=case)
-    elif report.reporter_email:
-        notify_external(report.reporter_email, NotificationKind.ACKNOWLEDGEMENT, case=case)
+        return
+
+    raw_token = generate_tracking_token(case)
+    case.tracking_token_raw = raw_token
+    if report.reporter_email:
+        notify_external(
+            report.reporter_email,
+            NotificationKind.TRACKING_LINK,
+            case=case,
+            url=f"/suivi/{raw_token}/",
+        )
 
 
 def reports_for(user):

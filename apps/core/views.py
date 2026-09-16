@@ -28,8 +28,8 @@ def home(request):
 def about(request):
     body = SiteSetting.get_value(
         "about",
-        "eVDP est la plateforme nationale de divulgation coordonnée de "
-        "vulnérabilités et de gestion des programmes Bug Bounty.",
+        "eVDP est la plateforme nationale de divulgation coordonnee de "
+        "vulnerabilites et de gestion des programmes Bug Bounty.",
     )
     return render(
         request,
@@ -57,7 +57,7 @@ def pgp_key(request):
     key = pgp.national_public_key()
     if not key:
         return HttpResponse(
-            "Aucune clé publique nationale n'est publiée.",
+            "Aucune cle publique nationale n'est publiee.",
             status=404,
             content_type="text/plain; charset=utf-8",
         )
@@ -142,7 +142,7 @@ def metrics(request):
         "# HELP evdp_cases_open Nombre de cases non clos.",
         "# TYPE evdp_cases_open gauge",
         f"evdp_cases_open {Case.objects.exclude(status=CaseStatus.CLOSED).count()}",
-        "# HELP evdp_cases_sla_breached Cases en dépassement de SLA.",
+        "# HELP evdp_cases_sla_breached Cases en depassement de SLA.",
         "# TYPE evdp_cases_sla_breached gauge",
         f"evdp_cases_sla_breached {Case.objects.sla_breached().count()}",
         "# HELP evdp_advisories_published Advisories publies.",
@@ -171,49 +171,103 @@ def error_500(request):
 DEFAULT_DISCLOSURE_POLICY = """
 ## Objectif
 
-eVDP offre un canal officiel, securise et juridiquement encadré permettant de
-signaler une vulnérabilité affectant un service public ou une infrastructure
-numérique nationale.
+eVDP offre un canal officiel, securise et juridiquement encadre permettant de
+signaler une vulnerabilite affectant un service public ou une infrastructure
+numerique nationale.
 
 ## Comportement attendu
 
-- Signaler la vulnérabilité des sa découverte, sans délai injustifie.
-- Limiter strictement les tests au nécessaire pour démontrer l'existence de la faille.
+- Signaler la vulnerabilite des sa decouverte, sans delai injustifie.
+- Limiter strictement les tests au necessaire pour demontrer l'existence de la faille.
 - Ne jamais degrader, alterer ou interrompre un service.
-- Ne jamais exfiltrer, conserver ou diffuser des données à caractère personnel.
-- Conserver la confidentialité du signalement jusqu'à la divulgation coordonnée.
+- Ne jamais exfiltrer, conserver ou diffuser des donnees a caractere personnel.
+- Conserver la confidentialite du signalement jusqu'a la divulgation coordonnee.
 
-## Règles de test
+## Regles de test
 
-Sont autorisés : la reconnaissance passive, les tests non destructifs sur les
-périmètres explicitement declares dans un programme actif.
+Sont autorises : la reconnaissance passive, les tests non destructifs sur les
+perimetres explicitement declares dans un programme actif.
 
-Sont interdits : l'ingénierie sociale, le hameçonnage, le déni de service,
+Sont interdits : l'ingenierie sociale, le hameconnage, le deni de service,
 les attaques physiques, le spam, la compromission de comptes tiers et toute
 exploitation depassant la preuve de concept.
 
 ## Safe Harbor
 
-Une recherche conduite de bonne foi, conforme à la présente politique et au
-périmètre du programme concerne, est consideree comme autorisée. eVDP
-s'engage à ne pas engager de poursuites à l'encontre d'un chercheur respectant
-ces conditions et à l'accompagner en cas de sollicitation d'un tiers.
+Une recherche conduite de bonne foi, conforme a la presente politique et au
+perimetre du programme concerne, est consideree comme autorisee. eVDP
+s'engage a ne pas engager de poursuites a l'encontre d'un chercheur respectant
+ces conditions et a l'accompagner en cas de sollicitation d'un tiers.
 
-## Confidentialité
+Le Code penal (loi n°025-2018/AN, Livre VII) sanctionne l'acces et le
+maintien frauduleux dans un systeme d'information. Une recherche menee
+dans les conditions decrites ci-dessus, sur le perimetre autorise par un
+programme actif, est en dehors du champ de ces infractions.
 
-Les rapports sont prives par défaut. Aucun rapport n'est publié
-automatiquement. Seule une version assainie (advisory) peut être publiée après
-coordination avec l'organisation affectée.
+## Confidentialite
 
-## Délais
+Les rapports sont prives par defaut. Aucun rapport n'est publie
+automatiquement. Seule une version assainie (advisory) peut etre publiee apres
+coordination avec l'organisation affectee.
 
-- Accusé de réception : 72 heures.
+Le traitement des donnees personnelles d'un declarant (identite,
+coordonnees) est soumis a la loi n°001-2021/AN portant protection des
+personnes a l'egard du traitement des donnees a caractere personnel, sous
+le controle de la Commission de l'Informatique et des Libertes (CIL).
+
+## Delais
+
+- Accuse de reception : 72 heures.
 - Premier triage : 5 jours ouvres.
-- Réponse de l'organisation : 7 jours.
-- Divulgation coordonnée par défaut : 90 jours après validation.
+- Reponse de l'organisation : 7 jours.
+- Divulgation coordonnee par defaut : 90 jours apres validation.
 
-## Crédit au chercheur
+## Credit au chercheur
 
-Le chercheur choisit d'apparaître sous son identité réelle, sous pseudonyme ou
+Le chercheur choisit d'apparaitre sous son identite reelle, sous pseudonyme ou
 de rester anonyme. Ce choix est respecte dans toute publication.
+
+## Cadre legal applicable (Burkina Faso)
+
+Ce canal ne repose pas sur une simple charte interne : il s'inscrit dans un
+ensemble de textes nationaux en vigueur.
+
+- **Loi n°014-2024/ALT** du 9 juillet 2024 portant securite des systemes
+  d'information au Burkina Faso, qui renforce le role de l'ANSSI (Agence
+  Nationale de Securite des Systemes d'Information) et fixe le cadre
+  reglementaire national de la cybersecurite.
+- **Loi n°025-2018/AN** du 31 mai 2018 portant Code penal, Livre VII, qui
+  qualifie et sanctionne les infractions relatives aux systemes
+  d'information. La clause Safe Harbor ci-dessus precise les conditions
+  dans lesquelles une recherche de bonne foi reste en dehors du champ de
+  ces infractions.
+- **Loi n°001-2021/AN** du 30 mars 2021 portant protection des personnes a
+  l'egard du traitement des donnees a caractere personnel (elle abroge la
+  loi n°010-2004/AN), placee sous le controle de la Commission de
+  l'Informatique et des Libertes (CIL, www.cil.bf).
+- **Loi n°045-2009/AN** du 10 novembre 2009 portant reglementation des
+  services et des transactions electroniques, qui donne sa valeur
+  juridique a un signalement, un accuse de reception ou une notification
+  transmis par voie electronique.
+- **Decret n°2013-1053** portant creation de l'ANSSI, dont depend le
+  CIRT-BF (equipe nationale de reponse aux incidents, cirt@cirt.bf),
+  interlocuteur technique en cas d'incident avere.
+
+## References normatives
+
+Le processus de traitement d'un signalement suit les deux normes de
+reference du domaine :
+
+- **ISO/IEC 29147:2018** (Vulnerability disclosure) encadre la reception
+  des rapports, l'etablissement d'une politique de divulgation et la
+  publication d'un avis correctif. Les etapes Soumis, Recu, Divulgation
+  planifiee et Publie de ce workflow correspondent a ce cycle.
+- **ISO/IEC 30111:2019** (Vulnerability handling processes) encadre le
+  traitement interne d'un rapport une fois recu : verification,
+  priorisation, correction. Les etapes En triage, Valide, Severite
+  attribuee et Remediation en cours de ce workflow correspondent a ce
+  cycle.
+
+Ces deux normes ne sont pas citees pour la forme : chaque etape qu'elles
+decrivent a un statut correspondant dans `apps/coordination/workflow.py`.
 """

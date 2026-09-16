@@ -87,7 +87,7 @@ def require_not_read_only(view_func):
 class HasCapability(BasePermission):
     """Verifie `required_capability` (ou `required_capabilities`) sur la vue."""
 
-    message = "Vous ne disposez pas de la capacité requise."
+    message = "Vous ne disposez pas de la capacite requise."
 
     def has_permission(self, request, view):
         caps = getattr(view, "required_capabilities", None)
@@ -109,7 +109,7 @@ class HasCapability(BasePermission):
 
 
 class IsNationalStaff(BasePermission):
-    message = "Réservé aux équipes nationales."
+    message = "Reserve aux equipes nationales."
 
     def has_permission(self, request, view):
         return bool(
@@ -125,7 +125,7 @@ class ReadOnlyForAuditors(BasePermission):
 
 
 class IsVerifiedResearcher(BasePermission):
-    message = "Votre adresse email doit être vérifiée."
+    message = "Votre adresse email doit etre verifiee."
 
     def has_permission(self, request, view):
         user = request.user

@@ -3,9 +3,10 @@
 Contraintes de securite :
   - la plateforme ne stocke JAMAIS de cle privee ;
   - seules des cles publiques armurees sont conservees ;
-  - la verification cryptographique reelle est deleguee a un backend
-    optionnel (python-gnupg), afin de pouvoir basculer plus tard vers un HSM
-    sans modifier le code appelant.
+  - eVDP ne dechiffre et ne verifie JAMAIS de signature PGP cote serveur :
+    seule la forme des blocs (en-tete/pied de page) est controlee. La
+    verification cryptographique reelle appartient exclusivement a la
+    personne qui detient la cle privee correspondante, hors ligne.
 """
 
 import re
@@ -20,7 +21,7 @@ PRIVATE_KEY_MARKERS = (
     "-----BEGIN OPENSSH PRIVATE KEY-----",
 )
 MESSAGE_HEADER = "-----BEGIN PGP MESSAGE-----"
-SIGNED_MESSAGE_HEADER = "-----BEGIN PGP SIGNED MESSAGE-----"
+MESSAGE_FOOTER = "-----END PGP MESSAGE-----"
 
 
 class PGPError(ValueError):
@@ -52,11 +53,17 @@ def validate_public_key(blob):
 
 
 def is_encrypted_blob(blob):
-    return MESSAGE_HEADER in (blob or "")
+    """Verifie la FORME d'un bloc chiffre PGP (en-tete ET pied de page).
 
-
-def is_signed_blob(blob):
-    return SIGNED_MESSAGE_HEADER in (blob or "")
+    Ceci n'est jamais un dechiffrement ni une preuve que le contenu est
+    reellement exploitable : seule la personne qui detient la cle privee
+    peut le savoir, hors ligne. Sans le controle du pied de page, un bloc
+    tronque ou corrompu (copier-coller incomplet) passait silencieusement,
+    et le CSIRT ne le decouvrait qu'en tentant, bien plus tard, un
+    dechiffrement voue a l'echec.
+    """
+    blob = blob or ""
+    return MESSAGE_HEADER in blob and MESSAGE_FOOTER in blob
 
 
 def fingerprint_hint(blob):
@@ -68,41 +75,17 @@ def fingerprint_hint(blob):
 
 
 def national_public_key():
-    """Cle publique nationale publiee (telechargeable sur le site)."""
-    return (settings.EVDP.get("PGP_PUBLIC_KEY") or "").strip()
+    """Cle publique nationale publiee (telechargeable sur le site).
+
+    La variable d'environnement PGP_PUBLIC_KEY stocke la cle sur une seule
+    ligne (sauts de ligne echappes en \\n), car docker-compose ne supporte
+    pas les valeurs multi-lignes dans sa substitution ${VAR}. On les
+    reconvertit ici en vrais sauts de ligne : un bloc PGP arme sans retours
+    a la ligne reels n'est pas valide pour les outils GPG standards.
+    """
+    key = (settings.EVDP.get("PGP_PUBLIC_KEY") or "").strip()
+    return key.replace("\\n", "\n")
 
 
 def national_fingerprint():
     return (settings.EVDP.get("PGP_FINGERPRINT") or "").strip()
-
-
-def verify_signature(payload, signature=None, public_key=None):
-    """Verifie une signature PGP si un backend gnupg est disponible.
-
-    Retourne un dict {verified, backend, detail}. En l'absence de backend
-    l'appelant doit considerer le contenu comme NON verifie.
-    TODO : brancher un HSM ou un service de signature dedie.
-    """
-    try:
-        import gnupg  # type: ignore
-    except ImportError:
-        return {
-            "verified": False,
-            "backend": None,
-            "detail": "Backend gnupg indisponible : verification non effectuee.",
-        }
-
-    try:  # pragma: no cover - depend de l'environnement
-        gpg = gnupg.GPG()
-        if public_key:
-            gpg.import_keys(public_key)
-        result = (
-            gpg.verify_data(signature, payload.encode()) if signature else gpg.verify(payload)
-        )
-        return {
-            "verified": bool(result),
-            "backend": "gnupg",
-            "detail": getattr(result, "status", "") or "",
-        }
-    except Exception as exc:  # pragma: no cover
-        return {"verified": False, "backend": "gnupg", "detail": str(exc)}

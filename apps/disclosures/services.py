@@ -38,7 +38,7 @@ def create_advisory_from_case(case, actor, request=None, **overrides):
     reproduction, ni URL cible, ni pieces jointes.
     """
     if not actor.has_capability(Capability.DRAFT_ADVISORY):
-        raise PermissionDenied("Capacité requise pour rédiger un advisory.")
+        raise PermissionDenied("Capacite requise pour rediger un advisory.")
 
     data = {
         "case": case,
@@ -82,7 +82,7 @@ def transition_advisory(advisory, target_status, actor, request=None):
     if target_status == AdvisoryStatus.PUBLISHED:
         return publish_advisory(advisory, actor, request=request)
     if not actor.has_capability(Capability.DRAFT_ADVISORY):
-        raise PermissionDenied("Capacité requise.")
+        raise PermissionDenied("Capacite requise.")
     if not advisory.can_transition_to(target_status):
         raise ValidationError(f"Transition interdite : {advisory.status} -> {target_status}.")
     advisory.status = target_status
@@ -101,11 +101,11 @@ def transition_advisory(advisory, target_status, actor, request=None):
 def publish_advisory(advisory, actor, request=None, published_at=None):
     """Publie l'advisory. Action irreversible hors retrait explicite."""
     if not actor.has_capability(Capability.PUBLISH_ADVISORY):
-        raise PermissionDenied("Capacité requise pour publier un advisory.")
+        raise PermissionDenied("Capacite requise pour publier un advisory.")
     if not advisory.can_transition_to(AdvisoryStatus.PUBLISHED):
-        raise ValidationError("Un advisory doit être approuvé ou planifié avant publication.")
+        raise ValidationError("Un advisory doit etre approuve ou planifie avant publication.")
     if not advisory.summary.strip():
-        raise ValidationError({"summary": "Un résumé public est obligatoire."})
+        raise ValidationError({"summary": "Un resume public est obligatoire."})
 
     advisory.status = AdvisoryStatus.PUBLISHED
     advisory.published_at = published_at or timezone.now()
@@ -140,9 +140,9 @@ def publish_advisory(advisory, actor, request=None, published_at=None):
 @transaction.atomic
 def retract_advisory(advisory, actor, reason, request=None):
     if not actor.has_capability(Capability.PUBLISH_ADVISORY):
-        raise PermissionDenied("Capacité requise.")
+        raise PermissionDenied("Capacite requise.")
     if not advisory.can_transition_to(AdvisoryStatus.RETRACTED):
-        raise ValidationError("Seul un advisory publié peut être retiré.")
+        raise ValidationError("Seul un advisory publie peut etre retire.")
     if not reason.strip():
         raise ValidationError({"reason": "Un motif de retrait est obligatoire."})
     advisory.status = AdvisoryStatus.RETRACTED
