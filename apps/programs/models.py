@@ -51,6 +51,16 @@ class ProgramQuerySet(models.QuerySet):
     def public(self):
         return self.active().filter(confidentiality=ConfidentialityLevel.PUBLIC)
 
+    def public_disabled(self):
+        """Programmes publics suspendus ou clotures : n'acceptent plus de
+        signalements, mais restent consultables pour reference (perimetre
+        deja teste, historique). Un brouillon (DRAFT) n'est jamais expose
+        ici : il n'a encore jamais ete rendu public."""
+        return self.filter(
+            confidentiality=ConfidentialityLevel.PUBLIC,
+            status__in=[ProgramStatus.PAUSED, ProgramStatus.CLOSED],
+        )
+
     def bug_bounty(self):
         return self.filter(program_type=ProgramType.BUG_BOUNTY)
 

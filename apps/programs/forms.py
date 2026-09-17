@@ -5,7 +5,7 @@ from django.forms import inlineformset_factory
 
 from apps.organizations.models import Organization, OrganizationStatus
 
-from .models import Program, ProgramScope, RewardPolicy, RewardTier
+from .models import Program, ProgramScope, RewardPolicy, RewardTier, ScopeTargetType
 
 
 class ProgramForm(forms.ModelForm):
@@ -74,6 +74,39 @@ class ProgramForm(forms.ModelForm):
         if user is not None and not user.is_national:
             queryset = queryset.filter(id__in=user.organization_ids())
         self.fields["organization"].queryset = queryset
+
+
+class ProgramFilterForm(forms.Form):
+    """Recherche et filtres de l'annuaire public des programmes."""
+
+    #: Regroupement volontairement distinct de ProgramStatus : "Desactive"
+    #: recouvre PAUSED et CLOSED (un brouillon n'est jamais expose ici, voir
+    #: Program.objects.public_disabled()).
+    STATUS_CHOICES = [
+        ("ACTIVE", "Actif"),
+        ("DISABLED", "Désactivé"),
+    ]
+    SORT_CHOICES = [
+        ("recent", "Plus récents"),
+        ("reward", "Récompense la plus élevée"),
+        ("reports", "Le plus de signalements"),
+        ("name", "Nom (A→Z)"),
+    ]
+
+    q = forms.CharField(
+        label="Recherche",
+        required=False,
+        widget=forms.TextInput(attrs={"placeholder": "Nom du programme, organisation…"}),
+    )
+    status = forms.ChoiceField(
+        label="Statut", required=False, choices=STATUS_CHOICES, initial="ACTIVE"
+    )
+    scope_type = forms.ChoiceField(
+        label="Type de périmètre",
+        required=False,
+        choices=[("", "Tous les périmètres")] + list(ScopeTargetType.choices),
+    )
+    sort = forms.ChoiceField(label="Trier par", required=False, choices=SORT_CHOICES)
 
 
 class ProgramScopeForm(forms.ModelForm):

@@ -7,43 +7,133 @@
 <p class="muted">Un programme définit un périmètre, des règles de test, un cadre
 juridique (Safe Harbor) et, pour le Bug Bounty, une matrice de récompenses.</p>
 
-<div class="btn-row mb-2">
-  <a class="btn btn-sm {% if not program_type %}btn-accent{% else %}btn-outline{% endif %}" href="{% url 'programs:list' %}">Tous</a>
-  {% for value, label in types %}
-    <a class="btn btn-sm {% if program_type == value %}btn-accent{% else %}btn-outline{% endif %}" href="?type={{ value }}">{{ label }}</a>
-  {% endfor %}
-</div>
-
-<div class="grid grid-2">
-  {% for program in page_obj %}
-  <div class="card">
-    <div class="card-header">
-      <h2 style="font-size:1.1rem">{{ program.name }}</h2>
-      <span class="pill">{{ program.get_program_type_display }}</span>
-    </div>
-    <div class="card-body">
-      <p class="small muted">{{ program.organization.name }}</p>
-      <p>{{ program.summary|default:program.description|striptags|truncatechars:160 }}</p>
-      {% with range=program.reward_range %}
-        {% if range %}
-          <p class="small"><strong>Récompenses :</strong>
-            {{ range.min|floatformat:0 }} – {{ range.max|floatformat:0 }} {{ range.currency }}</p>
-        {% endif %}
-      {% endwith %}
-      <div class="flex small muted">
-        <span>Périmètre : {{ program.in_scope_targets.count }} cible(s)</span>
-        <span>Divulgation : {{ program.disclosure_delay_days }} jours</span>
-      </div>
-    </div>
-    <div class="card-footer btn-row">
-      <a class="btn btn-sm" href="{% url 'programs:detail' program.slug %}">Consulter</a>
-      <a class="btn btn-sm btn-accent" href="{% url 'reports:submit' %}?program={{ program.slug }}">Signaler</a>
-    </div>
+{% comment %}
+Zone large : onglets + formulaire + resultats. Un clic d'onglet ou le
+reinitialiser rafraichit tout, y compris la mise en evidence de l'onglet
+actif et le contenu du formulaire.
+{% endcomment %}
+<div id="program-app">
+  <div class="btn-row mb-2">
+    {% comment %}
+    hx-include reprend les valeurs ACTUELLES du formulaire (y compris un
+    texte tape mais pas encore "soumis" par le debounce) : sans cela, un
+    clic d'onglet juste apres une frappe perdrait la recherche en cours,
+    puisque les hrefs ci-dessous sont figes au dernier rendu serveur de
+    cette zone (voir le commentaire sur la zone etroite plus bas).
+    {% endcomment %}
+    <a class="btn btn-sm {% if not program_type %}btn-accent{% else %}btn-outline{% endif %}"
+       href="?{% query_replace type='' page='' %}"
+       hx-get="{% url 'programs:list' %}?{% query_replace type='' page='' %}"
+       hx-include="#program-filter-form"
+       hx-select="#program-app" hx-target="#program-app" hx-swap="outerHTML"
+       hx-push-url="true" hx-indicator="#program-loading">Tous</a>
+    {% for value, label in types %}
+      <a class="btn btn-sm {% if program_type == value %}btn-accent{% else %}btn-outline{% endif %}"
+         href="?{% query_replace type=value page='' %}"
+         hx-get="{% url 'programs:list' %}?{% query_replace type=value page='' %}"
+         hx-include="#program-filter-form"
+         hx-select="#program-app" hx-target="#program-app" hx-swap="outerHTML"
+         hx-push-url="true" hx-indicator="#program-loading">{{ label }}</a>
+    {% endfor %}
   </div>
-  {% empty %}
-  <p class="muted">Aucun programme public actif pour le moment.</p>
-  {% endfor %}
-</div>
 
-{% include "partials/pagination.html" %}
+  <div class="card mb-2"><div class="card-body">
+    {% comment %}
+    Filtrage automatique : la recherche se declenche apres une courte pause
+    de saisie, les listes deroulantes immediatement au changement. Seule la
+    zone de resultats est rafraichie ici (pas le formulaire lui-meme), afin
+    de ne jamais faire perdre le focus ni la position du curseur pendant la
+    frappe. Sans JavaScript, le formulaire reste un GET classique pleinement
+    fonctionnel : les attributs hx-* sont simplement ignores.
+    {% endcomment %}
+    <form method="get" class="filters" id="program-filter-form"
+          hx-get="{% url 'programs:list' %}"
+          hx-trigger="change, keyup changed delay:500ms from:input[name='q']"
+          hx-select="#program-results" hx-target="#program-results" hx-swap="outerHTML"
+          hx-push-url="true" hx-indicator="#program-loading" hx-sync="this:replace">
+      {% if program_type %}<input type="hidden" name="type" value="{{ program_type }}">{% endif %}
+      {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+      <div class="filters-actions">
+        <span id="program-loading" class="htmx-indicator small muted">Recherche…</span>
+        <a class="btn btn-sm btn-outline" href="{% url 'programs:list' %}"
+           hx-get="{% url 'programs:list' %}"
+           hx-select="#program-app" hx-target="#program-app" hx-swap="outerHTML"
+           hx-push-url="true" hx-indicator="#program-loading">Réinitialiser</a>
+      </div>
+    </form>
+  </div></div>
+
+  {% comment %}
+  Zone etroite : uniquement les resultats. C'est la seule region que la
+  saisie dans le champ de recherche ou le changement d'une liste deroulante
+  vient rafraichir.
+  {% endcomment %}
+  <div id="program-results">
+    <div class="program-grid">
+      {% for program in page_obj %}
+      {% with is_bb=program.is_bug_bounty %}
+      <article class="pcard">
+        <div class="pcard-top">
+          <div class="pcard-logo{% if not is_bb %} is-vdp{% endif %}" aria-hidden="true">{{ program.organization|initials }}</div>
+          {% if is_bb %}
+            <span class="pcard-metric" title="Chercheurs récompensés sur ce programme">{{ program.rewarded_count }} chercheur{{ program.rewarded_count|pluralize }}</span>
+          {% else %}
+            <span class="pcard-metric is-vdp" title="Délai avant divulgation coordonnée">{{ program.disclosure_delay_days }} j</span>
+          {% endif %}
+        </div>
+
+        <div class="pcard-head">
+          <h2 class="pcard-title"><a href="{% url 'programs:detail' program.slug %}">{{ program.name }}</a></h2>
+          <p class="pcard-org">{{ program.organization.name }}</p>
+          <p class="pcard-sector">{{ program.organization.get_sector_display }}</p>
+          <div class="pcard-tags">
+            <span class="pcard-tag {% if is_bb %}is-type{% else %}is-type-vdp{% endif %}">{% if is_bb %}Bug bounty{% else %}VDP{% endif %}</span>
+            <span class="pcard-tag is-plain">{{ program.get_confidentiality_display }}</span>
+            <span class="pcard-tag is-scope">{{ program.scopes_count }} périmètre{{ program.scopes_count|pluralize }}</span>
+            {% if program.allows_anonymous_reports %}
+              <span class="pcard-tag is-anon">Anonyme accepté</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <dl class="pcard-stats">
+          <div class="pcard-stat">
+            <dt>Signalements</dt>
+            <dd>{{ program.cases_count }}</dd>
+          </div>
+          <div class="pcard-stat">
+            <dt>1re réponse</dt>
+            {% firstof program.sla_policy.acknowledgement_hours default_ack_hours as ack_hours %}
+            <dd>{% if ack_hours %}&lt; {{ ack_hours }} h{% else %}—{% endif %}</dd>
+          </div>
+          <div class="pcard-stat">
+            <dt>Récompenses</dt>
+            {% with range=program.reward_range %}
+              {% if range %}
+                <dd class="is-reward">{{ range.min|money }} – {{ range.max|money }} {{ range.currency }}</dd>
+              {% else %}
+                <dd class="is-empty">Sans récompense</dd>
+              {% endif %}
+            {% endwith %}
+          </div>
+          <div class="pcard-stat">
+            <dt>Mise à jour</dt>
+            <dd>{{ program.updated_at|date:"d/m/Y" }}</dd>
+          </div>
+        </dl>
+
+        <div class="pcard-foot">
+          <a class="btn btn-sm btn-accent" href="{% url 'programs:detail' program.slug %}">Consulter</a>
+          <a class="btn btn-sm btn-outline" href="{% url 'reports:submit' %}?program={{ program.slug }}">Signaler</a>
+        </div>
+      </article>
+      {% endwith %}
+      {% empty %}
+      <p class="muted">Aucun programme public actif pour le moment.</p>
+      {% endfor %}
+    </div>
+
+    {% include "partials/pagination.html" %}
+  </div>
+</div>
 {% endblock %}
