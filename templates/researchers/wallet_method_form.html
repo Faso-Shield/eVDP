@@ -1,0 +1,22 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Modifier un moyen de paiement{% endblock %}
+
+{% block dashboard_content %}
+<h1>Modifier un moyen de paiement</h1>
+
+<div class="card">
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <div class="form-grid">
+        {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+      </div>
+      <div class="btn-row">
+        <button class="btn" type="submit">Enregistrer</button>
+        <a class="btn btn-outline" href="{% url 'wallet:home' %}">Annuler</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

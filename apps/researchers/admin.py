@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ReputationEvent, ResearcherProfile
+from .models import PayoutMethod, PayoutProfile, ReputationEvent, ResearcherProfile
 
 
 @admin.register(ResearcherProfile)
@@ -36,4 +36,37 @@ class ReputationEventAdmin(admin.ModelAdmin):
     list_display = ("profile", "reason", "points", "case", "created_at")
     list_filter = ("reason",)
     search_fields = ("profile__pseudonym", "profile__user__email")
+    readonly_fields = ("created_at", "updated_at")
+
+
+class PayoutMethodInline(admin.TabularInline):
+    """Moyens de paiement affiches masques : les numeros complets restent
+    consultables via le formulaire d'edition d'une ligne, jamais en liste."""
+
+    model = PayoutMethod
+    extra = 0
+    fields = ("method_type", "summary", "is_primary", "is_active")
+    readonly_fields = ("summary",)
+    show_change_link = True
+
+
+@admin.register(PayoutProfile)
+class PayoutProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "legal_full_name", "country", "is_complete")
+    search_fields = ("user__email", "legal_full_name")
+    readonly_fields = ("created_at", "updated_at")
+    inlines = [PayoutMethodInline]
+
+    @admin.display(boolean=True, description="Complet")
+    def is_complete(self, obj):
+        return obj.is_complete
+
+
+@admin.register(PayoutMethod)
+class PayoutMethodAdmin(admin.ModelAdmin):
+    # Les identifiants sensibles (compte, numero mobile) n'apparaissent
+    # jamais en liste : seul le resume masque (summary) y figure.
+    list_display = ("profile", "method_type", "summary", "is_primary", "is_active")
+    list_filter = ("method_type", "is_primary", "is_active")
+    search_fields = ("profile__user__email", "bank_name", "other_label")
     readonly_fields = ("created_at", "updated_at")
