@@ -22,6 +22,7 @@ from .constants import (
 )
 from .workflow import (
     DISMISSED_STATES,
+    ORG_VISIBLE_STATES,
     TERMINAL_STATES,
     CaseStatus,
     kanban_column_for,
@@ -91,7 +92,11 @@ class CaseQuerySet(models.QuerySet):
         if user.is_organization_user:
             org_ids = user.organization_ids()
             if org_ids:
-                filters |= models.Q(organization_id__in=org_ids)
+                # Une organisation ne voit un dossier qui la concerne qu'une
+                # fois le CSIRT l'ayant explicitement engagee (statut
+                # ORG_VISIBLE_STATES) -- jamais pendant le triage, pour
+                # proteger le declarant d'une reaction prematuree.
+                filters |= models.Q(organization_id__in=org_ids, status__in=ORG_VISIBLE_STATES)
         return self.filter(filters).distinct()
 
     def sla_breached(self):
@@ -285,7 +290,10 @@ class Case(BaseModel):
         if self.is_participant(user):
             return True
         if user.is_organization_user and self.organization_id:
-            return self.organization_id in set(user.organization_ids())
+            return (
+                self.organization_id in set(user.organization_ids())
+                and self.status in ORG_VISIBLE_STATES
+            )
         return False
 
 

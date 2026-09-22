@@ -88,6 +88,27 @@ DISMISSED_STATES = frozenset(
     }
 )
 
+#: Etats a partir desquels l'organisation affectee peut voir le dossier.
+#: Jamais avant que le CSIRT ne l'ait explicitement engagee (transition vers
+#: VENDOR_CONTACTED) : pendant le triage, le declarant doit rester protege
+#: d'une reaction prematuree de l'organisation sur un signalement encore non
+#: valide -- c'est la raison d'etre meme d'un CSIRT coordinateur plutot qu'un
+#: signalement direct (cf. cahier des charges : absence de canal officiel =
+#: risque de poursuites pour le declarant).
+ORG_VISIBLE_STATES = frozenset(
+    {
+        CaseStatus.VENDOR_CONTACTED,
+        CaseStatus.VENDOR_ACKNOWLEDGED,
+        CaseStatus.REMEDIATION,
+        CaseStatus.FIX_AVAILABLE,
+        CaseStatus.VERIFICATION,
+        CaseStatus.FIX_VERIFIED,
+        CaseStatus.DISCLOSURE_SCHEDULED,
+        CaseStatus.PUBLISHED,
+        CaseStatus.CLOSED,
+    }
+)
+
 #: Issues de triage accessibles depuis presque tous les etats d'analyse.
 _TRIAGE_OUTCOMES = [
     CaseStatus.DUPLICATE,
