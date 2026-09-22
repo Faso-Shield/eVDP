@@ -3,6 +3,7 @@
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import (
     LoginView,
     LogoutView,
@@ -13,8 +14,11 @@ from django.contrib.auth.views import (
 )
 from django.db import transaction
 from django.shortcuts import redirect, render
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.debug import sensitive_post_parameters
 
 from apps.audit.models import AuditAction
@@ -25,14 +29,22 @@ from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
 from apps.researchers.services import get_or_create_profile
 
+from . import mfa
 from .forms import (
     EmailAuthenticationForm,
     ProfileForm,
     RegistrationForm,
     ResearcherProfileForm,
     StrongPasswordChangeForm,
+    TotpCodeForm,
 )
+from .middleware import elevate, session_is_elevated
 from .models import TokenPurpose, UserToken
+
+#: Secret candidat d'un enrolement en cours. Il ne rejoint le compte qu'une
+#: fois un code valide fourni : un enrolement abandonne ne laisse rien
+#: derriere lui, et le compte garde son facteur precedent jusqu'au bout.
+SETUP_SESSION_KEY = "mfa_setup_candidate"
 
 
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")
@@ -90,7 +102,7 @@ def register(request):
             )
             messages.success(
                 request,
-                "Compte cree. Un email de verification vous a ete envoye : "
+                "Compte créé. Un email de vérification vous à été envoyé : "
                 "confirmez votre adresse pour soumettre des rapports.",
             )
             login(request, user, backend="django.contrib.auth.backends.ModelBackend")
@@ -98,6 +110,117 @@ def register(request):
     else:
         form = RegistrationForm()
     return render(request, "accounts/register.html", {"form": form})
+
+
+def _mfa_par_compte(request):
+    """Limite de debit par compte : c'est le code d'un compte qu'on devine."""
+    return str(getattr(request.user, "pk", "-"))
+
+
+@login_required
+@rate_limited("mfa", key_func=_mfa_par_compte)
+def mfa_setup(request):
+    """Enrolement d'un authentificateur TOTP.
+
+    Accessible sans session elevee au premier enrolement seulement : le
+    compte vient de prouver son mot de passe et n'a pas encore de facteur a
+    opposer. Une fois enrole, changer d'authentificateur exige d'abord de
+    valider celui en place, sinon le mot de passe seul suffirait a remplacer
+    le second facteur — et il n'y aurait plus de second facteur.
+    """
+    if not request.user.mfa_required:
+        messages.info(request, "Votre compte n'est pas soumis à la double authentification.")
+        return redirect("accounts:profile")
+    if not request.user.mfa_pending_enrollment and not session_is_elevated(request):
+        return redirect("accounts:mfa_challenge")
+
+    secret = request.session.get(SETUP_SESSION_KEY)
+    if not secret:
+        secret = mfa.new_secret()
+        request.session[SETUP_SESSION_KEY] = secret
+
+    form = TotpCodeForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        pas = mfa.matching_step(secret, form.cleaned_data["code"])
+        if pas is None:
+            log_action(
+                AuditAction.MFA_FAILED,
+                actor=request.user,
+                obj=request.user,
+                request=request,
+                phase="enrolement",
+            )
+            messages.error(request, "Code incorrect. Vérifiez l'heure de votre appareil.")
+        else:
+            user = request.user
+            user.mfa_secret = secret
+            user.mfa_enabled = True
+            user.mfa_confirmed_at = timezone.now()
+            user.mfa_last_step = pas
+            user.save(
+                update_fields=[
+                    "mfa_secret",
+                    "mfa_enabled",
+                    "mfa_confirmed_at",
+                    "mfa_last_step",
+                    "updated_at",
+                ]
+            )
+            request.session.pop(SETUP_SESSION_KEY, None)
+            elevate(request)
+            log_action(AuditAction.MFA_ENROLLED, actor=user, obj=user, request=request)
+            messages.success(
+                request,
+                "Double authentification activée. Un code vous sera demandé "
+                "à chaque connexion.",
+            )
+            return redirect("dashboard:home")
+
+    return render(
+        request,
+        "accounts/mfa_setup.html",
+        {
+            "form": form,
+            "secret_lisible": mfa.readable_secret(secret),
+            "uri": mfa.provisioning_uri(request.user, secret),
+            "qr": mfa.qr_data_uri(request.user, secret),
+            "reenrolement": not request.user.mfa_pending_enrollment,
+        },
+    )
+
+
+@login_required
+@rate_limited("mfa", key_func=_mfa_par_compte)
+def mfa_challenge(request):
+    """Validation du second facteur : eleve la session pour sa duree."""
+    if not request.user.mfa_required:
+        return redirect("accounts:profile")
+    if request.user.mfa_pending_enrollment:
+        return redirect("accounts:mfa_setup")
+    if session_is_elevated(request):
+        return redirect("dashboard:home")
+
+    form = TotpCodeForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        if mfa.consume_code(request.user, form.cleaned_data["code"]):
+            elevate(request)
+            log_action(
+                AuditAction.MFA_VERIFIED,
+                actor=request.user,
+                obj=request.user,
+                request=request,
+            )
+            return redirect(request.GET.get("next") or "dashboard:home")
+        log_action(
+            AuditAction.MFA_FAILED,
+            actor=request.user,
+            obj=request.user,
+            request=request,
+            phase="connexion",
+        )
+        messages.error(request, "Code incorrect ou déjà utilisé.")
+
+    return render(request, "accounts/mfa_challenge.html", {"form": form})
 
 
 def verify_email(request, token):
@@ -108,31 +231,31 @@ def verify_email(request, token):
         .first()
     )
     if entry is None or not entry.is_valid:
-        messages.error(request, "Lien de verification invalide ou expire.")
+        messages.error(request, "Lien de vérification invalide ou expiré.")
         return redirect("core:home")
     user = entry.user
     user.email_verified = True
     user.save(update_fields=["email_verified", "updated_at"])
     entry.consume()
     log_action(AuditAction.EMAIL_VERIFIED, actor=user, obj=user, request=request)
-    messages.success(request, "Adresse email verifiee. Merci.")
+    messages.success(request, "Adresse email vérifiée. Merci.")
     return redirect("dashboard:home")
 
 
 @login_required
 def resend_verification(request):
     if request.user.email_verified:
-        messages.info(request, "Votre adresse est deja verifiee.")
+        messages.info(request, "Votre adresse est déjà vérifiée.")
         return redirect("accounts:profile")
     token = UserToken.issue(request.user, TokenPurpose.EMAIL_VERIFICATION)
     notify(
         request.user,
         NotificationKind.ACCOUNT,
-        title="Verification de votre adresse email",
+        title="Vérification de votre adresse email",
         body="Un nouveau lien de verification est disponible.",
         url=f"/verify-email/{token.token}/",
     )
-    messages.success(request, "Un nouveau lien de verification vous a ete envoye.")
+    messages.success(request, "Un nouveau lien de vérification vous à été envoyé.")
     return redirect("accounts:profile")
 
 
@@ -163,7 +286,7 @@ def profile(request):
                 obj=request.user,
                 request=request,
             )
-            messages.success(request, "Profil mis a jour.")
+            messages.success(request, "Profil mis à jour.")
             return redirect("accounts:profile")
     else:
         user_form = ProfileForm(instance=request.user)
@@ -195,7 +318,7 @@ def change_password(request):
                 obj=request.user,
                 request=request,
             )
-            messages.success(request, "Mot de passe modifie. Reconnectez-vous si necessaire.")
+            messages.success(request, "Mot de passe modifié. Reconnectez-vous si nécessaire.")
             return redirect("accounts:profile")
     else:
         form = StrongPasswordChangeForm(request.user)
@@ -230,3 +353,23 @@ class EvdpPasswordResetConfirmView(PasswordResetConfirmView):
 
 class EvdpPasswordResetCompleteView(PasswordResetCompleteView):
     template_name = "accounts/password_reset_complete.html"
+
+
+def send_password_setup_link(user, title, body):
+    """Envoie un lien de choix de mot de passe.
+
+    Reutilise le mecanisme de reinitialisation standard de Django : un
+    compte cree sans mot de passe utilisable peut s'en voir attribuer un via
+    ce meme lien (`accounts:password_reset_confirm`), sans jeton ni vue
+    supplementaire a maintenir.
+
+    `notify()` prefixe lui-meme l'hote via `_absolute()` (voir
+    apps/notifications/services.py) : le chemin transmis ici doit rester
+    relatif, comme partout ailleurs dans ce module (`verify_email`,
+    `resend_verification`) — sinon l'hote se retrouve double dans le lien
+    envoye par email.
+    """
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    path = reverse("accounts:password_reset_confirm", kwargs={"uidb64": uid, "token": token})
+    notify(user, NotificationKind.ACCOUNT, title=title, body=body, url=path)

@@ -201,3 +201,105 @@ def test_editorial_update_is_audited(case_alpha, coordinator):
     assert AuditLog.objects.filter(
         action=AuditAction.ADVISORY_UPDATED, object_id=str(advisory.pk)
     ).exists()
+
+
+# ------------------------------------------------- redaction depuis l'ecran
+def _formulaire(advisory, action, resume, statut=None):
+    """Ce que le navigateur envoie depuis la page de redaction."""
+    entrees = list(advisory.timeline.all())
+    donnees = {
+        "title": advisory.title,
+        "summary": resume,
+        "organization": advisory.organization_id or "",
+        "product": advisory.product,
+        "affected_versions": "",
+        "fixed_versions": "",
+        "description": "Description publique.",
+        "impact": "",
+        "solution": "",
+        "workaround": "",
+        "severity": advisory.severity,
+        "cvss_score": advisory.cvss_score or "",
+        "cvss_vector": advisory.cvss_vector,
+        "cwe": advisory.cwe_id or "",
+        "cve": advisory.cve_id or "",
+        "credit": advisory.credit,
+        "scheduled_for": "",
+        "action": action,
+        "timeline-TOTAL_FORMS": str(len(entrees) + 1),
+        "timeline-INITIAL_FORMS": str(len(entrees)),
+        "timeline-MIN_NUM_FORMS": "0",
+        "timeline-MAX_NUM_FORMS": "1000",
+    }
+    if statut:
+        donnees["target_status"] = statut
+    for index, entree in enumerate(entrees):
+        donnees[f"timeline-{index}-id"] = str(entree.pk)
+        donnees[f"timeline-{index}-happened_on"] = entree.happened_on.isoformat()
+        donnees[f"timeline-{index}-label"] = entree.label
+        donnees[f"timeline-{index}-position"] = str(entree.position)
+    vide = len(entrees)
+    donnees[f"timeline-{vide}-id"] = ""
+    donnees[f"timeline-{vide}-happened_on"] = ""
+    donnees[f"timeline-{vide}-label"] = ""
+    donnees[f"timeline-{vide}-position"] = "0"
+    return donnees
+
+
+def test_summary_typed_on_screen_reaches_the_publication(client_for, case_alpha, coordinator):
+    """Le resume saisi part avec la demande de publication.
+
+    Contenu et cycle de vie etaient deux formulaires : la publication ne
+    voyait que la base, et refusait un resume pourtant saisi a l'ecran.
+    """
+    advisory = create_advisory_from_case(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+    client = client_for(coordinator)
+
+    reponse = client.post(
+        f"/advisories/manage/{advisory.advisory_id}/",
+        _formulaire(advisory, "publish", "Un resume public saisi a l'instant."),
+        follow=True,
+    )
+
+    advisory.refresh_from_db()
+    assert advisory.summary == "Un resume public saisi a l'instant."
+    assert advisory.status == AdvisoryStatus.PUBLISHED
+    assert not [m for m in reponse.context["messages"] if m.level_tag == "error"]
+
+
+def test_content_survives_a_refused_transition(client_for, case_alpha, coordinator):
+    """Une transition refusee ne doit pas emporter la saisie avec elle."""
+    advisory = create_advisory_from_case(case_alpha, coordinator)
+    client = client_for(coordinator)
+
+    reponse = client.post(
+        f"/advisories/manage/{advisory.advisory_id}/",
+        _formulaire(advisory, "publish", "Resume conserve malgre le refus."),
+        follow=True,
+    )
+
+    advisory.refresh_from_db()
+    assert advisory.summary == "Resume conserve malgre le refus."
+    assert advisory.status == AdvisoryStatus.DRAFT
+    # Le refus porte sur l'etat du document, pas sur un resume qui manquerait.
+    erreurs = [str(m) for m in reponse.context["messages"] if m.level_tag == "error"]
+    assert erreurs and "publication" in " ".join(erreurs).lower()
+
+
+def test_analyst_cannot_publish_from_the_screen(client_for, case_alpha, analyst):
+    """Le bouton absent n'est pas la seule garde : la vue refuse aussi."""
+    advisory = create_advisory_from_case(case_alpha, analyst)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+
+    client_for(analyst).post(
+        f"/advisories/manage/{advisory.advisory_id}/",
+        _formulaire(advisory, "publish", "Resume public."),
+        follow=True,
+    )
+
+    advisory.refresh_from_db()
+    assert advisory.summary == "Resume public."
+    assert advisory.status == AdvisoryStatus.APPROVED

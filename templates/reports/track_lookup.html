@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Suivre mon signalement{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<div class="card" style="max-width:480px;margin:2rem auto">
+  <div class="card-header"><h1 style="font-size:1.4rem">Suivre mon signalement</h1></div>
+  <div class="card-body">
+    <p class="muted small">
+      Si vous avez reçu un lien par email, cliquez-y directement. Si vous
+      avez signalé de manière anonyme, collez ci-dessous le code de suivi
+      qui vous a été affiché à la soumission.
+    </p>
+    {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {% include "partials/form_field.html" with field=form.code %}
+      <button class="btn btn-block" type="submit">Consulter le statut</button>
+    </form>
+  </div>
+</div>
+<p class="text-center small muted">Aucune donnée personnelle n'est demandée sur cette page.</p>
+{% endblock %}

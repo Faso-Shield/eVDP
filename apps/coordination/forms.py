@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from apps.accounts.models import User
 from apps.accounts.roles import NATIONAL_ROLES
 from apps.organizations.models import Organization, OrganizationStatus
+from apps.programs.models import ProgramScope
 from apps.vulnerabilities.constants import Severity
 from apps.vulnerabilities.cvss import CVSSError, base_score
 from apps.vulnerabilities.models import CVE, CWE
@@ -18,11 +19,11 @@ from .workflow import CaseStatus, allowed_targets
 class CaseMessageForm(forms.Form):
     body = forms.CharField(
         label="Message",
-        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Markdown autorise…"}),
+        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Markdown autorisé…"}),
         max_length=20000,
     )
     confidentiality = forms.ChoiceField(
-        label="Confidentialite",
+        label="Confidentialité",
         choices=Confidentiality.choices,
         initial=Confidentiality.PARTICIPANTS,
     )
@@ -45,7 +46,7 @@ class CaseMessageForm(forms.Form):
     def clean_body(self):
         body = (self.cleaned_data.get("body") or "").strip()
         if not body:
-            raise ValidationError("Le message ne peut pas etre vide.")
+            raise ValidationError("Le message ne peut pas être vide.")
         return body
 
 
@@ -64,19 +65,40 @@ class StatusTransitionForm(forms.Form):
 
 
 class TriageForm(forms.Form):
-    """Qualification technique lors du triage."""
+    """Qualification technique lors du triage.
 
-    severity = forms.ChoiceField(label="Severite retenue", choices=Severity.choices)
+    Le champ `scope` n'existe que pour un case rattache a un programme : il
+    designe l'actif du perimetre concerne, dont depend la grille de
+    recompense quand celle-ci varie par actif.
+    """
+
+    severity = forms.ChoiceField(label="Sévérité retenue", choices=Severity.choices)
+    scope = forms.ModelChoiceField(
+        label="Actif du périmètre",
+        queryset=ProgramScope.objects.none(),
+        required=False,
+        help_text="Détermine la grille de récompense lorsqu'elle varie par actif.",
+    )
     cvss_vector = forms.CharField(label="Vecteur CVSS v3.1", required=False)
     cwe = forms.ModelChoiceField(label="CWE", queryset=CWE.objects.all(), required=False)
     organization = forms.ModelChoiceField(
-        label="Organisation affectee",
+        label="Organisation affectée",
         queryset=Organization.objects.filter(status=OrganizationStatus.ACTIVE),
         required=False,
     )
     tags = forms.CharField(
-        label="Etiquettes", required=False, help_text="Separees par des virgules."
+        label="Étiquettes", required=False, help_text="Séparées par des virgules."
     )
+
+    def __init__(self, *args, case=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        program = getattr(case, "program", None)
+        if program is None:
+            # Un case hors programme n'a pas de perimetre : le champ
+            # n'aurait aucun choix a proposer.
+            del self.fields["scope"]
+        else:
+            self.fields["scope"].queryset = program.in_scope_targets()
 
     def clean_cvss_vector(self):
         vector = (self.cleaned_data.get("cvss_vector") or "").strip()
@@ -112,7 +134,7 @@ class DuplicateForm(forms.Form):
         case_id = (self.cleaned_data.get("original_case_id") or "").strip().upper()
         original = Case.objects.filter(case_id=case_id).first()
         if original is None:
-            raise ValidationError("Aucun case ne correspond a cette reference.")
+            raise ValidationError("Aucun case ne correspond à cette référence.")
         return original
 
 
@@ -141,7 +163,7 @@ class CaseFilterForm(forms.Form):
         choices=[("", "Tous les statuts")] + list(CaseStatus.choices),
     )
     severity = forms.ChoiceField(
-        label="Severite",
+        label="Sévérité",
         required=False,
         choices=[("", "Toutes severites")] + list(Severity.choices),
     )

@@ -42,6 +42,19 @@ def _get_bounty(request, bounty_id):
     return bounty
 
 
+def _instruit_les_recompenses(user):
+    """Le compte participe-t-il a l'instruction d'une recompense ?
+
+    C'est la frontiere entre celui qui decide et celui qui recoit. Un
+    signaleur voit sa recompense parce qu'elle le concerne ; il n'a pas a
+    savoir qui l'a proposee, qui en a debattu, ni qui l'a signee. La
+    deliberation d'un jury ne se communique pas au candidat.
+    """
+    return user.has_capability(Capability.PROPOSE_BOUNTY) or user.has_capability(
+        Capability.APPROVE_BOUNTY
+    )
+
+
 @login_required
 def bounty_list(request):
     queryset = _visible_bounties(request.user).order_by("-created_at")
@@ -49,34 +62,51 @@ def bounty_list(request):
     if status:
         queryset = queryset.filter(status=status)
     page = Paginator(queryset, 25).get_page(request.GET.get("page"))
-    return render(request, "bounty/list.html", {"page_obj": page, "selected_status": status})
+    return render(
+        request,
+        "bounty/list.html",
+        {
+            "page_obj": page,
+            "selected_status": status,
+            "peut_instruire": _instruit_les_recompenses(request.user),
+        },
+    )
 
 
 @login_required
 def bounty_detail(request, bounty_id):
     bounty = _get_bounty(request, bounty_id)
-    return render(
-        request,
-        "bounty/detail.html",
-        {
-            "bounty": bounty,
-            "reviews": bounty.reviews.select_related("reviewer"),
-            "payments": bounty.payments.select_related("recorded_by"),
-            "decision_form": BountyDecisionForm(initial={"amount": bounty.proposed_amount}),
-            "review_form": BountyReviewForm(),
-            "payment_form": PaymentForm(initial={"amount": bounty.approved_amount}),
-            # Le proposant ne peut pas statuer sur sa propre proposition :
-            # l'interface masque l'action, le service la refuse (defense en
-            # profondeur, voir bounty.services.approve_bounty).
-            "can_approve": (
-                request.user.has_capability(Capability.APPROVE_BOUNTY)
-                and bounty.proposed_by_id != request.user.pk
-            ),
-            "can_pay": request.user.has_capability(Capability.RECORD_PAYMENT),
-            "within_policy": bounty.within_policy(),
-            "budget": budget_status(bounty),
-        },
-    )
+    peut_instruire = _instruit_les_recompenses(request.user)
+    contexte = {
+        "bounty": bounty,
+        "payments": bounty.payments.select_related("recorded_by"),
+        "peut_instruire": peut_instruire,
+        # Le proposant ne peut pas statuer sur sa propre proposition :
+        # l'interface masque l'action, le service la refuse (defense en
+        # profondeur, voir bounty.services.approve_bounty).
+        "can_approve": (
+            request.user.has_capability(Capability.APPROVE_BOUNTY)
+            and bounty.proposed_by_id != request.user.pk
+        ),
+        "can_pay": request.user.has_capability(Capability.RECORD_PAYMENT),
+    }
+    # Les elements d'instruction ne sont pas seulement masques par le gabarit :
+    # ils ne quittent pas la base pour un compte qui n'a pas a les lire. Le
+    # budget du programme en fait partie - il ne regarde pas le beneficiaire.
+    if peut_instruire:
+        contexte.update(
+            {
+                "reviews": bounty.reviews.select_related("reviewer"),
+                "decision_form": BountyDecisionForm(
+                    initial={"amount": bounty.proposed_amount}
+                ),
+                "review_form": BountyReviewForm(),
+                "payment_form": PaymentForm(initial={"amount": bounty.approved_amount}),
+                "within_policy": bounty.within_policy(),
+                "budget": budget_status(bounty),
+            }
+        )
+    return render(request, "bounty/detail.html", contexte)
 
 
 @login_required
@@ -102,7 +132,7 @@ def propose(request, case_id):
             except (PermissionDenied, ValidationError) as exc:
                 messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
             else:
-                messages.success(request, "Recompense proposee.")
+                messages.success(request, "Récompense proposée.")
                 return redirect("bounty:detail", bounty_id=bounty.pk)
     else:
         form = BountyProposalForm(initial={"amount": default_amount})
@@ -130,7 +160,7 @@ def review(request, bounty_id):
                 suggested=form.cleaned_data.get("suggested_amount"),
                 request=request,
             )
-            messages.success(request, "Avis enregistre.")
+            messages.success(request, "Avis enregistré.")
         except PermissionDenied as exc:
             messages.error(request, str(exc))
     else:
@@ -153,7 +183,7 @@ def approve(request, bounty_id):
                 note=form.cleaned_data.get("note", ""),
                 request=request,
             )
-            messages.success(request, "Recompense approuvee.")
+            messages.success(request, "Récompense approuvée.")
         except (PermissionDenied, ValidationError) as exc:
             messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
@@ -172,7 +202,7 @@ def reject(request, bounty_id):
     )
     try:
         reject_bounty(bounty, request.user, note=note, request=request)
-        messages.success(request, "Recompense rejetee.")
+        messages.success(request, "Récompense rejetée.")
     except (PermissionDenied, ValidationError) as exc:
         messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     return redirect("bounty:detail", bounty_id=bounty.pk)
@@ -196,7 +226,7 @@ def payment(request, bounty_id):
             )
             messages.success(
                 request,
-                "Versement enregistre. Aucun flux financier reel n'est declenche "
+                "Versement enregistre. Aucun flux financier réel n'est déclenché "
                 "par la plateforme.",
             )
         except (PermissionDenied, ValidationError) as exc:

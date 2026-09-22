@@ -1,0 +1,358 @@
+<title>Mise en place d'une structure eVDP</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #101a22; --ink-soft: #45545f; --paper: #eef2f1; --surface: #ffffff;
+    --surface-2: #e4e9e7; --line: #c7d0cd; --accent: #0e6f5c; --accent-soft: #d7ebe4;
+    --ok: #1a7a4c; --ok-soft: #dcf0e3; --warn: #93630a; --warn-soft: #f5e8cc;
+    --shadow: 0 1px 2px rgba(16,26,34,.06), 0 8px 24px -12px rgba(16,26,34,.18);
+    --evdp-navy: #0d2a49; --evdp-navy-light: #143a63; --evdp-accent-btn: #17966f;
+    --org: #8a5a12; --org-soft: #f6e9d3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e7ede9; --ink-soft: #a9b6ac; --paper: #0c1310; --surface: #121b17;
+      --surface-2: #182320; --line: #263531; --accent: #3cbf9e; --accent-soft: #17322a;
+      --ok: #4bc788; --ok-soft: #103524; --warn: #e0ab4c; --warn-soft: #3a2c0f;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+      --org: #d69a4a; --org-soft: #3a2c12;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e7ede9; --ink-soft: #a9b6ac; --paper: #0c1310; --surface: #121b17;
+    --surface-2: #182320; --line: #263531; --accent: #3cbf9e; --accent-soft: #17322a;
+    --ok: #4bc788; --ok-soft: #103524; --warn: #e0ab4c; --warn-soft: #3a2c0f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+    --org: #d69a4a; --org-soft: #3a2c12;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Public Sans", "Segoe UI", system-ui, sans-serif; font-size: 16px; line-height: 1.55; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+  h1, h2, h3 { font-family: "Public Sans", sans-serif; text-wrap: balance; color: var(--ink); margin: 0; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  header.masthead { display: flex; flex-direction: column; gap: .9rem; padding-bottom: 1.75rem; margin-bottom: 2rem; border-bottom: 3px solid var(--ink); }
+  .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: .72rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: .55rem; }
+  .eyebrow::before { content: ""; width: 22px; height: 2px; background: var(--accent); display: inline-block; }
+  h1.title { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -.01em; }
+  .subtitle { color: var(--ink-soft); font-size: 1.02rem; max-width: 68ch; }
+  .legend { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: .5rem; }
+  .legend-item { display: flex; align-items: center; gap: .5rem; font-size: .84rem; color: var(--ink-soft); }
+  .legend-dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  .step { display: grid; grid-template-columns: 42px 1fr; gap: 1.1rem; margin-bottom: 2.4rem; position: relative; }
+  .step::before { content: ""; position: absolute; left: 20px; top: 46px; bottom: -2.4rem; width: 2px; background: var(--line); }
+  .step:last-of-type::before { display: none; }
+  .step-num { width: 42px; height: 42px; border-radius: 50%; background: var(--evdp-navy); color: #fff; display: flex; align-items: center; justify-content: center; font-family: "IBM Plex Mono", monospace; font-weight: 700; font-size: 1.05rem; flex-shrink: 0; z-index: 1; }
+  .step-body { min-width: 0; }
+  .step-tag { font-family: "IBM Plex Mono", monospace; font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; padding: .22rem .55rem; border-radius: 5px; display: inline-block; margin-bottom: .5rem; background: #dde6ef; color: var(--evdp-navy); }
+  .step h3 { font-size: 1.14rem; font-weight: 700; margin-bottom: .4rem; }
+  .step p.narration { color: var(--ink-soft); font-size: .93rem; max-width: 64ch; margin: 0 0 1rem; }
+  .step p.narration b { color: var(--ink); font-weight: 600; }
+
+  .mockup-frame { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: var(--surface); max-width: 640px; }
+  .mockup-chrome { background: var(--surface-2); padding: .5rem .7rem; display: flex; align-items: center; gap: .5rem; border-bottom: 1px solid var(--line); }
+  .mockup-dots { display: flex; gap: 4px; }
+  .mockup-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--line); display: inline-block; }
+  .mockup-url { font-family: "IBM Plex Mono", monospace; font-size: .68rem; color: var(--ink-soft); background: var(--surface); border-radius: 5px; padding: .2rem .6rem; flex: 1; }
+  .mockup-body { background: #f4f6f9; }
+  .evdp-nav { background: var(--evdp-navy); color: #fff; padding: .55rem .9rem; display: flex; align-items: center; gap: .5rem; font-size: .72rem; }
+  .evdp-nav .brand { font-weight: 700; font-size: .82rem; }
+  .evdp-notice { background: var(--ok-soft); border-bottom: 1px solid var(--ok); color: var(--ok); font-size: .72rem; padding: .5rem .9rem; font-weight: 600; }
+  .evdp-content { padding: .9rem; }
+  .mock-h1 { font-size: 1rem; font-weight: 800; color: var(--evdp-navy); margin: 0 0 .3rem; }
+  .mock-muted { font-size: .74rem; color: var(--ink-soft); margin: 0 0 .7rem; }
+  .mock-field { margin-bottom: .5rem; }
+  .mock-label { font-size: .66rem; font-weight: 600; color: var(--evdp-navy); margin-bottom: .18rem; display: block; }
+  .mock-input { border: 1px solid var(--line); border-radius: 6px; padding: .38rem .55rem; font-size: .74rem; background: #fff; color: var(--ink); font-weight: 500; }
+  .mock-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .mock-btn { display: inline-block; background: var(--evdp-accent-btn); color: #fff; font-size: .74rem; font-weight: 700; padding: .4rem .8rem; border-radius: 6px; }
+  .mock-dl { font-size: .72rem; }
+  .mock-dl-row { display: flex; justify-content: space-between; padding: .3rem 0; border-bottom: 1px dashed var(--line); gap: 1rem; }
+  .mock-dl-row .k { color: var(--ink-soft); flex-shrink: 0; }
+  .mock-dl-row .v { font-weight: 600; color: var(--ink); text-align: right; }
+  .mock-table { width: 100%; border-collapse: collapse; font-size: .7rem; margin-top: .4rem; }
+  .mock-table th { text-align: left; color: var(--ink-soft); font-weight: 600; padding: .3rem .4rem; border-bottom: 1px solid var(--line); text-transform: uppercase; font-size: .6rem; letter-spacing: .03em; }
+  .mock-table td { padding: .35rem .4rem; border-bottom: 1px solid var(--line); }
+  .mock-table .amt { font-family: "IBM Plex Mono", monospace; font-weight: 600; }
+
+  .badge-pill { font-size: .64rem; font-weight: 700; padding: .18rem .5rem; border-radius: 5px; display: inline-block; margin-right: .3rem; text-transform: uppercase; letter-spacing: .02em; }
+  .badge-org { background: var(--org-soft); color: var(--org); }
+  .badge-done { background: var(--ok-soft); color: var(--ok); }
+
+  .callout { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: .8rem 1rem; margin-top: .8rem; font-size: .86rem; color: var(--ink-soft); }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout b { color: var(--ink); }
+
+  .section-head { margin: 3rem 0 1.5rem; }
+  .section-head h2 { font-size: 1.3rem; font-weight: 800; }
+  .section-head p { color: var(--ink-soft); font-size: .9rem; margin-top: .3rem; }
+
+  .recap { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.3rem 1.5rem; box-shadow: var(--shadow); }
+  .recap ul, .recap ol { margin: .6rem 0 0; padding-left: 1.2rem; font-size: .88rem; color: var(--ink-soft); }
+  .recap li { margin-bottom: .4rem; }
+  .recap li b { color: var(--ink); }
+
+  footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line); font-size: .8rem; color: var(--ink-soft); }
+
+  @media (max-width: 560px) { .mock-grid2 { grid-template-columns: 1fr; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Rapport 1 / 3 · CYBER-DEF 2 / FASO SHIELD</div>
+    <h1 class="title">Mise en place d'une structure sur eVDP</h1>
+    <p class="subtitle">
+      Reconstitution fidèle d'une session réelle effectuée le 11 septembre 2026 : création d'une nouvelle
+      organisation (Ministère de la Santé et de l'Hygiène Publique), rattachement d'un agent DSI, puis
+      création d'un programme Bug Bounty complet avec sa matrice de récompenses et son périmètre. Toutes
+      les données reproduites ci-dessous (identifiants, montants, champs) sont celles réellement saisies
+      et enregistrées en base lors du test.
+    </p>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--evdp-navy)"></span> Coordinateur national (MANAGE_ALL_ORGANIZATIONS)</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--org)"></span> Résultat côté organisation</span>
+    </div>
+  </header>
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <span class="step-tag">Coordinateur national</span>
+      <h3>Création de l'organisation</h3>
+      <p class="narration">Depuis <b>Administration → Organisations → Créer une organisation</b>, le
+      coordinateur national saisit l'identité complète du futur bénéficiaire. Cette action est réservée
+      à la capacité <b>MANAGE_ALL_ORGANIZATIONS</b> — une DSI ne peut créer que gérer les organisations
+      dont elle est déjà membre, jamais en créer de nouvelles.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/organizations/manage/new/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-h1">Créer une organisation</div>
+            <div class="mock-grid2">
+              <div class="mock-field"><span class="mock-label">Nom *</span><div class="mock-input">Ministère de la Santé et de l'Hygiène Publique</div></div>
+              <div class="mock-field"><span class="mock-label">Sigle</span><div class="mock-input">MSHP</div></div>
+            </div>
+            <div class="mock-grid2">
+              <div class="mock-field"><span class="mock-label">Type *</span><div class="mock-input">Ministère</div></div>
+              <div class="mock-field"><span class="mock-label">Secteur *</span><div class="mock-input">Santé</div></div>
+            </div>
+            <div class="mock-grid2">
+              <div class="mock-field"><span class="mock-label">Domaine principal</span><div class="mock-input">sante.gov.bf</div></div>
+              <div class="mock-field"><span class="mock-label">Email officiel</span><div class="mock-input">contact@sante.gov.bf</div></div>
+            </div>
+            <div class="mock-grid2">
+              <div class="mock-field"><span class="mock-label">Responsable DSI</span><div class="mock-input">Adama Kaboré</div></div>
+              <div class="mock-field"><span class="mock-label">Email DSI</span><div class="mock-input">dsi.mshp@sante.gov.bf</div></div>
+            </div>
+            <div class="mock-field"><span class="mock-label">Statut *</span><div class="mock-input">Active</div></div>
+            <span class="mock-btn">Enregistrer</span>
+          </div>
+        </div>
+      </div>
+      <div class="callout"><b>Résultat observé :</b> message <span class="mono">« Organisation créée. »</span>,
+      redirection vers <span class="mono">/organizations/manage/mshp/</span> — le slug <span class="mono">mshp</span>
+      est dérivé automatiquement du sigle.</div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <span class="step-tag">Coordinateur national</span>
+      <h3>Création du compte de l'agent DSI</h3>
+      <p class="narration">Ici, la plateforme montre sa limite connue : <b>il n'existe aucun formulaire
+      dans l'application pour créer un compte de staff interne</b> (Triager, Analyste, ou agent DSI).
+      Seule l'auto-inscription publique (réservée aux rôles chercheur) passe par un formulaire web.
+      La création de ce compte s'est donc faite par la voie technique de secours.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">shell — manage.py shell</div></div>
+        <div class="mockup-body" style="background:#0d2a49">
+          <div style="padding:.9rem;font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:#cfe0ee;line-height:1.7">
+            &gt;&gt;&gt; User.objects.create_user(<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;email='dsi.mshp@sante.gov.bf',<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;full_name='Adama Kabore',<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;role=Role.DSI_ADMIN,<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;email_verified=True,<br>
+            &nbsp;&nbsp;)<br>
+            <span style="color:#7fd8ae">&lt;User: dsi.mshp@sante.gov.bf&gt;</span>
+          </div>
+        </div>
+      </div>
+      <div class="callout warn"><b>Constat produit :</b> c'est le vrai écart identifié dans l'audit de cette
+      session — onboarder un nouvel agent CSIRT ou DSI nécessite aujourd'hui un accès technique
+      (admin Django ou shell), pas un simple formulaire. Pas bloquant pour une petite équipe, mais à
+      garder en tête pour un passage à l'échelle.</div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <span class="step-tag">Coordinateur national</span>
+      <h3>Rattachement de l'agent à l'organisation</h3>
+      <p class="narration">Une fois le compte créé, il est rattaché à MSHP via le formulaire
+      <b>« Ajouter un membre »</b> — celui-là même construit et vérifié plus tôt dans cette session.
+      Le compte doit déjà exister sur eVDP ; l'email seul ne suffit pas à en créer un nouveau.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/organizations/manage/mshp/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-notice">dsi.mshp@sante.gov.bf ajouté comme membre de l'organisation.</div>
+          <div class="evdp-content">
+            <div class="mock-h1">Membres</div>
+            <div class="mock-dl">
+              <div class="mock-dl-row"><span class="k">Adama Kaboré (dsi.mshp@sante.gov.bf)</span><span class="v">DSI</span></div>
+            </div>
+            <div class="mock-h1" style="margin-top:.8rem">Ajouter un membre</div>
+            <div class="mock-field"><span class="mock-label">Email du compte eVDP *</span><div class="mock-input">dsi.mshp@sante.gov.bf</div></div>
+            <div class="mock-grid2">
+              <div class="mock-field"><span class="mock-label">Rôle *</span><div class="mock-input">DSI</div></div>
+              <div class="mock-field"><span class="mock-label">Contact principal</span><div class="mock-input">☑</div></div>
+            </div>
+            <span class="mock-btn">Ajouter un membre</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <span class="step-tag">Coordinateur national</span>
+      <h3>Création du programme Bug Bounty</h3>
+      <p class="narration">Le programme <b>« Bug Bounty - Plateforme e-Santé MSHP »</b> est créé et
+      rattaché à l'organisation MSHP. La case « Accepter les signalements anonymes » est automatiquement
+      désactivée pour un programme Bug Bounty — une récompense exige un chercheur identifiable.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/programs/manage/new/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-h1">Créer un programme</div>
+            <div class="mock-field"><span class="mock-label">Nom du programme *</span><div class="mock-input">Bug Bounty - Plateforme e-Santé MSHP</div></div>
+            <div class="mock-grid2">
+              <div class="mock-field"><span class="mock-label">Type *</span><div class="mock-input">Programme Bug Bounty</div></div>
+              <div class="mock-field"><span class="mock-label">Organisation *</span><div class="mock-input">MSHP</div></div>
+            </div>
+            <div class="mock-grid2">
+              <div class="mock-field"><span class="mock-label">Statut *</span><div class="mock-input">Actif</div></div>
+              <div class="mock-field"><span class="mock-label">Délai de divulgation *</span><div class="mock-input">90 jours</div></div>
+            </div>
+            <div class="mock-field"><span class="mock-label">Email de contact</span><div class="mock-input">bugbounty@sante.gov.bf</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step">
+    <div class="step-num">5</div>
+    <div class="step-body">
+      <span class="step-tag">Coordinateur national</span>
+      <h3>Matrice de récompenses</h3>
+      <p class="narration">À la création, eVDP génère automatiquement <b>5 paliers vides</b> (un par
+      niveau de sévérité) — il ne reste plus qu'à saisir les montants réels en XOF. Aucun montant n'est
+      codé en dur dans l'application : tout vient de cette configuration.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/programs/manage/bug-bounty-plateforme-e-sante-mshp/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-notice">Programme mis à jour.</div>
+          <div class="evdp-content">
+            <div class="mock-h1">Matrice de récompenses</div>
+            <table class="mock-table">
+              <thead><tr><th>Sévérité</th><th>Min</th><th>Max</th></tr></thead>
+              <tbody>
+                <tr><td>Critique</td><td class="amt">900 000</td><td class="amt">2 500 000</td></tr>
+                <tr><td>Élevée</td><td class="amt">400 000</td><td class="amt">900 000</td></tr>
+                <tr><td>Moyenne</td><td class="amt">150 000</td><td class="amt">400 000</td></tr>
+                <tr><td>Faible</td><td class="amt">40 000</td><td class="amt">150 000</td></tr>
+                <tr><td>Informative</td><td class="amt">0</td><td class="amt">40 000</td></tr>
+              </tbody>
+            </table>
+            <div class="mock-muted" style="margin-top:.5rem">Devise : XOF</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 6 -->
+  <div class="step">
+    <div class="step-num">6</div>
+    <div class="step-body">
+      <span class="step-tag">Coordinateur national</span>
+      <h3>Périmètre du programme</h3>
+      <p class="narration">Deux cibles sont déclarées dans le périmètre, une hors périmètre — reproduisant
+      un vrai portail de santé numérique avec sa prise de rendez-vous et son API de dossier patient.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/programs/bug-bounty-plateforme-e-sante-mshp/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-h1">Périmètre</div>
+            <table class="mock-table">
+              <thead><tr><th>Cible</th><th>Type</th><th>Priorité</th></tr></thead>
+              <tbody>
+                <tr><td>api.sante.gov.bf/v1</td><td>API</td><td>P1 - Critique</td></tr>
+                <tr><td>rdv.sante.gov.bf</td><td>Domaine</td><td>P1 - Critique</td></tr>
+                <tr><td style="color:var(--ink-soft)">recette.sante.gov.bf</td><td style="color:var(--ink-soft)">Hors périmètre</td><td>—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <h2>Fiche publique finale</h2>
+    <p>Ce que voit tout visiteur — chercheur potentiel ou simple curieux — sur <span class="mono">evdp.bf/programs/bug-bounty-plateforme-e-sante-mshp/</span></p>
+  </div>
+
+  <div class="mockup-frame" style="max-width:700px">
+    <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/programs/bug-bounty-plateforme-e-sante-mshp/</div></div>
+    <div class="mockup-body">
+      <div class="evdp-nav"><span class="brand">eVDP</span></div>
+      <div class="evdp-content">
+        <span class="badge-pill badge-org">Programme Bug Bounty</span><span class="badge-pill badge-done">Actif</span>
+        <div class="mock-h1" style="margin-top:.4rem">Bug Bounty - Plateforme e-Santé MSHP</div>
+        <div class="mock-muted">Ministère de la Santé et de l'Hygiène Publique</div>
+        <div class="mock-dl">
+          <div class="mock-dl-row"><span class="k">Signalements reçus</span><span class="v">0</span></div>
+          <div class="mock-dl-row"><span class="k">Divulgation</span><span class="v">à 90 jours</span></div>
+          <div class="mock-dl-row"><span class="k">Signalements anonymes</span><span class="v">Non acceptés</span></div>
+          <div class="mock-dl-row"><span class="k">Fourchette Critique</span><span class="v">900 000 – 2 500 000 XOF</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="recap" style="margin-top:2.5rem">
+    <h2 style="font-size:1.1rem">Ce que cette session démontre</h2>
+    <ul>
+      <li><b>Structure ↔ agent ↔ programme</b> sont trois objets distincts, liés explicitement — jamais de couplage implicite.</li>
+      <li><b>Multi-appartenance</b> : un même compte peut être membre de plusieurs organisations (le modèle <span class="mono">OrganizationMember</span> le permet nativement).</li>
+      <li><b>Aucun montant codé en dur</b> : toute la matrice de récompenses est une donnée de configuration, modifiable sans toucher au code.</li>
+      <li><b>Un vrai écart produit</b> confirmé en le vivant : la création de comptes internes reste un geste technique, pas un parcours utilisateur — point d'attention pour la suite du projet.</li>
+    </ul>
+  </div>
+
+  <footer>
+    Rapport 1/3 — généré le 11 septembre 2026 à partir d'une session de test réelle sur l'instance de démonstration eVDP.
+    Voir aussi : <span class="mono">parcours-bugbounty-recompense-2026-09-11.html</span> et
+    <span class="mono">parcours-vdp-anonyme-complet-2026-09-11.html</span>.
+  </footer>
+
+</div>

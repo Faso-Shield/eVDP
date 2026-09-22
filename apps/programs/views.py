@@ -3,16 +3,20 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Count, F, Max, Q
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
+from apps.accounts.verification import grace_deadline
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.bounty.models import BountyStatus
-from apps.coordination.models import SLAPolicy
+from apps.coordination.models import Case, SLAPolicy
+from apps.coordination.workflow import CaseStatus
+from apps.disclosures.models import Advisory, AdvisoryStatus
 
 from .forms import ProgramFilterForm, ProgramForm, ProgramScopeForm, RewardTierFormSet
 from .models import Program, ProgramType, RewardPolicy
@@ -25,6 +29,66 @@ SORT_FIELDS = {
     "reports": "-cases_count",
     "name": "name",
 }
+
+#: Etats attestant qu'un dossier a au moins ete corrige (pas seulement soumis).
+_RESOLVED_STATUSES = [
+    CaseStatus.FIX_VERIFIED,
+    CaseStatus.DISCLOSURE_SCHEDULED,
+    CaseStatus.PUBLISHED,
+    CaseStatus.CLOSED,
+]
+
+
+def _program_stats(program):
+    """Indicateurs de confiance affiches publiquement sur la fiche programme.
+
+    Calcules a la volee (pas de table de cache) : le volume par programme
+    reste faible, la fraicheur importe plus que la performance ici.
+    """
+    cases = Case.objects.filter(program=program)
+    avg_response = cases.filter(acknowledged_at__isnull=False).aggregate(
+        avg=Avg(
+            ExpressionWrapper(
+                F("acknowledged_at") - F("created_at"), output_field=DurationField()
+            )
+        )
+    )["avg"]
+    rewards_paid = None
+    if program.is_bug_bounty:
+        policy = getattr(program, "reward_policy", None)
+        if policy is not None:
+            rewards_paid = policy.budget_consumed()
+    return {
+        "total_reports": cases.count(),
+        "resolved_count": cases.filter(status__in=_RESOLVED_STATUSES).count(),
+        "avg_response_hours": (
+            round(avg_response.total_seconds() / 3600, 1) if avg_response else None
+        ),
+        "rewards_paid": rewards_paid,
+    }
+
+
+def _hall_of_fame(program, limit=12):
+    """Chercheurs credites publiquement sur des advisories de ce programme.
+
+    Reutilise Advisory.credit, deja calcule au moment de la publication en
+    respectant le choix d'anonymat du declarant (voir credit_for()) : aucune
+    identite non consentie n'est jamais exposee ici.
+    """
+    credits = (
+        Advisory.objects.filter(status=AdvisoryStatus.PUBLISHED, case__program=program)
+        .exclude(credit="")
+        .exclude(credit__iexact="Chercheur anonyme")
+        .order_by("-published_at")
+        .values_list("credit", flat=True)
+    )
+    seen = []
+    for name in credits:
+        if name not in seen:
+            seen.append(name)
+        if len(seen) >= limit:
+            break
+    return seen
 
 
 def program_list(request):
@@ -127,12 +191,32 @@ def program_detail(request, slug):
         "programs/detail.html",
         {
             "program": program,
-            "in_scope": program.in_scope_targets(),
+            "in_scope": program.in_scope_targets().prefetch_related("reward_tiers"),
             "out_of_scope": program.out_of_scope_targets(),
             "rules": program.rule_items.all(),
             "reward_policy": reward_policy,
-            "reward_tiers": reward_policy.tiers.all() if reward_policy else [],
+            # La grille par defaut et les grilles propres a un actif sont
+            # presentees separement : melangees, on ne saurait plus quel
+            # montant s'applique a quoi.
+            "reward_tiers": (
+                reward_policy.tiers.filter(scope__isnull=True).exclude(
+                    min_amount=0, max_amount=0
+                )
+                if reward_policy
+                else []
+            ),
+            "reward_scopes": reward_policy.scopes_with_tiers() if reward_policy else [],
             "can_manage": _can_manage(request.user, program),
+            "stats": _program_stats(program),
+            "hall_of_fame": _hall_of_fame(program),
+            # Annonce des l'arrivee sur la page si le visiteur ne remplit pas
+            # les conditions, plutot que de le laisser rediger un rapport pour
+            # se le voir refuser a l'envoi.
+            "refus_participation": program.reporter_rejection(request.user),
+            "delai_verification": grace_deadline(request.user),
+            # Un visiteur refuse est envoye vers la connexion plutot que vers
+            # un formulaire qui ne peut aboutir ; il y revient ensuite.
+            "lien_signalement": f"{reverse('reports:submit')}?program={program.slug}",
         },
     )
 
@@ -150,8 +234,16 @@ def _can_manage(user, program):
 
 
 @login_required
+@require_capability(Capability.MANAGE_PROGRAM)
 def my_programs(request):
-    """Programmes gerables par l'utilisateur."""
+    """Programmes gerables par l'utilisateur.
+
+    La vue n'exigeait que d'etre connecte, alors qu'elle liste ce que l'on
+    peut administrer et mene aux formulaires de gestion, eux gardes. Un
+    compte sans MANAGE_PROGRAM y voyait une liste sur laquelle il ne pouvait
+    rien faire — et un auditeur, national, y voyait tous les programmes du
+    pays dans un ecran d'administration. L'annuaire public reste ouvert.
+    """
     if request.user.is_national:
         queryset = Program.objects.all()
     else:
@@ -170,8 +262,7 @@ def program_create(request):
             program = form.save(commit=False)
             program.created_by = request.user
             program.save()
-            if program.program_type == ProgramType.BUG_BOUNTY:
-                RewardPolicy.objects.get_or_create(program=program)
+            program.ensure_reward_policy_consistency()
             log_action(
                 AuditAction.PROGRAM_CREATED,
                 actor=request.user,
@@ -179,7 +270,7 @@ def program_create(request):
                 request=request,
                 program_type=program.program_type,
             )
-            messages.success(request, "Programme cree.")
+            messages.success(request, "Programme créé.")
             return redirect("programs:manage", slug=program.slug)
     else:
         form = ProgramForm(user=request.user)
@@ -203,16 +294,20 @@ def program_manage(request, slug):
         scope_form = ProgramScopeForm()
         tier_formset = RewardTierFormSet(request.POST, instance=policy) if policy else None
         if form.is_valid() and (tier_formset is None or tier_formset.is_valid()):
-            form.save()
+            programme = form.save()
             if tier_formset is not None:
                 tier_formset.save()
+            # Le type a pu changer dans cette requete meme : sans cet
+            # appel, la politique de recompense ne suivait qu'au
+            # rechargement suivant de la page de gestion.
+            programme.ensure_reward_policy_consistency()
             log_action(
                 AuditAction.PROGRAM_UPDATED,
                 actor=request.user,
                 obj=program,
                 request=request,
             )
-            messages.success(request, "Programme mis a jour.")
+            messages.success(request, "Programme mis à jour.")
             return redirect("programs:manage", slug=program.slug)
     else:
         form = ProgramForm(instance=program, user=request.user)
@@ -252,7 +347,7 @@ def scope_add(request, slug):
             request=request,
             scope_added=scope.identifier,
         )
-        messages.success(request, "Perimetre ajoute.")
+        messages.success(request, "Périmètre ajouté.")
     else:
         messages.error(request, form.errors.as_text())
     return redirect("programs:manage", slug=program.slug)
@@ -274,5 +369,5 @@ def scope_delete(request, slug, scope_id):
             request=request,
             scope_removed=str(scope_id),
         )
-        messages.success(request, "Perimetre retire.")
+        messages.success(request, "Périmètre retiré.")
     return redirect("programs:manage", slug=program.slug)

@@ -28,8 +28,8 @@ def home(request):
 def about(request):
     body = SiteSetting.get_value(
         "about",
-        "eVDP est la plateforme nationale de divulgation coordonnee de "
-        "vulnerabilites et de gestion des programmes Bug Bounty.",
+        "eVDP est la plateforme nationale de divulgation coordonnée de "
+        "vulnérabilités et de gestion des programmes Bug Bounty.",
     )
     return render(
         request,
@@ -57,7 +57,7 @@ def pgp_key(request):
     key = pgp.national_public_key()
     if not key:
         return HttpResponse(
-            "Aucune cle publique nationale n'est publiee.",
+            "Aucune clé publique nationale n'est publiée.",
             status=404,
             content_type="text/plain; charset=utf-8",
         )
@@ -142,7 +142,7 @@ def metrics(request):
         "# HELP evdp_cases_open Nombre de cases non clos.",
         "# TYPE evdp_cases_open gauge",
         f"evdp_cases_open {Case.objects.exclude(status=CaseStatus.CLOSED).count()}",
-        "# HELP evdp_cases_sla_breached Cases en depassement de SLA.",
+        "# HELP evdp_cases_sla_breached Cases en dépassement de SLA.",
         "# TYPE evdp_cases_sla_breached gauge",
         f"evdp_cases_sla_breached {Case.objects.sla_breached().count()}",
         "# HELP evdp_advisories_published Advisories publies.",
@@ -171,49 +171,49 @@ def error_500(request):
 DEFAULT_DISCLOSURE_POLICY = """
 ## Objectif
 
-eVDP offre un canal officiel, securise et juridiquement encadre permettant de
-signaler une vulnerabilite affectant un service public ou une infrastructure
-numerique nationale.
+eVDP offre un canal officiel, securise et juridiquement encadré permettant de
+signaler une vulnérabilité affectant un service public ou une infrastructure
+numérique nationale.
 
 ## Comportement attendu
 
-- Signaler la vulnerabilite des sa decouverte, sans delai injustifie.
-- Limiter strictement les tests au necessaire pour demontrer l'existence de la faille.
+- Signaler la vulnérabilité des sa découverte, sans délai injustifie.
+- Limiter strictement les tests au nécessaire pour démontrer l'existence de la faille.
 - Ne jamais degrader, alterer ou interrompre un service.
-- Ne jamais exfiltrer, conserver ou diffuser des donnees a caractere personnel.
-- Conserver la confidentialite du signalement jusqu'a la divulgation coordonnee.
+- Ne jamais exfiltrer, conserver ou diffuser des données à caractère personnel.
+- Conserver la confidentialité du signalement jusqu'à la divulgation coordonnée.
 
-## Regles de test
+## Règles de test
 
-Sont autorises : la reconnaissance passive, les tests non destructifs sur les
-perimetres explicitement declares dans un programme actif.
+Sont autorisés : la reconnaissance passive, les tests non destructifs sur les
+périmètres explicitement declares dans un programme actif.
 
-Sont interdits : l'ingenierie sociale, le hameconnage, le deni de service,
+Sont interdits : l'ingénierie sociale, le hameçonnage, le déni de service,
 les attaques physiques, le spam, la compromission de comptes tiers et toute
 exploitation depassant la preuve de concept.
 
 ## Safe Harbor
 
-Une recherche conduite de bonne foi, conforme a la presente politique et au
-perimetre du programme concerne, est consideree comme autorisee. eVDP
-s'engage a ne pas engager de poursuites a l'encontre d'un chercheur respectant
-ces conditions et a l'accompagner en cas de sollicitation d'un tiers.
+Une recherche conduite de bonne foi, conforme à la présente politique et au
+périmètre du programme concerne, est consideree comme autorisée. eVDP
+s'engage à ne pas engager de poursuites à l'encontre d'un chercheur respectant
+ces conditions et à l'accompagner en cas de sollicitation d'un tiers.
 
-## Confidentialite
+## Confidentialité
 
-Les rapports sont prives par defaut. Aucun rapport n'est publie
-automatiquement. Seule une version assainie (advisory) peut etre publiee apres
-coordination avec l'organisation affectee.
+Les rapports sont prives par défaut. Aucun rapport n'est publié
+automatiquement. Seule une version assainie (advisory) peut être publiée après
+coordination avec l'organisation affectée.
 
-## Delais
+## Délais
 
-- Accuse de reception : 72 heures.
+- Accusé de réception : 72 heures.
 - Premier triage : 5 jours ouvres.
-- Reponse de l'organisation : 7 jours.
-- Divulgation coordonnee par defaut : 90 jours apres validation.
+- Réponse de l'organisation : 7 jours.
+- Divulgation coordonnée par défaut : 90 jours après validation.
 
-## Credit au chercheur
+## Crédit au chercheur
 
-Le chercheur choisit d'apparaitre sous son identite reelle, sous pseudonyme ou
+Le chercheur choisit d'apparaître sous son identité réelle, sous pseudonyme ou
 de rester anonyme. Ce choix est respecte dans toute publication.
 """

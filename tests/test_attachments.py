@@ -27,7 +27,7 @@ def test_blocked_extension_is_rejected():
 
 
 def test_unlisted_extension_is_rejected():
-    with pytest.raises(ValidationError, match="non autorisee"):
+    with pytest.raises(ValidationError, match="non autorisée"):
         validate_upload(upload("archive.tar.zst", b"data"))
 
 
@@ -44,17 +44,17 @@ def test_svg_upload_is_rejected():
 
 def test_executable_content_is_rejected_despite_safe_extension():
     """Un binaire renomme en .txt est detecte par sa signature."""
-    with pytest.raises(ValidationError, match="executable"):
+    with pytest.raises(ValidationError, match="exécutable"):
         validate_upload(upload("innocent.txt", b"MZ\x90\x00\x03binaire"))
 
 
 def test_elf_content_is_rejected():
-    with pytest.raises(ValidationError, match="executable"):
+    with pytest.raises(ValidationError, match="exécutable"):
         validate_upload(upload("innocent.log", b"\x7fELF\x02\x01binaire"))
 
 
 def test_shell_script_content_is_rejected():
-    with pytest.raises(ValidationError, match="executable"):
+    with pytest.raises(ValidationError, match="exécutable"):
         validate_upload(upload("notes.txt", b"#!/bin/sh\nrm -rf /"))
 
 

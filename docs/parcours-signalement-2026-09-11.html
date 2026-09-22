@@ -1,0 +1,573 @@
+<title>Parcours d'un Signalement eVDP</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #101a22;
+    --ink-soft: #45545f;
+    --paper: #eef2f1;
+    --surface: #ffffff;
+    --surface-2: #e4e9e7;
+    --line: #c7d0cd;
+    --accent: #0e6f5c;
+    --accent-ink: #ffffff;
+    --accent-soft: #d7ebe4;
+    --ok: #1a7a4c;
+    --ok-soft: #dcf0e3;
+    --warn: #93630a;
+    --warn-soft: #f5e8cc;
+    --gap: #a5341f;
+    --gap-soft: #f5ddd6;
+    --mono-chip: #dfe6e3;
+    --shadow: 0 1px 2px rgba(16,26,34,.06), 0 8px 24px -12px rgba(16,26,34,.18);
+    /* -- tokens de recreation de l'interface eVDP (approximatifs, a but pedagogique) -- */
+    --evdp-navy: #0d2a49;
+    --evdp-navy-light: #143a63;
+    --evdp-accent-btn: #17966f;
+    --evdp-critical-bg: #fbe9e7;
+    --evdp-critical-ink: #8b1a13;
+    --evdp-high-bg: #fdefe3;
+    --evdp-high-ink: #c1400f;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e7ede9;
+      --ink-soft: #a9b6ac;
+      --paper: #0c1310;
+      --surface: #121b17;
+      --surface-2: #182320;
+      --line: #263531;
+      --accent: #3cbf9e;
+      --accent-ink: #04140f;
+      --accent-soft: #17322a;
+      --ok: #4bc788;
+      --ok-soft: #103524;
+      --warn: #e0ab4c;
+      --warn-soft: #3a2c0f;
+      --gap: #e8785f;
+      --gap-soft: #3a1c15;
+      --mono-chip: #1c2723;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e7ede9;
+    --ink-soft: #a9b6ac;
+    --paper: #0c1310;
+    --surface: #121b17;
+    --surface-2: #182320;
+    --line: #263531;
+    --accent: #3cbf9e;
+    --accent-ink: #04140f;
+    --accent-soft: #17322a;
+    --ok: #4bc788;
+    --ok-soft: #103524;
+    --warn: #e0ab4c;
+    --warn-soft: #3a2c0f;
+    --gap: #e8785f;
+    --gap-soft: #3a1c15;
+    --mono-chip: #1c2723;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Public Sans", "Segoe UI", system-ui, sans-serif;
+    font-size: 16px; line-height: 1.55;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+  h1, h2, h3 { font-family: "Public Sans", sans-serif; text-wrap: balance; color: var(--ink); margin: 0; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  header.masthead {
+    display: flex; flex-direction: column; gap: .9rem;
+    padding-bottom: 1.75rem; margin-bottom: 2rem;
+    border-bottom: 3px solid var(--ink);
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: .72rem; font-weight: 500;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--accent);
+    display: flex; align-items: center; gap: .55rem;
+  }
+  .eyebrow::before { content: ""; width: 22px; height: 2px; background: var(--accent); display: inline-block; }
+  h1.title { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -.01em; }
+  .subtitle { color: var(--ink-soft); font-size: 1.02rem; max-width: 66ch; }
+
+  .legend { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: .5rem; }
+  .legend-item { display: flex; align-items: center; gap: .5rem; font-size: .84rem; color: var(--ink-soft); }
+  .legend-dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  /* ------------------------------------------------------------- steps */
+  .step {
+    display: grid; grid-template-columns: 42px 1fr; gap: 1.1rem;
+    margin-bottom: 2.4rem; position: relative;
+  }
+  .step::before {
+    content: ""; position: absolute; left: 20px; top: 46px; bottom: -2.4rem; width: 2px;
+    background: var(--line);
+  }
+  .step:last-of-type::before { display: none; }
+  .step-num {
+    width: 42px; height: 42px; border-radius: 50%; background: var(--ink); color: var(--paper);
+    display: flex; align-items: center; justify-content: center; font-family: "IBM Plex Mono", monospace;
+    font-weight: 700; font-size: 1.05rem; flex-shrink: 0; z-index: 1;
+  }
+  .step-num.declarant { background: var(--accent); }
+  .step-num.csirt { background: var(--evdp-navy); }
+  .step-num.systeme { background: var(--ink-soft); }
+
+  .step-body { min-width: 0; }
+  .step-tag {
+    font-family: "IBM Plex Mono", monospace; font-size: .68rem; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; padding: .22rem .55rem; border-radius: 5px; display: inline-block;
+    margin-bottom: .5rem;
+  }
+  .step-tag.declarant { background: var(--accent-soft); color: var(--accent); }
+  .step-tag.csirt { background: #dde6ef; color: var(--evdp-navy); }
+  .step-tag.systeme { background: var(--surface-2); color: var(--ink-soft); }
+  .step h3 { font-size: 1.14rem; font-weight: 700; margin-bottom: .4rem; }
+  .step p.narration { color: var(--ink-soft); font-size: .93rem; max-width: 62ch; margin: 0 0 1rem; }
+  .step p.narration b { color: var(--ink); font-weight: 600; }
+
+  /* --------------------------------------------------------- mockups */
+  .mockup-frame {
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow);
+    background: var(--surface); max-width: 620px;
+  }
+  .mockup-chrome {
+    background: var(--surface-2); padding: .5rem .7rem; display: flex; align-items: center; gap: .5rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .mockup-dots { display: flex; gap: 4px; }
+  .mockup-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--line); display: inline-block; }
+  .mockup-url {
+    font-family: "IBM Plex Mono", monospace; font-size: .68rem; color: var(--ink-soft);
+    background: var(--surface); border-radius: 5px; padding: .2rem .6rem; flex: 1;
+  }
+  .mockup-body { background: #f4f6f9; }
+
+  /* recreated eVDP chrome */
+  .evdp-nav { background: var(--evdp-navy); color: #fff; padding: .55rem .9rem; display: flex; align-items: center; gap: .5rem; font-size: .72rem; }
+  .evdp-nav .brand { font-weight: 700; font-size: .82rem; }
+  .evdp-nav .links { margin-left: auto; display: flex; gap: .7rem; color: #b9c9db; font-size: .68rem; }
+  .evdp-notice { background: #fdf3d8; border-bottom: 1px solid #f0dfa8; color: #7a5b0a; font-size: .72rem; padding: .5rem .9rem; }
+  .evdp-content { padding: .9rem; }
+
+  .mock-h1 { font-size: 1rem; font-weight: 800; color: var(--evdp-navy); margin: 0 0 .3rem; }
+  .mock-muted { font-size: .74rem; color: var(--ink-soft); margin: 0 0 .7rem; }
+
+  .mock-field { margin-bottom: .55rem; }
+  .mock-label { font-size: .68rem; font-weight: 600; color: var(--evdp-navy); margin-bottom: .2rem; display: block; }
+  .mock-input {
+    border: 1px solid var(--line); border-radius: 6px; padding: .4rem .55rem; font-size: .74rem;
+    background: #fff; color: var(--ink);
+  }
+  .mock-input.filled { color: var(--ink); font-weight: 500; }
+  .mock-checkbox { display: flex; align-items: center; gap: .4rem; font-size: .74rem; margin-bottom: .3rem; }
+  .mock-checkbox .box {
+    width: 14px; height: 14px; border: 1.5px solid var(--evdp-navy); border-radius: 3px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: .6rem; color: #fff;
+  }
+  .mock-checkbox .box.checked { background: var(--evdp-accent-btn); border-color: var(--evdp-accent-btn); }
+
+  .mock-btn {
+    display: inline-block; background: var(--evdp-accent-btn); color: #fff; font-size: .74rem; font-weight: 700;
+    padding: .4rem .8rem; border-radius: 6px;
+  }
+
+  .badge-pill {
+    font-size: .64rem; font-weight: 700; padding: .18rem .5rem; border-radius: 5px; display: inline-block;
+    margin-right: .3rem; text-transform: uppercase; letter-spacing: .02em;
+  }
+  .badge-critical { background: var(--evdp-critical-bg); color: var(--evdp-critical-ink); }
+  .badge-high { background: var(--evdp-high-bg); color: var(--evdp-high-ink); }
+  .badge-status { background: #e4e9ef; color: var(--evdp-navy); }
+  .badge-done { background: var(--ok-soft); color: var(--ok); }
+
+  .mock-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin-top: .6rem; }
+  .mock-stat { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: .5rem .4rem; text-align: center; }
+  .mock-stat-value { font-size: 1.05rem; font-weight: 800; color: var(--evdp-navy); }
+  .mock-stat-value.accent { color: var(--accent); }
+  .mock-stat-value.critical { color: var(--evdp-critical-ink); }
+  .mock-stat-label { font-size: .58rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; }
+
+  .mock-bell { background: #d9770f; color: #fff; font-size: .6rem; font-weight: 700; border-radius: 999px; padding: .05rem .35rem; margin-left: .15rem; }
+
+  .mock-notice-item { background: var(--ok-soft); border-radius: 8px; padding: .6rem .7rem; display: flex; justify-content: space-between; font-size: .74rem; }
+  .mock-notice-item .txt { font-weight: 700; color: var(--ink); }
+  .mock-notice-item .time { color: var(--ink-soft); font-size: .68rem; }
+
+  .mock-dl { font-size: .72rem; }
+  .mock-dl-row { display: flex; justify-content: space-between; padding: .3rem 0; border-bottom: 1px dashed var(--line); }
+  .mock-dl-row .k { color: var(--ink-soft); }
+  .mock-dl-row .v { font-weight: 600; color: var(--ink); }
+
+  .mock-timeline { font-size: .72rem; }
+  .mock-tl-item { display: flex; gap: .5rem; padding: .3rem 0; }
+  .mock-tl-item .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: .3rem; flex-shrink: 0; }
+  .mock-tl-item .date { color: var(--ink-soft); font-family: "IBM Plex Mono", monospace; font-size: .64rem; min-width: 78px; }
+
+  .mock-tracking-box {
+    background: #fdf3d8; border: 1px solid #f0dfa8; border-radius: 8px; padding: .6rem .7rem; margin: .5rem 0;
+  }
+  .mock-tracking-code {
+    font-family: "IBM Plex Mono", monospace; font-size: .66rem; word-break: break-all; color: #7a5b0a; font-weight: 600;
+  }
+
+  .callout {
+    background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: .8rem 1rem; margin-top: .8rem; font-size: .86rem; color: var(--ink-soft);
+  }
+  .callout b { color: var(--ink); }
+
+  .section-head { margin: 3rem 0 1.5rem; }
+  .section-head h2 { font-size: 1.3rem; font-weight: 800; }
+  .section-head p { color: var(--ink-soft); font-size: .9rem; margin-top: .3rem; }
+
+  .recap {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.3rem 1.5rem;
+    box-shadow: var(--shadow);
+  }
+  .recap ol { margin: .6rem 0 0; padding-left: 1.2rem; font-size: .88rem; color: var(--ink-soft); }
+  .recap li { margin-bottom: .4rem; }
+  .recap li b { color: var(--ink); }
+
+  footer {
+    margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line);
+    font-size: .8rem; color: var(--ink-soft);
+  }
+
+  @media (max-width: 560px) {
+    .mock-stats { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Parcours pédagogique · CYBER-DEF 2 / FASO SHIELD</div>
+    <h1 class="title">D'un signalement à sa réception : le parcours complet sur eVDP</h1>
+    <p class="subtitle">
+      Reconstitution fidèle, étape par étape, d'un signalement réel effectué le 10 septembre 2026 :
+      depuis le formulaire public jusqu'à la prise en charge par le CSIRT, en passant par la
+      notification, le triage et le suivi côté déclarant. Chaque écran ci-dessous reproduit des
+      données réellement observées lors du test.
+    </p>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span> Côté déclarant (public, sans compte)</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--evdp-navy)"></span> Côté CSIRT (équipe de coordination)</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--ink-soft)"></span> Ce que fait la plateforme automatiquement</span>
+    </div>
+  </header>
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-num declarant">1</div>
+    <div class="step-body">
+      <span class="step-tag declarant">Déclarant</span>
+      <h3>Arrivée sur la page d'accueil</h3>
+      <p class="narration">Aucune inscription n'est demandée pour commencer. La page affiche
+      d'emblée le volume traité par la plateforme — <b>15 signalements traités, 4 advisories
+      publiés</b> — pour rassurer sur le sérieux du dispositif avant même de signaler quoi que ce soit.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome">
+          <div class="mockup-dots"><span></span><span></span><span></span></div>
+          <div class="mockup-url">evdp.bf</div>
+        </div>
+        <div class="mockup-body">
+          <div class="evdp-nav">
+            <span class="brand">🛡 eVDP</span>
+            <span class="links">Signaler · Programmes · Advisories · Connexion</span>
+          </div>
+          <div class="evdp-content">
+            <div class="mock-h1">Vous avez découvert une vulnérabilité ?</div>
+            <div class="mock-muted">Signalez, de manière sécurisée et anonyme si vous le souhaitez.</div>
+            <div class="mock-stats">
+              <div class="mock-stat"><div class="mock-stat-value">15</div><div class="mock-stat-label">Traités</div></div>
+              <div class="mock-stat"><div class="mock-stat-value accent">4</div><div class="mock-stat-label">Advisories</div></div>
+              <div class="mock-stat"><div class="mock-stat-value">2</div><div class="mock-stat-label">Programmes</div></div>
+              <div class="mock-stat"><div class="mock-stat-value">3</div><div class="mock-stat-label">Chercheurs</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-num declarant">2</div>
+    <div class="step-body">
+      <span class="step-tag declarant">Déclarant</span>
+      <h3>Le formulaire — sans compte, la porte reste ouverte</h3>
+      <p class="narration">Un bandeau rappelle explicitement qu'un compte n'est <b>pas obligatoire</b>
+      pour un programme de divulgation classique (VDP). C'est la différence assumée avec les
+      programmes Bug Bounty, qui eux l'exigent — on en a discuté et vérifié ensemble plus tôt.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome">
+          <div class="mockup-dots"><span></span><span></span><span></span></div>
+          <div class="mockup-url">evdp.bf/report/</div>
+        </div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">🛡 eVDP</span></div>
+          <div class="evdp-notice">Vous n'êtes pas connecté. Vous pouvez signaler sans compte, mais un compte
+          vous permet de suivre le traitement. Créer un compte · Se connecter</div>
+          <div class="evdp-content">
+            <div class="mock-h1">Signaler une vulnérabilité</div>
+            <div class="mock-field"><span class="mock-label">Titre du signalement *</span><div class="mock-input">​</div></div>
+            <div class="mock-field"><span class="mock-label">Description *</span><div class="mock-input" style="height:2.2rem">​</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-num declarant">3</div>
+    <div class="step-body">
+      <span class="step-tag declarant">Déclarant</span>
+      <h3>Remplissage — mode anonyme activé</h3>
+      <p class="narration">Le déclarant décrit une injection SQL <b>critique</b> sur le portail de
+      demande d'acte de naissance du ministère de la Justice, coche <b>« Signaler de manière
+      anonyme »</b>, et accepte la politique de divulgation. Aucune adresse email n'est demandée.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome">
+          <div class="mockup-dots"><span></span><span></span><span></span></div>
+          <div class="mockup-url">evdp.bf/report/</div>
+        </div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">🛡 eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-field"><span class="mock-label">Titre du signalement *</span>
+              <div class="mock-input filled">Injection SQL sur le portail de demande d'acte de naissance</div></div>
+            <div class="mock-field"><span class="mock-label">Organisation affectée</span>
+              <div class="mock-input filled">Ministère de la Justice — Service d'état civil</div></div>
+            <div class="mock-field"><span class="mock-label">Sévérité estimée</span>
+              <div class="mock-input filled">Critique</div></div>
+            <div class="mock-checkbox"><span class="box checked">✓</span> Signaler de manière anonyme</div>
+            <div class="mock-checkbox"><span class="box checked">✓</span> J'ai lu la politique de divulgation</div>
+            <div class="mock-btn">Envoyer le signalement</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step">
+    <div class="step-num systeme">4</div>
+    <div class="step-body">
+      <span class="step-tag systeme">Automatique</span>
+      <h3>Confirmation — un code de suivi, jamais revu par eVDP</h3>
+      <p class="narration">Le dossier est enregistré sous la référence <b class="mono">EVDP-2026-000015</b>.
+      Un jeton de suivi à usage unique est affiché <b>une seule fois, à l'écran</b> — sa valeur en
+      clair n'est jamais stockée, seul son empreinte SHA-256 l'est. C'est le seul moyen pour le
+      déclarant de retrouver son dossier plus tard, sans jamais créer de compte.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome">
+          <div class="mockup-dots"><span></span><span></span><span></span></div>
+          <div class="mockup-url">evdp.bf/report/</div>
+        </div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">🛡 eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-h1" style="text-align:center">Signalement enregistré</div>
+            <div class="mock-muted" style="text-align:center">Référence :</div>
+            <div style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:800;font-size:.95rem;color:var(--evdp-navy);margin-bottom:.5rem">EVDP-2026-000015</div>
+            <div class="mock-tracking-box">
+              <div class="mock-muted" style="margin:0 0 .25rem">Notez ce code maintenant — il ne sera plus jamais affiché :</div>
+              <div class="mock-tracking-code">C6OV_zzhUf294LlJ_Zmi4qtQvRJpkjsknWK73dJMYAg</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step">
+    <div class="step-num csirt">5</div>
+    <div class="step-body">
+      <span class="step-tag csirt">CSIRT</span>
+      <h3>Réception — l'équipe est alertée automatiquement</h3>
+      <p class="narration">Dès l'enregistrement, tous les comptes <b>Analyste CSIRT, Agent de
+      triage et Coordinateur national</b> reçoivent une notification. L'organisation affectée,
+      elle, n'est <b>pas encore</b> prévenue — c'est volontaire, personne ne prévient un vendeur
+      avant qu'un humain ait vérifié le sérieux du signalement.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome">
+          <div class="mockup-dots"><span></span><span></span><span></span></div>
+          <div class="mockup-url">evdp.bf/dashboard/csirt/</div>
+        </div>
+        <div class="mockup-body">
+          <div class="evdp-nav">
+            <span class="brand">🛡 eVDP</span>
+            <span class="links">Notifications<span class="mock-bell">1</span> · qa-analyst</span>
+          </div>
+          <div class="evdp-content">
+            <div class="mock-h1">Tableau de bord CSIRT</div>
+            <div class="mock-stats">
+              <div class="mock-stat"><div class="mock-stat-value">15</div><div class="mock-stat-label">Total</div></div>
+              <div class="mock-stat"><div class="mock-stat-value accent">6</div><div class="mock-stat-label">Nouveaux</div></div>
+              <div class="mock-stat"><div class="mock-stat-value">1</div><div class="mock-stat-label">En triage</div></div>
+              <div class="mock-stat"><div class="mock-stat-value critical">2</div><div class="mock-stat-label">Critiques</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 6 -->
+  <div class="step">
+    <div class="step-num csirt">6</div>
+    <div class="step-body">
+      <span class="step-tag csirt">CSIRT</span>
+      <h3>La notification, ouverte</h3>
+      <p class="narration">Le contenu de l'email/notification reste volontairement pauvre —
+      jamais le titre exact ni la description technique. Il faut se connecter à l'espace
+      sécurisé pour voir le détail. Un principe déjà vérifié plus tôt dans notre échange.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome">
+          <div class="mockup-dots"><span></span><span></span><span></span></div>
+          <div class="mockup-url">evdp.bf/notifications/</div>
+        </div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">🛡 eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-notice-item">
+              <span class="txt">[eVDP] Nouveau signalement reçu</span>
+              <span class="time">10/09/2026 23:57</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 7 -->
+  <div class="step">
+    <div class="step-num csirt">7</div>
+    <div class="step-body">
+      <span class="step-tag csirt">CSIRT</span>
+      <h3>Ouverture du dossier — l'anonymat est respecté jusqu'ici</h3>
+      <p class="narration">Le dossier <span class="mono">EVDP-2026-000015</span> s'ouvre avec le
+      statut <b>Soumis</b>. Le champ « Déclarant » affiche honnêtement <b>« Déclarant anonyme »</b>
+      — même l'analyste ne voit aucune identité, exactement ce que le déclarant a demandé.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome">
+          <div class="mockup-dots"><span></span><span></span><span></span></div>
+          <div class="mockup-url">evdp.bf/cases/EVDP-2026-000015/</div>
+        </div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">🛡 eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-muted" style="margin-bottom:.1rem">EVDP-2026-000015</div>
+            <div class="mock-h1">Injection SQL sur le portail de demande d'acte de naissance</div>
+            <div style="margin-bottom:.6rem">
+              <span class="badge-pill badge-critical">Critique</span>
+              <span class="badge-pill badge-status">Soumis</span>
+            </div>
+            <div class="mock-dl">
+              <div class="mock-dl-row"><span class="k">Déclarant</span><span class="v">Déclarant anonyme</span></div>
+              <div class="mock-dl-row"><span class="k">Organisation</span><span class="v">Ministère de la Justice</span></div>
+              <div class="mock-dl-row"><span class="k">Analyste</span><span class="v">Non assigné</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 8 -->
+  <div class="step">
+    <div class="step-num csirt">8</div>
+    <div class="step-body">
+      <span class="step-tag csirt">CSIRT</span>
+      <h3>Passage en triage — l'horloge SLA démarre</h3>
+      <p class="narration">L'analyste bascule le dossier vers <b>« En triage »</b> avec un
+      commentaire interne. La chronologie et l'historique des statuts s'enrichissent
+      automatiquement, avec l'échéance SLA <b>« Premier triage » respectée</b> (échéance le
+      15/09) — le moteur de délais qu'on a mis en place tourne réellement.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome">
+          <div class="mockup-dots"><span></span><span></span><span></span></div>
+          <div class="mockup-url">evdp.bf/cases/EVDP-2026-000015/</div>
+        </div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">🛡 eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-notice-item" style="margin-bottom:.6rem">
+              <span class="txt">Statut mis à jour : En triage.</span>
+            </div>
+            <div style="margin-bottom:.6rem">
+              <span class="badge-pill badge-critical">Critique</span>
+              <span class="badge-pill badge-done">En triage</span>
+            </div>
+            <div class="mock-timeline">
+              <div class="mock-tl-item"><span class="dot"></span><span class="date">10/09 23:57</span> Rapport reçu</div>
+              <div class="mock-tl-item"><span class="dot"></span><span class="date">11/09 00:05</span> En triage — qa-analyst</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 9 -->
+  <div class="step">
+    <div class="step-num declarant">9</div>
+    <div class="step-body">
+      <span class="step-tag declarant">Déclarant</span>
+      <h3>Le déclarant revient consulter — sans jamais se connecter</h3>
+      <p class="narration">Avec le code reçu à l'étape 4, le déclarant anonyme consulte l'avancement.
+      Il ne voit <b>pas</b> les 25 statuts internes ni « qa-analyst » — seulement un statut
+      simplifié en 5 paliers : <b>« En cours d'analyse »</b>. Aucune messagerie n'est proposée ici :
+      c'est un statut, pas un canal de discussion.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome">
+          <div class="mockup-dots"><span></span><span></span><span></span></div>
+          <div class="mockup-url">evdp.bf/suivi/C6OV…</div>
+        </div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">🛡 eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-h1">Dossier EVDP-2026-000015</div>
+            <div class="mock-muted">Signalé le 10/09/2026</div>
+            <span class="badge-pill" style="background:#fdf3d8;color:#7a5b0a">En cours d'analyse</span>
+            <div class="callout" style="margin-top:.7rem;font-size:.78rem">
+              Statut simplifié, en lecture seule. L'équipe de coordination vous contactera
+              directement si nécessaire.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <div class="eyebrow">Et ensuite</div>
+    <h2>Ce que ce parcours ne montre pas (mais qui existe déjà)</h2>
+  </div>
+
+  <div class="recap">
+    <p style="margin:0;color:var(--ink-soft);font-size:.9rem">La suite du cycle de vie a été
+    testée en profondeur dans un audit dédié : validation, routage vers l'organisation, remédiation
+    vérifiée par le CSIRT (jamais juste déclarée par l'organisation), puis publication d'un
+    advisory assaini — avec ou sans crédit selon le choix du déclarant.</p>
+    <ol>
+      <li><b>Validation</b> — l'analyste confirme la faille et fixe la sévérité définitive (jamais celle du déclarant).</li>
+      <li><b>Routage</b> — l'organisation affectée est contactée, seulement à ce stade.</li>
+      <li><b>Remédiation vérifiée</b> — le correctif est confirmé par le CSIRT, pas seulement déclaré par l'organisation.</li>
+      <li><b>Publication</b> — un advisory public est rédigé, sans PoC ni détail technique sensible, puis publié après le délai de divulgation coordonnée (90 jours par défaut).</li>
+    </ol>
+  </div>
+
+  <footer>
+    <span>eVDP — Plateforme nationale de divulgation coordonnée de vulnérabilités · Parcours reconstitué à partir de données réellement observées le 10/09/2026 (dossier EVDP-2026-000015)</span>
+  </footer>
+
+</div>

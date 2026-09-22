@@ -17,7 +17,34 @@
 </div>
 {% endif %}
 
-{% if not user.is_authenticated %}
+{% if refus_participation %}
+<div class="notice">
+  {{ refus_participation }}
+  {% if user.is_authenticated %}
+    <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
+  {% else %}
+    <a href="{% url 'accounts:login' %}?next={{ request.get_full_path|urlencode }}">Se connecter</a> ·
+    <a href="{% url 'accounts:register' %}">Créer un compte</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if user.is_authenticated and not user.email_verified and not refus_participation %}
+<div class="notice">
+  {% if delai_verification %}
+    Votre adresse email n'est pas encore vérifiée. Vous pouvez encore signaler
+    sur les programmes Bug Bounty <strong>jusqu'au
+    {{ delai_verification|date:"d/m/Y" }}</strong>, après quoi ils refuseront
+    votre signalement.
+  {% else %}
+    Votre adresse email n'est pas encore vérifiée. Les programmes qui exigent un
+    compte vérifié — tous les Bug Bounty — refuseront votre signalement.
+  {% endif %}
+  <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
+</div>
+{% endif %}
+
+{% if not user.is_authenticated and not refus_participation %}
 <div class="notice">
   Vous n'êtes pas connecté. Vous pouvez signaler sans compte, mais un compte
   vous permet de suivre le traitement et d'échanger avec le CSIRT.
@@ -30,6 +57,10 @@
   <div>
     <form method="post" enctype="multipart/form-data" novalidate>
       {% csrf_token %}
+      <p class="form-legend">
+        Les champs suivis d'une <abbr class="required" title="Champ obligatoire">*</abbr>
+        sont obligatoires. Les autres accelerent le triage sans etre exiges.
+      </p>
       {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
 
       <div class="card">
@@ -41,6 +72,12 @@
             {% include "partials/form_field.html" with field=form.affected_organization %}
             {% include "partials/form_field.html" with field=form.affected_organization_name %}
             {% include "partials/form_field.html" with field=form.product %}
+          </div>
+          <div class="help">
+            <abbr class="required" title="Champ obligatoire">*</abbr>
+            Renseignez au moins l'un de ces trois champs : le programme, l'organisation
+            affectee, ou son nom si elle n'est pas dans la liste. Sans cela, le
+            signalement ne peut pas etre oriente.
           </div>
           {% include "partials/form_field.html" with field=form.target_url %}
         </div>
@@ -104,7 +141,7 @@
           {% include "partials/form_field.html" with field=form.pgp_payload %}
           <div class="checkbox-field">
             {{ form.accept_policy }}
-            <label for="{{ form.accept_policy.id_for_label }}">{{ form.accept_policy.label }}
+            <label for="{{ form.accept_policy.id_for_label }}">{{ form.accept_policy.label }}<abbr class="required" title="Champ obligatoire">*</abbr>
               (<a href="{% url 'core:disclosure_policy' %}" target="_blank" rel="noopener">lire</a>)</label>
           </div>
           {{ form.accept_policy.errors }}

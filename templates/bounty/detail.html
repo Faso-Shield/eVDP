@@ -2,6 +2,14 @@
 {% load evdp_tags %}
 {% block title %}Récompense {{ bounty.case.case_id }}{% endblock %}
 
+{% comment %}
+Deux lectures d'une même récompense. Celui qui l'instruit voit la proposition,
+les avis et la décision ; celui qui la reçoit voit ce qui le concerne — le
+dossier, le montant, l'état d'avancement et les versements — sans les noms des
+décideurs ni la moindre commande. `peut_instruire` porte cette frontière, et la
+vue ne charge même pas les avis pour un bénéficiaire.
+{% endcomment %}
+
 {% block dashboard_content %}
 <div class="flex-between mb-2">
   <div>
@@ -14,7 +22,7 @@
   </div>
 </div>
 
-{% if not within_policy %}
+{% if peut_instruire and not within_policy %}
 <div class="notice">
   <strong>Montant hors matrice.</strong> Le montant retenu ne correspond pas au
   palier défini pour cette sévérité dans le programme. La décision reste possible
@@ -22,42 +30,75 @@
 </div>
 {% endif %}
 
-{% if budget and budget.exceeded %}
-<div class="notice">
-  <strong>Budget du programme dépassé.</strong> Ce montant porte la consommation à
-  {{ budget.projected|floatformat:0 }} {{ budget.currency }} pour un budget de
-  {{ budget.total|floatformat:0 }} {{ budget.currency }}. La décision reste possible
-  mais elle est explicitement journalisée.
-</div>
-{% elif budget %}
-<p class="small muted">
-  Budget du programme : {{ budget.consumed|floatformat:0 }} /
-  {{ budget.total|floatformat:0 }} {{ budget.currency }} consommés.
-</p>
+{% if peut_instruire %}
+  {% if budget and budget.exceeded %}
+  <div class="notice">
+    <strong>Budget du programme dépassé.</strong> Ce montant porte la consommation à
+    {{ budget.projected|floatformat:0 }} {{ budget.currency }} pour un budget de
+    {{ budget.total|floatformat:0 }} {{ budget.currency }}. La décision reste possible
+    mais elle est explicitement journalisée.
+  </div>
+  {% elif budget %}
+  <p class="small muted">
+    Budget du programme : {{ budget.consumed|floatformat:0 }} /
+    {{ budget.total|floatformat:0 }} {{ budget.currency }} consommés.
+  </p>
+  {% endif %}
 {% endif %}
 
-<div class="grid" style="grid-template-columns:2fr 1fr">
+{% if not peut_instruire %}
+<div class="notice notice-secure">
+  {% if bounty.status == "PENDING" or bounty.status == "UNDER_REVIEW" %}
+    <strong>Récompense à l'étude.</strong> Une récompense a été proposée pour ce
+    dossier. Elle doit encore être approuvée par la coordination nationale : le
+    montant peut évoluer jusque-là. Vous serez notifié de la décision.
+  {% elif bounty.status == "APPROVED" %}
+    <strong>Récompense approuvée.</strong> Le montant est arrêté. Le versement est
+    réalisé hors plateforme par le service financier, puis enregistré ici.
+  {% elif bounty.status == "PAID" %}
+    <strong>Récompense versée.</strong> Le versement a été enregistré. En cas
+    d'écart avec ce que vous avez reçu, répondez dans la messagerie du dossier.
+  {% elif bounty.status == "REJECTED" %}
+    <strong>Récompense non retenue.</strong> Ce dossier n'ouvre pas droit à
+    récompense. La messagerie du dossier reste ouverte pour vos questions.
+  {% else %}
+    <strong>Récompense annulée.</strong> Ce dossier n'ouvre plus droit à
+    récompense. La messagerie du dossier reste ouverte pour vos questions.
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="grid" style="grid-template-columns:{% if peut_instruire %}2fr 1fr{% else %}1fr{% endif %}">
   <div>
     <div class="card">
-      <div class="card-header"><h2>Proposition</h2></div>
+      <div class="card-header"><h2>{% if peut_instruire %}Proposition{% else %}Votre récompense{% endif %}</h2></div>
       <div class="card-body">
         <dl class="dl-inline">
           <dt>Dossier</dt><dd><a href="{{ bounty.case.get_absolute_url }}">{{ bounty.case.title }}</a></dd>
           <dt>Programme</dt><dd>{{ bounty.program.name|default:"—" }}</dd>
-          <dt>Chercheur</dt><dd>{{ bounty.researcher.display_name|default:"—" }}</dd>
+          {% if peut_instruire %}
+            <dt>Chercheur</dt><dd>{{ bounty.researcher.display_name|default:"—" }}</dd>
+          {% endif %}
+          <dt>Sévérité retenue</dt><dd>{{ bounty.get_severity_display }}</dd>
           <dt>Montant proposé</dt><dd class="mono">{{ bounty.proposed_amount|floatformat:0 }} {{ bounty.currency }}</dd>
           <dt>Montant approuvé</dt><dd class="mono">{% if bounty.approved_amount %}{{ bounty.approved_amount|floatformat:0 }} {{ bounty.currency }}{% else %}—{% endif %}</dd>
-          <dt>Proposé par</dt><dd>{{ bounty.proposed_by.display_name|default:"—" }}</dd>
-          <dt>Décidé par</dt><dd>{{ bounty.decided_by.display_name|default:"—" }}</dd>
+          {% if peut_instruire %}
+            <dt>Proposé par</dt><dd>{{ bounty.proposed_by.display_name|default:"—" }}</dd>
+            <dt>Décidé par</dt><dd>{{ bounty.decided_by.display_name|default:"—" }}</dd>
+            <dt>Décidé le</dt><dd>{{ bounty.decided_at|date:"d/m/Y H:i"|default:"—" }}</dd>
+          {% endif %}
         </dl>
-        {% if bounty.justification %}<div class="prose">{{ bounty.justification|markdown }}</div>{% endif %}
-        {% if bounty.decision_note %}
-          <h3>Note de décision</h3>
-          <div class="prose">{{ bounty.decision_note|markdown }}</div>
+        {% if peut_instruire %}
+          {% if bounty.justification %}<div class="prose">{{ bounty.justification|markdown }}</div>{% endif %}
+          {% if bounty.decision_note %}
+            <h3>Note de décision</h3>
+            <div class="prose">{{ bounty.decision_note|markdown }}</div>
+          {% endif %}
         {% endif %}
       </div>
     </div>
 
+    {% if peut_instruire %}
     <div class="card">
       <div class="card-header"><h2>Revues</h2></div>
       <div class="card-body">
@@ -79,13 +120,17 @@
         </form>
       </div>
     </div>
+    {% endif %}
 
     <div class="card">
       <div class="card-header"><h2>Versements</h2></div>
       <div class="card-body">
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>Montant</th><th>Moyen</th><th>Référence</th><th>Statut</th><th>Enregistré par</th><th>Date</th></tr></thead>
+            <thead><tr>
+              <th>Montant</th><th>Moyen</th><th>Référence</th><th>Statut</th>
+              {% if peut_instruire %}<th>Enregistré par</th>{% endif %}<th>Date</th>
+            </tr></thead>
             <tbody>
             {% for payment in payments %}
               <tr>
@@ -93,19 +138,24 @@
                 <td class="small">{{ payment.get_method_display }}</td>
                 <td class="small">{{ payment.reference|default:"—" }}</td>
                 <td><span class="status">{{ payment.get_status_display }}</span></td>
-                <td class="small">{{ payment.recorded_by.display_name|default:"—" }}</td>
+                {% if peut_instruire %}<td class="small">{{ payment.recorded_by.display_name|default:"—" }}</td>{% endif %}
                 <td class="small">{{ payment.created_at|date:"d/m/Y" }}</td>
               </tr>
             {% empty %}
-              <tr><td colspan="6" class="muted">Aucun versement enregistré.</td></tr>
+              <tr><td colspan="{% if peut_instruire %}6{% else %}5{% endif %}" class="muted">Aucun versement enregistré.</td></tr>
             {% endfor %}
             </tbody>
           </table>
         </div>
+        {% if not peut_instruire %}
+        <p class="small muted mt-1">Aucun paiement n'est exécuté par eVDP : cette table
+        est la trace du versement réalisé par le service financier.</p>
+        {% endif %}
       </div>
     </div>
   </div>
 
+  {% if peut_instruire %}
   <aside>
     {% if can_approve and not bounty.is_final %}
     <div class="card">
@@ -118,7 +168,7 @@
         </form>
         <form method="post" action="{% url 'bounty:reject' bounty.id %}">
           {% csrf_token %}
-          <input type="hidden" name="note" value="Rejet apres revue">
+          <input type="hidden" name="note" value="Rejet après revue">
           <button class="btn btn-danger btn-block" type="submit">Rejeter</button>
         </form>
       </div>
@@ -140,5 +190,6 @@
     </div>
     {% endif %}
   </aside>
+  {% endif %}
 </div>
 {% endblock %}

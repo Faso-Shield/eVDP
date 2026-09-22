@@ -76,6 +76,36 @@
 </div>
 {% endif %}
 
+{% if user.mfa_required %}
+<div class="card">
+  <div class="card-header"><h2>Double authentification</h2></div>
+  <div class="card-body">
+    <p class="small muted">
+      Votre rôle ({{ user.get_role_display }}) donne accès à des dossiers dont
+      vous n'êtes pas l'auteur. Un code TOTP est exigé à chaque connexion ;
+      cette exigence ne se désactive pas depuis le profil.
+    </p>
+    <dl class="dl-inline">
+      <dt>Authentificateur</dt>
+      <dd>
+        {% if user.mfa_enabled %}
+          Enregistré le {{ user.mfa_confirmed_at|date:"d/m/Y à H:i" }}
+        {% else %}
+          Aucun — à enregistrer à la prochaine connexion
+        {% endif %}
+      </dd>
+    </dl>
+    <a class="btn btn-outline" href="{% url 'accounts:mfa_setup' %}">
+      {% if user.mfa_enabled %}Changer d'authentificateur{% else %}Enregistrer un authentificateur{% endif %}
+    </a>
+    <p class="small muted mt-2">
+      Appareil perdu : un administrateur réinitialise votre second facteur,
+      vous en enregistrerez un nouveau à la connexion suivante.
+    </p>
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <div class="card-header"><h2>Clés d'API</h2></div>
   <div class="card-body">
