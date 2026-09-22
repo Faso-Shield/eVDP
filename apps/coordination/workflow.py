@@ -88,6 +88,27 @@ DISMISSED_STATES = frozenset(
     }
 )
 
+#: Etats a partir desquels l'organisation affectee peut voir le dossier.
+#: Jamais avant que le CSIRT ne l'ait explicitement engagee (transition vers
+#: VENDOR_CONTACTED) : pendant le triage, le declarant doit rester protege
+#: d'une reaction prematuree de l'organisation sur un signalement encore non
+#: valide -- c'est la raison d'etre meme d'un CSIRT coordinateur plutot qu'un
+#: signalement direct (cf. cahier des charges : absence de canal officiel =
+#: risque de poursuites pour le declarant).
+ORG_VISIBLE_STATES = frozenset(
+    {
+        CaseStatus.VENDOR_CONTACTED,
+        CaseStatus.VENDOR_ACKNOWLEDGED,
+        CaseStatus.REMEDIATION,
+        CaseStatus.FIX_AVAILABLE,
+        CaseStatus.VERIFICATION,
+        CaseStatus.FIX_VERIFIED,
+        CaseStatus.DISCLOSURE_SCHEDULED,
+        CaseStatus.PUBLISHED,
+        CaseStatus.CLOSED,
+    }
+)
+
 #: Issues de triage accessibles depuis presque tous les etats d'analyse.
 _TRIAGE_OUTCOMES = [
     CaseStatus.DUPLICATE,
@@ -277,3 +298,49 @@ def kanban_column_for(status):
         if status in states:
             return key
     return "CLOSED"
+
+
+#: Statut public simplifie affiche a un declarant sans compte (page de suivi
+#: par lien ou code). Volontairement plus grossier que les 25 statuts
+#: internes : ne revele ni la file d'attente interne ni la raison exacte
+#: d'une cloture, seulement une progression comprehensible.
+PUBLIC_STATUS_BUCKETS = [
+    ("RECEIVED", "Reçu", [CaseStatus.DRAFT, CaseStatus.SUBMITTED, CaseStatus.RECEIVED]),
+    (
+        "ANALYSIS",
+        "En cours d'analyse",
+        [
+            CaseStatus.TRIAGE,
+            CaseStatus.NEEDS_INFORMATION,
+            CaseStatus.ACKNOWLEDGED,
+            CaseStatus.VALIDATED,
+            CaseStatus.SEVERITY_ASSIGNED,
+            CaseStatus.BOUNTY_REVIEW,
+            CaseStatus.REWARD_APPROVED,
+        ],
+    ),
+    (
+        "IN_PROGRESS",
+        "Correction en cours",
+        [
+            CaseStatus.IN_PROGRESS,
+            CaseStatus.VENDOR_CONTACTED,
+            CaseStatus.VENDOR_ACKNOWLEDGED,
+            CaseStatus.REMEDIATION,
+            CaseStatus.FIX_AVAILABLE,
+            CaseStatus.VERIFICATION,
+            CaseStatus.FIX_VERIFIED,
+            CaseStatus.DISCLOSURE_SCHEDULED,
+        ],
+    ),
+    ("RESOLVED", "Résolu", [CaseStatus.PUBLISHED, CaseStatus.CLOSED]),
+    ("DISMISSED", "Clôturé sans suite", list(DISMISSED_STATES)),
+]
+
+
+def public_status_bucket(status):
+    """(cle, libelle) simplifies pour la page de suivi publique."""
+    for key, label, states in PUBLIC_STATUS_BUCKETS:
+        if status in states:
+            return key, label
+    return "ANALYSIS", "En cours d'analyse"

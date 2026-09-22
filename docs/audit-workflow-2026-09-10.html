@@ -1,0 +1,566 @@
+<title>Audit du Cycle de Vie eVDP</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #101a22;
+    --ink-soft: #45545f;
+    --paper: #eef2f1;
+    --surface: #ffffff;
+    --surface-2: #e4e9e7;
+    --line: #c7d0cd;
+    --accent: #0e6f5c;
+    --accent-ink: #ffffff;
+    --accent-soft: #d7ebe4;
+    --ok: #1a7a4c;
+    --ok-soft: #dcf0e3;
+    --warn: #93630a;
+    --warn-soft: #f5e8cc;
+    --gap: #a5341f;
+    --gap-soft: #f5ddd6;
+    --mono-chip: #dfe6e3;
+    --shadow: 0 1px 2px rgba(16,26,34,.06), 0 8px 24px -12px rgba(16,26,34,.18);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e7ede9;
+      --ink-soft: #a9b6ac;
+      --paper: #0c1310;
+      --surface: #121b17;
+      --surface-2: #182320;
+      --line: #263531;
+      --accent: #3cbf9e;
+      --accent-ink: #04140f;
+      --accent-soft: #17322a;
+      --ok: #4bc788;
+      --ok-soft: #103524;
+      --warn: #e0ab4c;
+      --warn-soft: #3a2c0f;
+      --gap: #e8785f;
+      --gap-soft: #3a1c15;
+      --mono-chip: #1c2723;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e7ede9;
+    --ink-soft: #a9b6ac;
+    --paper: #0c1310;
+    --surface: #121b17;
+    --surface-2: #182320;
+    --line: #263531;
+    --accent: #3cbf9e;
+    --accent-ink: #04140f;
+    --accent-soft: #17322a;
+    --ok: #4bc788;
+    --ok-soft: #103524;
+    --warn: #e0ab4c;
+    --warn-soft: #3a2c0f;
+    --gap: #e8785f;
+    --gap-soft: #3a1c15;
+    --mono-chip: #1c2723;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Public Sans", "Segoe UI", system-ui, sans-serif;
+    font-size: 16px; line-height: 1.55;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+
+  h1, h2, h3 { font-family: "Public Sans", sans-serif; text-wrap: balance; color: var(--ink); margin: 0; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  a { color: var(--accent); }
+
+  /* ---------------------------------------------------------- en-tete */
+  header.masthead {
+    display: flex; flex-direction: column; gap: .9rem;
+    padding-bottom: 1.75rem; margin-bottom: 2.25rem;
+    border-bottom: 3px solid var(--ink);
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: .72rem; font-weight: 500;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--accent);
+    display: flex; align-items: center; gap: .55rem;
+  }
+  .eyebrow::before { content: ""; width: 22px; height: 2px; background: var(--accent); display: inline-block; }
+  h1.title { font-size: clamp(1.7rem, 3.2vw, 2.35rem); font-weight: 800; letter-spacing: -.01em; }
+  .subtitle { color: var(--ink-soft); font-size: 1.02rem; max-width: 62ch; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; font-size: .84rem; color: var(--ink-soft); margin-top: .3rem; }
+  .meta-row b { color: var(--ink); font-weight: 600; }
+
+  /* -------------------------------------------------------- bandeau preuve */
+  .evidence {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px;
+    background: var(--line); border: 1px solid var(--line); border-radius: 10px;
+    overflow: hidden; margin-bottom: 2.5rem; box-shadow: var(--shadow);
+  }
+  .evidence-cell { background: var(--surface); padding: 1.05rem 1.25rem; }
+  .evidence-cell h3 {
+    font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-soft); margin-bottom: .55rem;
+  }
+  .evidence-cell .case-id { font-family: "IBM Plex Mono", monospace; font-size: .92rem; font-weight: 600; color: var(--accent); }
+  .evidence-cell p { margin: .4rem 0 0; font-size: .87rem; color: var(--ink-soft); }
+  .evidence-cell .path-chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .6rem; }
+  .chip {
+    font-family: "IBM Plex Mono", monospace; font-size: .68rem; padding: .18rem .5rem;
+    background: var(--mono-chip); border-radius: 5px; color: var(--ink-soft); white-space: nowrap;
+  }
+
+  /* ------------------------------------------------------------- section titles */
+  .section-head { margin: 3rem 0 1.3rem; }
+  .section-head .eyebrow { margin-bottom: .4rem; }
+  .section-head h2 { font-size: 1.4rem; font-weight: 800; }
+  .section-head p { color: var(--ink-soft); font-size: .93rem; max-width: 68ch; margin-top: .35rem; }
+
+  /* ------------------------------------------------------------- pipeline svg */
+  .pipeline-frame {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.5rem 1.25rem .75rem; box-shadow: var(--shadow); overflow-x: auto;
+  }
+  .pipeline-frame svg { display: block; min-width: 760px; width: 100%; height: auto; }
+  .pipeline-legend { display: flex; gap: 1.4rem; flex-wrap: wrap; padding: .85rem .25rem 0; font-size: .78rem; color: var(--ink-soft); }
+  .pipeline-legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  /* ------------------------------------------------------------- stage cards */
+  .stage {
+    background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+    border-radius: 10px; padding: 1.4rem 1.5rem 1.5rem; margin-bottom: 1rem; box-shadow: var(--shadow);
+  }
+  .stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .2rem; }
+  .stage-num { font-family: "IBM Plex Mono", monospace; font-size: .74rem; color: var(--accent); font-weight: 600; }
+  .stage-head h3 { font-size: 1.12rem; font-weight: 700; margin-top: .15rem; }
+  .verdict-pill {
+    font-family: "IBM Plex Mono", monospace; font-size: .68rem; font-weight: 600; letter-spacing: .03em;
+    padding: .3rem .65rem; border-radius: 999px; white-space: nowrap; text-transform: uppercase;
+  }
+  .verdict-pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .verdict-pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .verdict-pill.strong { background: var(--accent-soft); color: var(--accent); }
+
+  .stage-tested {
+    font-size: .8rem; color: var(--ink-soft); margin: .5rem 0 .9rem;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+  }
+  .stage-tested .chip { color: var(--accent); background: var(--accent-soft); }
+
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.5rem; margin-top: .5rem; }
+  .compare-col h4 {
+    font-size: .68rem; letter-spacing: .09em; text-transform: uppercase; font-weight: 700;
+    color: var(--ink-soft); margin: 0 0 .4rem;
+  }
+  .compare-col p { margin: 0; font-size: .89rem; color: var(--ink); }
+  .compare-col p b { font-weight: 600; }
+  .compare-divider { grid-column: 1 / -1; border: none; border-top: 1px dashed var(--line); margin: 1rem 0; }
+
+  @media (max-width: 620px) {
+    .compare-grid { grid-template-columns: 1fr; }
+    .evidence { grid-template-columns: 1fr; }
+  }
+
+  /* ------------------------------------------------------------- constats */
+  .findings { display: flex; flex-direction: column; gap: .7rem; }
+  .finding {
+    display: grid; grid-template-columns: 90px 1fr; gap: 1rem; align-items: start;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.2rem;
+  }
+  .finding .tag {
+    font-family: "IBM Plex Mono", monospace; font-size: .66rem; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; padding: .3rem .5rem; border-radius: 6px; text-align: center; height: fit-content;
+  }
+  .finding .tag.strength { background: var(--ok-soft); color: var(--ok); }
+  .finding .tag.watch { background: var(--warn-soft); color: var(--warn); }
+  .finding h4 { font-size: .95rem; font-weight: 700; margin: 0 0 .3rem; }
+  .finding p { margin: 0; font-size: .87rem; color: var(--ink-soft); }
+
+  /* ------------------------------------------------------------- pied de page */
+  footer {
+    margin-top: 3.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line);
+    font-size: .8rem; color: var(--ink-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
+  }
+
+  ::selection { background: var(--accent-soft); color: var(--ink); }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Note d'audit technique · CYBER-DEF 2 / FASO SHIELD</div>
+    <h1 class="title">Cycle de vie d'un signalement sur eVDP, testé en conditions réelles</h1>
+    <p class="subtitle">
+      De la soumission (anonyme ou avec compte) jusqu'à la publication de l'advisory, en passant par le
+      routage vers l'organisation concernée, la remédiation et — pour les programmes Bug Bounty — la
+      récompense. Chaque étape ci-dessous a été rejouée par script contre la base de données réelle du
+      projet, pas seulement relue dans le code, puis comparée aux pratiques de HackerOne, Bugcrowd,
+      Intigriti, YesWeHack, VINCE (CERT/CC) et GlobaLeaks.
+    </p>
+    <div class="meta-row">
+      <span><b>Portée :</b> soumission → réception → triage → routage → correction → divulgation</span>
+      <span><b>Méthode :</b> exécution live, 2 parcours complets</span>
+      <span><b>Résultat :</b> 0 exception non gérée</span>
+    </div>
+  </header>
+
+  <section class="evidence">
+    <div class="evidence-cell">
+      <h3>Parcours A — VDP, sans compte</h3>
+      <div class="case-id">EVDP-2026-000013</div>
+      <p>Signalement anonyme (aucun email, aucun compte) → triage → sévérité fixée par l'analyste →
+      organisation contactée → correctif vérifié par le CSIRT → advisory publié, crédité
+      « Chercheur anonyme ».</p>
+      <div class="path-chips">
+        <span class="chip">is_anonymous=True</span>
+        <span class="chip">reporter=None</span>
+        <span class="chip">jeton de suivi résolu ✓</span>
+      </div>
+    </div>
+    <div class="evidence-cell">
+      <h3>Parcours B — Bug Bounty, avec compte</h3>
+      <div class="case-id">EVDP-2026-000014</div>
+      <p>Chercheur identifié → sévérité HIGH → récompense auto-suggérée par barème (750 000&nbsp;XOF) →
+      auto-approbation refusée → approuvée par un second rôle → paiement tracé → advisory crédité
+      « AuditHunter ».</p>
+      <div class="path-chips">
+        <span class="chip">PermissionDenied sur auto-approbation ✓</span>
+        <span class="chip">total_rewards=1 500 000</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="section-head">
+    <div class="eyebrow">Vue d'ensemble</div>
+    <h2>La chaîne complète, telle qu'elle a réellement été franchie</h2>
+    <p>25 statuts internes existent dans le moteur ; les deux parcours testés en ont traversé la quasi-totalité
+    de la branche qui les concerne, sans intervention manuelle en base — uniquement via les fonctions de service
+    que l'interface elle-même appelle.</p>
+  </div>
+
+  <div class="pipeline-frame">
+    <svg viewBox="0 0 1180 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Étapes du cycle de vie testées">
+      <defs>
+        <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L8,4 L0,8 Z" fill="var(--line)"></path>
+        </marker>
+      </defs>
+      <!-- spine -->
+      <line x1="70" y1="58" x2="1110" y2="58" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"></line>
+
+      <!-- nodes: x positions spread across 8 stages -->
+      <!-- 1 -->
+      <g transform="translate(70,58)">
+        <circle r="9" fill="var(--ok)"></circle>
+        <path d="M-4,0 l3,4 l6,-8" stroke="var(--surface)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        <text x="0" y="-22" text-anchor="middle" class="mono" font-size="11" fill="var(--accent)" font-weight="600">01</text>
+        <text x="0" y="30" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">Soumission</text>
+        <text x="0" y="46" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">anonyme / compte</text>
+      </g>
+      <!-- 2 -->
+      <g transform="translate(220,58)">
+        <circle r="9" fill="var(--ok)"></circle>
+        <path d="M-4,0 l3,4 l6,-8" stroke="var(--surface)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        <text x="0" y="-22" text-anchor="middle" class="mono" font-size="11" fill="var(--accent)" font-weight="600">02</text>
+        <text x="0" y="30" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">Réception</text>
+        <text x="0" y="46" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">RECEIVED</text>
+      </g>
+      <!-- 3 -->
+      <g transform="translate(370,58)">
+        <circle r="9" fill="var(--ok)"></circle>
+        <path d="M-4,0 l3,4 l6,-8" stroke="var(--surface)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        <text x="0" y="-22" text-anchor="middle" class="mono" font-size="11" fill="var(--accent)" font-weight="600">03</text>
+        <text x="0" y="30" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">Triage</text>
+        <text x="0" y="46" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">sévérité, CWE</text>
+      </g>
+      <!-- 4 -->
+      <g transform="translate(520,58)">
+        <circle r="9" fill="var(--ok)"></circle>
+        <path d="M-4,0 l3,4 l6,-8" stroke="var(--surface)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        <text x="0" y="-22" text-anchor="middle" class="mono" font-size="11" fill="var(--accent)" font-weight="600">04</text>
+        <text x="0" y="30" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">Routage</text>
+        <text x="0" y="46" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">organisation</text>
+      </g>
+      <!-- 5 -->
+      <g transform="translate(670,58)">
+        <circle r="9" fill="var(--ok)"></circle>
+        <path d="M-4,0 l3,4 l6,-8" stroke="var(--surface)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        <text x="0" y="-22" text-anchor="middle" class="mono" font-size="11" fill="var(--accent)" font-weight="600">05</text>
+        <text x="0" y="30" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">Récompense</text>
+        <text x="0" y="46" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">Bug Bounty seul.</text>
+      </g>
+      <!-- 6 -->
+      <g transform="translate(820,58)">
+        <circle r="9" fill="var(--ok)"></circle>
+        <path d="M-4,0 l3,4 l6,-8" stroke="var(--surface)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        <text x="0" y="-22" text-anchor="middle" class="mono" font-size="11" fill="var(--accent)" font-weight="600">06</text>
+        <text x="0" y="30" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">Remédiation</text>
+        <text x="0" y="46" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">correctif + vérif.</text>
+      </g>
+      <!-- 7 -->
+      <g transform="translate(970,58)">
+        <circle r="9" fill="var(--ok)"></circle>
+        <path d="M-4,0 l3,4 l6,-8" stroke="var(--surface)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        <text x="0" y="-22" text-anchor="middle" class="mono" font-size="11" fill="var(--accent)" font-weight="600">07</text>
+        <text x="0" y="30" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">Divulgation</text>
+        <text x="0" y="46" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">advisory publié</text>
+      </g>
+      <!-- 8 offset below, branch -->
+      <g transform="translate(220,150)">
+        <circle r="9" fill="var(--ok)"></circle>
+        <path d="M-4,0 l3,4 l6,-8" stroke="var(--surface)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        <text x="0" y="-16" text-anchor="middle" class="mono" font-size="11" fill="var(--accent)" font-weight="600">08</text>
+        <text x="0" y="30" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">Suivi anonyme</text>
+        <text x="0" y="46" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">jeton haché, sans compte</text>
+        <line x1="0" y1="-9" x2="0" y2="-65" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="3 3"></line>
+      </g>
+    </svg>
+    <div class="pipeline-legend">
+      <span><i class="dot" style="background:var(--ok)"></i> Étape franchie en direct, sans exception</span>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <div class="eyebrow">Comparaison secteur, étape par étape</div>
+    <h2>Ce que font les plateformes existantes, et où se situe eVDP</h2>
+  </div>
+
+  <!-- STAGE 1 -->
+  <div class="stage">
+    <div class="stage-head">
+      <div>
+        <div class="stage-num">ÉTAPE 01</div>
+        <h3>Soumission — avec ou sans compte</h3>
+      </div>
+      <span class="verdict-pill ok">Aligné</span>
+    </div>
+    <div class="stage-tested">Testé : <span class="chip">VDP + is_anonymous=True → accepté</span><span class="chip">Bug Bounty + sans compte → refusé sur « program »</span></div>
+    <div class="compare-grid">
+      <div class="compare-col">
+        <h4>Secteur</h4>
+        <p>HackerOne, Bugcrowd, Intigriti, YesWeHack exigent <b>toujours un compte</b> pour un programme à
+        récompense (paiement, anti-fraude, historique). VINCE (CERT/CC) et GlobaLeaks acceptent le
+        signalement <b>sans compte</b>, car leur mission est la coordination d'intérêt public, pas la
+        récompense.</p>
+      </div>
+      <div class="compare-col">
+        <h4>eVDP</h4>
+        <p>Applique exactement cette distinction : VDP anonyme accepté, Bug Bounty sans compte
+        rejeté avec message explicite. Vérifié en direct sur les deux chemins.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 2 -->
+  <div class="stage">
+    <div class="stage-head">
+      <div>
+        <div class="stage-num">ÉTAPE 02 — 03</div>
+        <h3>Réception, accusé et triage</h3>
+      </div>
+      <span class="verdict-pill ok">Aligné</span>
+    </div>
+    <div class="stage-tested">Testé : <span class="chip">SUBMITTED → RECEIVED → TRIAGE</span><span class="chip">sévérité fixée par l'analyste, pas par le déclarant</span></div>
+    <div class="compare-grid">
+      <div class="compare-col">
+        <h4>Secteur</h4>
+        <p>HackerOne/Bugcrowd publient un SLA de première réponse par programme (souvent 24-72h) et un
+        « average response time » public. La sévérité est <b>toujours</b> retriagée par l'équipe, jamais
+        prise telle que déclarée par le chercheur.</p>
+      </div>
+      <div class="compare-col">
+        <h4>eVDP</h4>
+        <p>Moteur SLA configurable par programme (<span class="mono">SLAPolicy</span>), déclenché
+        automatiquement à la validation. Le champ <span class="mono">reported_severity</span> du
+        formulaire reste une indication non contraignante — <span class="mono">set_severity()</span>
+        exige la capacité <span class="mono">SET_SEVERITY</span>, absente du rôle chercheur.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 3 -->
+  <div class="stage">
+    <div class="stage-head">
+      <div>
+        <div class="stage-num">ÉTAPE 04</div>
+        <h3>Routage vers l'organisation concernée</h3>
+      </div>
+      <span class="verdict-pill strong">Différenciant</span>
+    </div>
+    <div class="stage-tested">Testé : <span class="chip">VENDOR_CONTACTED → org=ANSSI-BF</span><span class="chip">message interne, confidentialité CSIRT</span></div>
+    <div class="compare-grid">
+      <div class="compare-col">
+        <h4>Secteur</h4>
+        <p>HackerOne/Bugcrowd n'ont <b>pas</b> de notion de routage inter-organisation — un programme
+        appartient à une seule entreprise. VINCE, à l'inverse, est spécifiquement conçu pour la
+        coordination multi-fournisseurs : c'est son cas d'usage central.</p>
+      </div>
+      <div class="compare-col">
+        <h4>eVDP</h4>
+        <p>Se rapproche du modèle VINCE : le case porte une organisation affectée résolue depuis le
+        programme, avec un fil de messages à confidentialité graduée (participants / interne CSIRT /
+        restreint national) — cohérent avec la mission de coordination nationale, pas de guichet bounty
+        mono-entreprise.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 4 -->
+  <div class="stage">
+    <div class="stage-head">
+      <div>
+        <div class="stage-num">ÉTAPE 05</div>
+        <h3>Récompense — Bug Bounty uniquement</h3>
+      </div>
+      <span class="verdict-pill strong">Différenciant</span>
+    </div>
+    <div class="stage-tested">Testé : <span class="chip">750 000 XOF auto-suggéré (barème HIGH)</span><span class="chip">auto-approbation → PermissionDenied</span><span class="chip">paiement enregistré comme trace</span></div>
+    <div class="compare-grid">
+      <div class="compare-col">
+        <h4>Secteur</h4>
+        <p>Barème par sévérité quasi systématique (Bugcrowd VRT, « reward ranges » HackerOne). La
+        séparation stricte proposeur/valideur est un standard affiché, mais peu de petites structures la
+        <b>font vraiment respecter par le système</b> plutôt que par la seule procédure écrite.</p>
+      </div>
+      <div class="compare-col">
+        <h4>eVDP</h4>
+        <p>Montant auto-suggéré depuis <span class="mono">RewardPolicy</span> selon la sévérité retenue.
+        La séparation des devoirs est imposée par le code, pas seulement documentée : testé en direct,
+        le compte ayant proposé la récompense reçoit une exception en tentant de l'approuver lui-même.
+        Paiement journalisé comme trace comptable, sans déclenchement financier réel (MVP assumé).</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 5 -->
+  <div class="stage">
+    <div class="stage-head">
+      <div>
+        <div class="stage-num">ÉTAPE 06</div>
+        <h3>Remédiation et vérification du correctif</h3>
+      </div>
+      <span class="verdict-pill ok">Aligné</span>
+    </div>
+    <div class="stage-tested">Testé : <span class="chip">REMEDIATION → FIX_AVAILABLE → VERIFICATION → FIX_VERIFIED</span></div>
+    <div class="compare-grid">
+      <div class="compare-col">
+        <h4>Secteur</h4>
+        <p>Les plateformes bounty suivent un « time to resolution », mais la vérification du correctif
+        reste souvent déclarative côté entreprise — peu imposent un re-test obligatoire par un tiers avant
+        de clore.</p>
+      </div>
+      <div class="compare-col">
+        <h4>eVDP</h4>
+        <p><span class="mono">VERIFICATION</span> est un état distinct de <span class="mono">FIX_AVAILABLE</span>,
+        franchi par l'analyste CSIRT — pas par l'organisation elle-même. Vérifié en direct : la
+        confirmation d'un correctif par le vendeur ne suffit pas à clore le dossier.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 6 -->
+  <div class="stage">
+    <div class="stage-head">
+      <div>
+        <div class="stage-num">ÉTAPE 07</div>
+        <h3>Divulgation coordonnée et publication</h3>
+      </div>
+      <span class="verdict-pill ok">Aligné</span>
+    </div>
+    <div class="stage-tested">Testé : <span class="chip">advisory publié, crédit = « Chercheur anonyme »</span><span class="chip">2ᵉ advisory, crédit = « AuditHunter »</span></div>
+    <div class="compare-grid">
+      <div class="compare-col">
+        <h4>Secteur</h4>
+        <p>Délai de divulgation coordonnée standard : 90 jours (popularisé par Google Project Zero,
+        largement repris). HackerOne/Bugcrowd publient sur accord des deux parties ; VINCE publie des
+        « VU# notes ».</p>
+      </div>
+      <div class="compare-col">
+        <h4>eVDP</h4>
+        <p>90 jours par défaut (<span class="mono">disclosure_delay_days</span>), un seul mécanisme
+        <span class="mono">credit_for()</span> teste correctement les deux issues : anonyme → jamais de
+        nom, compte + <span class="mono">wants_credit</span> → pseudonyme réel. Les deux confirmés sur le
+        même advisory workflow.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 7 -->
+  <div class="stage">
+    <div class="stage-head">
+      <div>
+        <div class="stage-num">ÉTAPE 08</div>
+        <h3>Suivi sans compte, après soumission</h3>
+      </div>
+      <span class="verdict-pill ok">Aligné</span>
+    </div>
+    <div class="stage-tested">Testé : <span class="chip">jeton généré → seul le hash persisté</span><span class="chip">résolution du jeton → bon case retrouvé</span></div>
+    <div class="compare-grid">
+      <div class="compare-col">
+        <h4>Secteur</h4>
+        <p>GlobaLeaks fait référence : un « receipt code » à usage unique remis à l'écran, jamais par
+        email (l'email pourrait identifier la source). VINCE, plus faible ici, s'appuie surtout sur un
+        compte pseudonyme.</p>
+      </div>
+      <div class="compare-col">
+        <h4>eVDP</h4>
+        <p>Jeton haché en SHA-256 — la valeur brute n'est jamais stockée, seulement transmise une fois.
+        Le déclarant voit un statut simplifié en 5 paliers, jamais les 25 statuts internes ni la raison
+        exacte d'une clôture.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <div class="eyebrow">Constats</div>
+    <h2>Ce qui tient, ce qui mérite encore attention</h2>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <span class="tag strength">Confirmé</span>
+      <div>
+        <h4>Le moteur d'état ne laisse rien sauter d'étape</h4>
+        <p>Impossible d'atteindre <span class="mono">PUBLISHED</span> sans passer par
+        <span class="mono">FIX_VERIFIED</span> ; impossible de s'auto-approuver une récompense. Ces deux
+        garde-fous ont été percutés volontairement pendant le test et ont correctement rejeté l'action.</p>
+      </div>
+    </div>
+    <div class="finding">
+      <span class="tag strength">Confirmé</span>
+      <div>
+        <h4>Anonymat et compte ne fuient jamais l'un vers l'autre</h4>
+        <p><span class="mono">credit_for()</span> ne s'est trompé dans aucun sens sur les deux cases
+        testés : pas de nom pour un déclarant anonyme, vrai pseudonyme pour un compte ayant demandé le
+        crédit.</p>
+      </div>
+    </div>
+    <div class="finding">
+      <span class="tag watch">À surveiller</span>
+      <div>
+        <h4>Demande de CVE non connectée à un CNA réel</h4>
+        <p><span class="mono">requests_cve</span> reste un drapeau interne : aucune plateforme majeure
+        n'automatise entièrement cette étape non plus, mais un lien manuel vers le processus MITRE/CNA
+        (numéro pré-réservé, référence externe) faciliterait le suivi une fois le programme national
+        éligible.</p>
+      </div>
+    </div>
+    <div class="finding">
+      <span class="tag watch">À surveiller</span>
+      <div>
+        <h4>Barème de récompense à montant unique, pas en fourchette</h4>
+        <p>HackerOne affiche typiquement une fourchette (« 500 – 2 000&nbsp;$ ») par sévérité et par
+        programme, ce qui cadre l'attente du chercheur avant même la soumission. eVDP suggère un montant
+        unique au triage — fonctionnel, mais moins lisible en amont pour le déclarant.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>eVDP — Plateforme nationale de divulgation coordonnée de vulnérabilités</span>
+    <span>Audit exécuté par script contre la base de test, deux parcours complets, 0 exception non gérée</span>
+  </footer>
+
+</div>

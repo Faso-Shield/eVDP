@@ -3,6 +3,7 @@
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import (
     LoginView,
     LogoutView,
@@ -13,9 +14,11 @@ from django.contrib.auth.views import (
 )
 from django.db import transaction
 from django.shortcuts import redirect, render
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.debug import sensitive_post_parameters
 
 from apps.audit.models import AuditAction
@@ -350,3 +353,23 @@ class EvdpPasswordResetConfirmView(PasswordResetConfirmView):
 
 class EvdpPasswordResetCompleteView(PasswordResetCompleteView):
     template_name = "accounts/password_reset_complete.html"
+
+
+def send_password_setup_link(user, title, body):
+    """Envoie un lien de choix de mot de passe.
+
+    Reutilise le mecanisme de reinitialisation standard de Django : un
+    compte cree sans mot de passe utilisable peut s'en voir attribuer un via
+    ce meme lien (`accounts:password_reset_confirm`), sans jeton ni vue
+    supplementaire a maintenir.
+
+    `notify()` prefixe lui-meme l'hote via `_absolute()` (voir
+    apps/notifications/services.py) : le chemin transmis ici doit rester
+    relatif, comme partout ailleurs dans ce module (`verify_email`,
+    `resend_verification`) — sinon l'hote se retrouve double dans le lien
+    envoye par email.
+    """
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    path = reverse("accounts:password_reset_confirm", kwargs={"uidb64": uid, "token": token})
+    notify(user, NotificationKind.ACCOUNT, title=title, body=body, url=path)

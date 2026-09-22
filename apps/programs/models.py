@@ -252,7 +252,10 @@ class Program(BaseModel):
         policy = getattr(self, "reward_policy", None)
         if not policy or not policy.is_active:
             return None
-        tiers = list(policy.tiers.all())
+        # Un palier a 0/0 est un emplacement cree d'office par
+        # ensure_reward_policy_consistency et pas encore rempli : l'annoncer
+        # reviendrait a promettre publiquement une recompense nulle.
+        tiers = [t for t in policy.tiers.all() if t.min_amount or t.max_amount]
         if not tiers:
             return None
         return {
@@ -260,6 +263,34 @@ class Program(BaseModel):
             "min": min(t.min_amount for t in tiers),
             "max": max(t.max_amount for t in tiers),
         }
+
+    def ensure_reward_policy_consistency(self):
+        """Fait correspondre l'existence/l'activation de la RewardPolicy au
+        program_type courant, apres une eventuelle modification.
+
+        Doit etre appele APRES la sauvegarde du Program (le program_type
+        doit deja etre a jour en base). Un programme qui devient Bug Bounty
+        recoit une politique active ; un programme qui cesse de l'etre voit
+        la sienne desactivee (jamais supprimee : l'historique des paliers
+        et des recompenses deja versees ne doit pas disparaitre).
+        """
+        policy = getattr(self, "reward_policy", None)
+        if self.program_type == ProgramType.BUG_BOUNTY:
+            if policy is None:
+                policy = RewardPolicy.objects.create(program=self)
+                # Un palier par severite, montant a zero : evite a l'operateur
+                # de devoir ajouter chaque ligne manuellement avant de pouvoir
+                # simplement saisir les montants.
+                RewardTier.objects.bulk_create(
+                    RewardTier(policy=policy, severity=severity, min_amount=0, max_amount=0)
+                    for severity in Severity.values
+                )
+            elif not policy.is_active:
+                policy.is_active = True
+                policy.save(update_fields=["is_active", "updated_at"])
+        elif policy is not None and policy.is_active:
+            policy.is_active = False
+            policy.save(update_fields=["is_active", "updated_at"])
 
 
 class ScopeTargetType(models.TextChoices):
@@ -371,6 +402,13 @@ class RewardPolicy(BaseModel):
 
     def __str__(self):
         return f"Recompenses - {self.program.name}"
+
+    def clean(self):
+        if self.program_id and self.program.program_type != ProgramType.BUG_BOUNTY:
+            raise ValidationError(
+                "Une politique de récompense ne peut être attachée qu'à un "
+                "programme Bug Bounty."
+            )
 
     def tier_for(self, severity, scope=None):
         """Palier applicable : celui de l'actif s'il existe, sinon le defaut.

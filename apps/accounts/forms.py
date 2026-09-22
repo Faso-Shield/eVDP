@@ -5,7 +5,6 @@ from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
-from apps.core.pgp import PGPError, validate_public_key
 from apps.researchers.models import IdentityMode
 
 from .models import User
@@ -134,23 +133,12 @@ class ProfileForm(forms.ModelForm):
 
     class Meta:
         model = User
-        fields = ["full_name", "display_name", "phone", "pgp_public_key"]
+        fields = ["full_name", "display_name", "phone"]
         labels = {
             "full_name": "Nom complet",
             "display_name": "Nom affiché",
             "phone": "Téléphone",
-            "pgp_public_key": "Clé publique PGP",
         }
-        widgets = {"pgp_public_key": forms.Textarea(attrs={"rows": 6})}
-
-    def clean_pgp_public_key(self):
-        value = self.cleaned_data.get("pgp_public_key", "")
-        if not value:
-            return ""
-        try:
-            return validate_public_key(value)
-        except PGPError as exc:
-            raise ValidationError(str(exc)) from exc
 
 
 class ResearcherProfileForm(forms.ModelForm):

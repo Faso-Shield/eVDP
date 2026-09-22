@@ -31,6 +31,7 @@ class NotificationKind(models.TextChoices):
     BOUNTY_REJECTED = "BOUNTY_REJECTED", "Récompense rejetée"
     BOUNTY_PAID = "BOUNTY_PAID", "Récompense payée"
     ACCOUNT = "ACCOUNT", "Compte"
+    TRACKING_LINK = "TRACKING_LINK", "Lien de suivi (déclarant sans compte)"
 
 
 class Notification(BaseModel):

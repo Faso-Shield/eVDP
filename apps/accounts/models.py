@@ -79,8 +79,6 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         help_text="Jour de la dernière relance de vérification, pour n'en "
         "envoyer qu'une par jalon.",
     )
-    pgp_public_key = models.TextField(blank=True, verbose_name="Clé publique PGP")
-    pgp_fingerprint = models.CharField(max_length=64, blank=True, verbose_name="Empreinte PGP")
     mfa_enabled = models.BooleanField(
         default=False,
         verbose_name="Authentificateur enregistré",

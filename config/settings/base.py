@@ -449,6 +449,10 @@ EVDP = {
         # chiffres se devine en 10^6 essais ; la limite les rend hors de
         # portee sans bloquer le titulaire legitime qui se trompe.
         "mfa": env("EVDP_RL_MFA", default="10/5m"),
+        # Jeton de suivi long et aleatoire (haute entropie) : la limite sert
+        # surtout a ralentir le crawl/scraping, pas a empecher un brute-force
+        # qui serait de toute facon impraticable vu l'espace de recherche.
+        "track_lookup": env("EVDP_RL_TRACK_LOOKUP", default="20/5m"),
     },
 }
 

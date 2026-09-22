@@ -112,7 +112,6 @@ class VulnerabilityReport(BaseModel):
         help_text="Bloc PGP chiffré. eVDP ne détient aucune clé privée : "
         "le déchiffrement est effectué hors ligne par l'équipe destinataire.",
     )
-    pgp_signature_verified = models.BooleanField(default=False)
 
     # --- Metadonnees --------------------------------------------------------
     status = models.CharField(
