@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
@@ -148,6 +149,7 @@ def advisory_manage(request, advisory_id):
     )
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.DRAFT_ADVISORY)
@@ -162,6 +164,7 @@ def advisory_transition(request, advisory_id):
     return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.PUBLISH_ADVISORY)
@@ -175,6 +178,7 @@ def advisory_publish(request, advisory_id):
     return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.PUBLISH_ADVISORY)
