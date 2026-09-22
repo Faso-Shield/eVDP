@@ -207,6 +207,14 @@ def test_mobile_number_is_masked_in_summary(researcher_a):
     assert method.summary.endswith("0000")
 
 
+def test_telecel_money_is_a_valid_operator(researcher_a):
+    profile = _profile(researcher_a)
+    method = add_payout_method(
+        profile, researcher_a, _mobile_method(mobile_operator="TELECEL_MONEY")
+    )
+    assert "Telecel Money" in method.summary
+
+
 # --------------------------------------------------------------------- formulaire
 def test_bank_transfer_requires_bank_fields():
     form = PayoutMethodForm(data={"method_type": PayoutMethodType.BANK_TRANSFER})

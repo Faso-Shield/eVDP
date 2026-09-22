@@ -250,6 +250,7 @@ class PayoutMethodType(models.TextChoices):
 class MobileMoneyOperator(models.TextChoices):
     ORANGE_MONEY = "ORANGE_MONEY", "Orange Money"
     MOOV_MONEY = "MOOV_MONEY", "Moov Money"
+    TELECEL_MONEY = "TELECEL_MONEY", "Telecel Money"
     OTHER = "OTHER", "Autre operateur"
 
 
