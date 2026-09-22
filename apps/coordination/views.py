@@ -115,6 +115,7 @@ def case_detail(request, case_id):
 
     is_reporter = case.reporter_id == request.user.id
     can_manage = request.user.has_capability(Capability.CHANGE_CASE_STATUS)
+    can_draft_advisory = request.user.has_capability(Capability.DRAFT_ADVISORY)
 
     context = {
         "case": case,
@@ -163,6 +164,7 @@ def case_detail(request, case_id):
         "allowed_targets": allowed_targets(case.status, case.workflow),
         "is_reporter": is_reporter,
         "can_manage": can_manage,
+        "can_draft_advisory": can_draft_advisory,
         "bounty": getattr(case, "bounty", None),
         "advisories": case.advisories.all(),
         # Le case original d'un doublon n'est jamais expose au declarant.
