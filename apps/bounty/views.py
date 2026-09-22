@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
@@ -114,6 +115,7 @@ def propose(request, case_id):
     )
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.PROPOSE_BOUNTY)
@@ -138,6 +140,7 @@ def review(request, bounty_id):
     return redirect("bounty:detail", bounty_id=bounty.pk)
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.APPROVE_BOUNTY)
@@ -161,23 +164,27 @@ def approve(request, bounty_id):
     return redirect("bounty:detail", bounty_id=bounty.pk)
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.APPROVE_BOUNTY)
 def reject(request, bounty_id):
     bounty = _get_bounty(request, bounty_id)
     form = BountyDecisionForm(request.POST)
-    note = (
-        form.data.get("note", "") if not form.is_valid() else form.cleaned_data.get("note", "")
-    )
-    try:
-        reject_bounty(bounty, request.user, note=note, request=request)
-        messages.success(request, "Recompense rejetee.")
-    except (PermissionDenied, ValidationError) as exc:
-        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    if form.is_valid():
+        try:
+            reject_bounty(
+                bounty, request.user, note=form.cleaned_data.get("note", ""), request=request
+            )
+            messages.success(request, "Recompense rejetee.")
+        except (PermissionDenied, ValidationError) as exc:
+            messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.error(request, form.errors.as_text())
     return redirect("bounty:detail", bounty_id=bounty.pk)
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.RECORD_PAYMENT)

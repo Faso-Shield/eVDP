@@ -134,6 +134,47 @@ def test_rejection_blocks_further_transitions(bounty_case, analyst, coordinator)
 
     assert bounty.status == BountyStatus.REJECTED
     assert bounty.is_final is True
+
+
+# --------------------------------------------------------- mutations en GET
+# Regression : approve/reject n'exigeaient aucune methode HTTP particuliere,
+# et BountyDecisionForm a tous ses champs facultatifs - un simple GET (donc
+# hors protection CSRF, qui ne couvre que les methodes non sures) suffisait
+# a declencher la decision. Meme classe de probleme que celle deja corrigee
+# sur le portefeuille (payout_method_remove/set_primary).
+def test_approve_via_get_is_rejected(client_for, bounty_case, coordinator, coordinator_b):
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    client = client_for(coordinator_b)
+    response = client.get(reverse("bounty:approve", args=[bounty.pk]))
+    assert response.status_code == 405
+    bounty.refresh_from_db()
+    assert bounty.status == BountyStatus.PENDING
+
+
+def test_reject_via_get_is_rejected(client_for, bounty_case, coordinator, coordinator_b):
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    client = client_for(coordinator_b)
+    response = client.get(reverse("bounty:reject", args=[bounty.pk]))
+    assert response.status_code == 405
+    bounty.refresh_from_db()
+    assert bounty.status == BountyStatus.PENDING
+
+
+def test_review_via_get_is_rejected(client_for, bounty_case, analyst):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    client = client_for(analyst)
+    response = client.get(reverse("bounty:review", args=[bounty.pk]))
+    assert response.status_code == 405
+
+
+def test_payment_via_get_is_rejected(client_for, bounty_case, analyst, coordinator):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:payment", args=[bounty.pk]))
+    assert response.status_code == 405
+    bounty.refresh_from_db()
+    assert bounty.status == BountyStatus.APPROVED
     with pytest.raises(ValidationError):
         approve_bounty(bounty, coordinator)
 
