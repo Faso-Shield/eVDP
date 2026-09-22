@@ -20,19 +20,19 @@ logger = logging.getLogger("evdp.notifications")
 DEFAULT_TEMPLATES = {
     NotificationKind.REPORT_RECEIVED: (
         "[eVDP] Nouveau signalement recu",
-        "Un nouveau signalement a ete enregistre sur la plateforme eVDP "
-        "sous la reference {case_id}.\n\n"
-        "Connectez-vous a votre espace securise pour le consulter :\n{link}",
+        "Un nouveau signalement à été enregistré sur la plateforme eVDP "
+        "sous la référence {case_id}.\n\n"
+        "Connectez-vous à votre espace securise pour le consulter :\n{link}",
     ),
     NotificationKind.ACKNOWLEDGEMENT: (
-        "[eVDP] Accuse de reception de votre signalement",
-        "Votre signalement a bien ete recu et enregistre sous la reference "
+        "[eVDP] Accusé de réception de votre signalement",
+        "Votre signalement a bien été reçu et enregistre sous la référence "
         "{case_id}.\n\nSuivez son traitement dans votre espace eVDP :\n{link}",
     ),
     NotificationKind.STATUS_CHANGED: (
-        "[eVDP] Mise a jour du dossier {case_id}",
-        "Le statut du dossier {case_id} a evolue.\n\n"
-        "Consultez le detail dans votre espace securise :\n{link}",
+        "[eVDP] Mise à jour du dossier {case_id}",
+        "Le statut du dossier {case_id} a évolué.\n\n"
+        "Consultez le détail dans votre espace securise :\n{link}",
     ),
     NotificationKind.NEW_MESSAGE: (
         "[eVDP] Nouveau message securise",
@@ -41,68 +41,75 @@ DEFAULT_TEMPLATES = {
     ),
     NotificationKind.NEW_ATTACHMENT: (
         "[eVDP] Nouvelle piece jointe",
-        "Une nouvelle piece jointe a ete ajoutee au dossier {case_id}.\n\n{link}",
+        "Une nouvelle pièce jointe a été ajoutée au dossier {case_id}.\n\n{link}",
     ),
     NotificationKind.INFORMATION_REQUESTED: (
         "[eVDP] Informations complementaires demandees",
-        "L'equipe de coordination demande des informations complementaires "
+        "L'équipe de coordination demande des informations complémentaires "
         "concernant le dossier {case_id}.\n\n{link}",
     ),
     NotificationKind.CASE_ASSIGNED: (
         "[eVDP] Dossier assigne",
-        "Le dossier {case_id} vous a ete assigne.\n\n{link}",
+        "Le dossier {case_id} vous à été assigné.\n\n{link}",
     ),
     NotificationKind.VALIDATED: (
         "[eVDP] Signalement valide",
-        "Votre signalement {case_id} a ete valide par l'equipe de " "coordination.\n\n{link}",
+        "Votre signalement {case_id} à été validé par l'équipe de " "coordination.\n\n{link}",
     ),
     NotificationKind.REJECTED: (
         "[eVDP] Signalement non retenu",
-        "Votre signalement {case_id} n'a pas ete retenu. Le motif est "
+        "Votre signalement {case_id} n'a pas été retenu. Le motif est "
         "consultable dans votre espace eVDP.\n\n{link}",
     ),
     NotificationKind.DUPLICATE: (
         "[eVDP] Signalement identifie comme doublon",
-        "Votre rapport a ete identifie comme doublon d'un signalement deja "
+        "Votre rapport a été identifié comme doublon d'un signalement déjà "
         "enregistre (dossier {case_id}).\n\n{link}",
     ),
     NotificationKind.SLA_APPROACHING: (
-        "[eVDP] Echeance proche sur le dossier {case_id}",
-        "Une echeance de traitement approche pour le dossier {case_id}.\n\n{link}",
+        "[eVDP] Échéance proche sur le dossier {case_id}",
+        "Une échéance de traitement approche pour le dossier {case_id}.\n\n{link}",
     ),
     NotificationKind.SLA_BREACHED: (
-        "[eVDP] Echeance depassee sur le dossier {case_id}",
-        "Une echeance de traitement est depassee pour le dossier {case_id}.\n\n{link}",
+        "[eVDP] Échéance dépassée sur le dossier {case_id}",
+        "Une échéance de traitement est dépassée pour le dossier {case_id}.\n\n{link}",
     ),
     NotificationKind.DISCLOSURE_UPCOMING: (
         "[eVDP] Divulgation planifiee",
-        "La divulgation coordonnee du dossier {case_id} approche.\n\n{link}",
+        "La divulgation coordonnée du dossier {case_id} approche.\n\n{link}",
     ),
     NotificationKind.ADVISORY_PUBLISHED: (
         "[eVDP] Advisory publie",
-        "Un advisory a ete publie sur la plateforme eVDP.\n\n{link}",
+        "Un advisory à été publié sur la plateforme eVDP.\n\n{link}",
     ),
     NotificationKind.BOUNTY_PROPOSED: (
         "[eVDP] Recompense proposee",
-        "Une recompense a ete proposee pour le dossier {case_id}.\n\n{link}",
+        "Une récompense a été proposée pour le dossier {case_id}.\n\n{link}",
     ),
     NotificationKind.BOUNTY_APPROVED: (
         "[eVDP] Recompense approuvee",
-        "Une recompense a ete approuvee pour votre signalement {case_id}. "
-        "Le detail est disponible dans votre espace eVDP.\n\n{link}",
+        "Une récompense a été approuvée pour votre signalement {case_id}. "
+        "Le détail est disponible dans votre espace eVDP.\n\n{link}",
     ),
     NotificationKind.BOUNTY_REJECTED: (
-        "[eVDP] Decision sur votre recompense",
-        "Une decision a ete rendue concernant la recompense du dossier "
+        "[eVDP] Décision sur votre récompense",
+        "Une décision a été rendue concernant la récompense du dossier "
         "{case_id}.\n\n{link}",
     ),
     NotificationKind.BOUNTY_PAID: (
         "[eVDP] Recompense versee",
-        "Le versement de la recompense du dossier {case_id} a ete " "enregistre.\n\n{link}",
+        "Le versement de la récompense du dossier {case_id} a été " "enregistre.\n\n{link}",
     ),
     NotificationKind.ACCOUNT: (
         "[eVDP] Notification de compte",
         "Une action concernant votre compte eVDP requiert votre " "attention.\n\n{link}",
+    ),
+    NotificationKind.TRACKING_LINK: (
+        "[eVDP] Suivre votre signalement {case_id}",
+        "Votre signalement a bien ete enregistre sous la reference {case_id}.\n\n"
+        "Vous pouvez suivre son avancement, sans creer de compte, via ce lien "
+        "personnel et confidentiel - ne le transmettez a personne :\n{link}\n\n"
+        "Ce lien reste valable plusieurs mois.",
     ),
 }
 

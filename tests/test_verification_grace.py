@@ -105,7 +105,7 @@ def test_refused_once_the_grace_has_expired(
     _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
     monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=31))
 
-    with pytest.raises(ValidationError, match="adresse email verifiee"):
+    with pytest.raises(ValidationError, match="adresse email vérifiée"):
         submit_report(
             build_report(bounty_researcher, organization, bounty_program),
             reporter=bounty_researcher,
@@ -123,9 +123,7 @@ def test_grace_is_inclusive_of_its_last_day(regle_active, bounty_researcher):
 
 
 # -------------------------------------------------------------------- relance
-def test_reminder_sent_on_a_milestone(
-    regle_active, bounty_researcher, monkeypatch
-):
+def test_reminder_sent_on_a_milestone(regle_active, bounty_researcher, monkeypatch):
     bounty_researcher.email_verified = False
     bounty_researcher.save(update_fields=["email_verified"])
     _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
@@ -141,9 +139,7 @@ def test_reminder_sent_on_a_milestone(
     ).exists()
 
 
-def test_reminder_is_not_sent_twice_the_same_day(
-    regle_active, bounty_researcher, monkeypatch
-):
+def test_reminder_is_not_sent_twice_the_same_day(regle_active, bounty_researcher, monkeypatch):
     """La tache doit pouvoir etre rejouee sans spammer le chercheur."""
     bounty_researcher.email_verified = False
     bounty_researcher.save(update_fields=["email_verified"])
@@ -154,9 +150,7 @@ def test_reminder_is_not_sent_twice_the_same_day(
     assert remind_unverified_accounts() == 0
 
 
-def test_no_reminder_outside_the_milestones(
-    regle_active, bounty_researcher, monkeypatch
-):
+def test_no_reminder_outside_the_milestones(regle_active, bounty_researcher, monkeypatch):
     bounty_researcher.email_verified = False
     bounty_researcher.save(update_fields=["email_verified"])
     _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
@@ -166,9 +160,7 @@ def test_no_reminder_outside_the_milestones(
     assert remind_unverified_accounts() == 0
 
 
-def test_verified_accounts_are_never_reminded(
-    regle_active, bounty_researcher, monkeypatch
-):
+def test_verified_accounts_are_never_reminded(regle_active, bounty_researcher, monkeypatch):
     _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
     monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=23))
 

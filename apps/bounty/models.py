@@ -19,12 +19,12 @@ from apps.vulnerabilities.constants import Severity
 
 
 class BountyStatus(models.TextChoices):
-    PENDING = "PENDING", "Proposee"
+    PENDING = "PENDING", "Proposée"
     UNDER_REVIEW = "UNDER_REVIEW", "En revue"
-    APPROVED = "APPROVED", "Approuvee"
-    REJECTED = "REJECTED", "Rejetee"
-    PAID = "PAID", "Payee"
-    CANCELLED = "CANCELLED", "Annulee"
+    APPROVED = "APPROVED", "Approuvée"
+    REJECTED = "REJECTED", "Rejetée"
+    PAID = "PAID", "Payée"
+    CANCELLED = "CANCELLED", "Annulée"
 
 
 #: Transitions autorisees du cycle de vie d'une recompense.
@@ -88,7 +88,7 @@ class Bounty(BaseModel):
         default=BountyStatus.PENDING,
         db_index=True,
     )
-    justification = models.TextField(blank=True, help_text="Markdown autorise.")
+    justification = models.TextField(blank=True, help_text="Markdown autorisé.")
     proposed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -117,7 +117,7 @@ class Bounty(BaseModel):
 
     def clean(self):
         if self.approved_amount is not None and self.approved_amount < 0:
-            raise ValidationError({"approved_amount": "Montant negatif interdit."})
+            raise ValidationError({"approved_amount": "Montant négatif interdit."})
 
     @property
     def display_amount(self):
@@ -151,8 +151,8 @@ class Bounty(BaseModel):
 
 class ReviewDecision(models.TextChoices):
     APPROVE = "APPROVE", "Favorable"
-    REJECT = "REJECT", "Defavorable"
-    ADJUST = "ADJUST", "Ajustement propose"
+    REJECT = "REJECT", "Défavorable"
+    ADJUST = "ADJUST", "Ajustement proposé"
     COMMENT = "COMMENT", "Commentaire"
 
 
@@ -188,9 +188,9 @@ class PaymentMethod(models.TextChoices):
 
 
 class PaymentStatus(models.TextChoices):
-    RECORDED = "RECORDED", "Enregistre"
-    SETTLED = "SETTLED", "Verse"
-    FAILED = "FAILED", "Echec"
+    RECORDED = "RECORDED", "Enregistré"
+    SETTLED = "SETTLED", "Versé"
+    FAILED = "FAILED", "Échec"
 
 
 class BountyPayment(BaseModel):
@@ -206,7 +206,7 @@ class BountyPayment(BaseModel):
         max_length=16, choices=PaymentStatus.choices, default=PaymentStatus.RECORDED
     )
     reference = models.CharField(
-        max_length=120, blank=True, help_text="Reference comptable externe."
+        max_length=120, blank=True, help_text="Référence comptable externe."
     )
     settled_at = models.DateTimeField(null=True, blank=True)
     recorded_by = models.ForeignKey(

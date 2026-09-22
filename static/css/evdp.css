@@ -69,14 +69,11 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 1.4rem 0; }
 
 /* ---------------------------------------------------------------- layout */
 .container { max-width: 1240px; margin: 0 auto; padding: 0 1.2rem; }
+/* Les pages en pleine largeur (le Kanban) desserrent la gouttiere commune :
+   leur contenu est une grille large, pas une colonne de lecture. */
+.page-pleine-largeur .container { max-width: 1680px; }
 .container-narrow { max-width: 880px; margin: 0 auto; padding: 0 1.2rem; }
 .main { padding: 1.8rem 0 3.5rem; min-height: 60vh; }
-
-.topbar {
-  background: var(--evdp-navy-dark); color: #cbd9e6; font-size: .78rem;
-  padding: .3rem 0; letter-spacing: .02em;
-}
-.topbar a { color: #cbd9e6; }
 
 .navbar { background: var(--evdp-navy); color: var(--text-inverse); box-shadow: var(--shadow-sm); }
 .navbar-inner { display: flex; align-items: center; gap: 1.4rem; padding: .65rem 0; flex-wrap: wrap; }
@@ -296,26 +293,48 @@ table.table tbody tr:hover { background: var(--surface-alt); }
 }
 
 /* --------------------------------------------------------------- kanban */
-.kanban { display: flex; gap: .85rem; overflow-x: auto; padding-bottom: .8rem; }
+/* Le tableau tient dans la largeur utile : la grille repartit les colonnes du
+   workflow et les laisse se comprimer (minmax a 0) au lieu de pousser un
+   defilement horizontal. Chaque colonne defile pour son compte, en hauteur,
+   de sorte que la totalite du flux reste visible d'un seul regard. */
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(var(--kanban-cols, 7), minmax(0, 1fr));
+  gap: .5rem; align-items: start; padding-bottom: .4rem;
+}
 .kanban-col {
-  min-width: 264px; flex: 1 0 264px; background: var(--surface-alt);
-  border: 1px solid var(--border); border-radius: var(--radius-lg); padding: .65rem;
+  min-width: 0; background: var(--surface-alt);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); padding: .5rem .45rem;
+  max-height: calc(100vh - 15rem); overflow-y: auto;
 }
 .kanban-col h3 {
-  font-size: .78rem; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: .6rem;
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .02em;
+  color: var(--text-muted); display: flex; justify-content: space-between;
+  align-items: flex-start; gap: .25rem; margin-bottom: .5rem;
 }
+.kanban-col h3 .pill { flex: none; font-size: .66rem; padding: 0 .38rem; }
 .kanban-card {
   background: #fff; border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
-  border-radius: var(--radius); padding: .6rem .7rem; margin-bottom: .55rem; font-size: .85rem;
-  display: block; color: var(--text);
+  border-radius: var(--radius); padding: .45rem .5rem; margin-bottom: .45rem; font-size: .8rem;
+  display: block; color: var(--text); overflow-wrap: break-word;
 }
 .kanban-card:hover { text-decoration: none; box-shadow: var(--shadow-sm); }
 .kanban-card.sev-critical-border { border-left-color: var(--sev-critical); }
 .kanban-card.sev-high-border { border-left-color: var(--sev-high); }
 .kanban-card.sev-medium-border { border-left-color: var(--sev-medium); }
 .kanban-card.sev-low-border { border-left-color: var(--sev-low); }
-.kanban-card .kc-id { font-family: var(--mono); font-size: .74rem; color: var(--text-muted); }
+.kanban-card .kc-id { font-family: var(--mono); font-size: .68rem; color: var(--text-muted); }
+.kanban-card .kc-title {
+  font-weight: 600; line-height: 1.3; margin: .1rem 0 .3rem; hyphens: auto;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+}
+.kanban-card .kc-tags { display: flex; flex-wrap: wrap; gap: .25rem; }
+.kanban-card .badge, .kanban-card .pill { font-size: .64rem; padding: .06rem .38rem; letter-spacing: .02em; }
+/* Sous 1100px la largeur utile ne nourrit plus sept colonnes lisibles : elles
+   passent alors a la ligne, ce qui garde le defilement dans le seul axe
+   vertical. */
+@media (max-width: 1100px) { .kanban { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); } }
+@media (max-width: 620px) { .kanban { grid-template-columns: 1fr; } .kanban-col { max-height: none; } }
 
 /* ------------------------------------------------------------- timeline */
 .timeline { list-style: none; margin: 0; padding: 0 0 0 1.4rem; border-left: 2px solid var(--border); }
@@ -388,3 +407,18 @@ table.table tbody tr:hover { background: var(--surface-alt); }
 .prose table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
 .prose th, .prose td { border: 1px solid var(--border); padding: .4rem .6rem; font-size: .88rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ------------------------------------------------- double authentification */
+.mfa-steps { padding-left: 1.1rem; margin: 1rem 0 0; }
+.mfa-steps > li { margin-bottom: 1.2rem; font-size: .9rem; }
+.mfa-secret {
+  margin-top: .5rem; padding: .6rem .8rem; background: var(--evdp-accent-light);
+  border: 1px solid #bfe3d6; border-radius: var(--radius); text-align: center;
+}
+.mfa-secret code { font-size: 1.05rem; letter-spacing: .12em; word-break: break-all; }
+.mfa-qr { margin: .7rem 0; text-align: center; }
+.mfa-qr img {
+  background: #fff; padding: .5rem; border: 1px solid var(--border);
+  border-radius: var(--radius); max-width: 100%; height: auto;
+}
+.mfa-fallback summary { cursor: pointer; font-size: .85rem; color: var(--text-muted); }

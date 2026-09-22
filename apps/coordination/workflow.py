@@ -18,28 +18,28 @@ from apps.accounts.roles import Capability
 class CaseStatus(models.TextChoices):
     DRAFT = "DRAFT", "Brouillon"
     SUBMITTED = "SUBMITTED", "Soumis"
-    RECEIVED = "RECEIVED", "Recu"
+    RECEIVED = "RECEIVED", "Reçu"
     TRIAGE = "TRIAGE", "En triage"
-    NEEDS_INFORMATION = "NEEDS_INFORMATION", "Informations demandees"
-    ACKNOWLEDGED = "ACKNOWLEDGED", "Accuse de reception"
-    VALIDATED = "VALIDATED", "Valide"
-    SEVERITY_ASSIGNED = "SEVERITY_ASSIGNED", "Severite attribuee"
-    BOUNTY_REVIEW = "BOUNTY_REVIEW", "Revue de recompense"
-    REWARD_APPROVED = "REWARD_APPROVED", "Recompense approuvee"
+    NEEDS_INFORMATION = "NEEDS_INFORMATION", "Informations demandées"
+    ACKNOWLEDGED = "ACKNOWLEDGED", "Accusé de réception"
+    VALIDATED = "VALIDATED", "Validé"
+    SEVERITY_ASSIGNED = "SEVERITY_ASSIGNED", "Sévérité attribuée"
+    BOUNTY_REVIEW = "BOUNTY_REVIEW", "Revue de récompense"
+    REWARD_APPROVED = "REWARD_APPROVED", "Récompense approuvée"
     DUPLICATE = "DUPLICATE", "Doublon"
-    REJECTED = "REJECTED", "Rejete"
-    OUT_OF_SCOPE = "OUT_OF_SCOPE", "Hors perimetre"
+    REJECTED = "REJECTED", "Rejeté"
+    OUT_OF_SCOPE = "OUT_OF_SCOPE", "Hors périmètre"
     NOT_APPLICABLE = "NOT_APPLICABLE", "Non applicable"
     INFORMATIVE = "INFORMATIVE", "Informatif"
     IN_PROGRESS = "IN_PROGRESS", "En cours de traitement"
-    VENDOR_CONTACTED = "VENDOR_CONTACTED", "Organisation contactee"
-    VENDOR_ACKNOWLEDGED = "VENDOR_ACKNOWLEDGED", "Organisation a accuse reception"
-    REMEDIATION = "REMEDIATION", "Remediation en cours"
+    VENDOR_CONTACTED = "VENDOR_CONTACTED", "Organisation contactée"
+    VENDOR_ACKNOWLEDGED = "VENDOR_ACKNOWLEDGED", "Organisation a accusé réception"
+    REMEDIATION = "REMEDIATION", "Remédiation en cours"
     FIX_AVAILABLE = "FIX_AVAILABLE", "Correctif disponible"
-    VERIFICATION = "VERIFICATION", "Verification du correctif"
-    FIX_VERIFIED = "FIX_VERIFIED", "Correctif verifie"
-    DISCLOSURE_SCHEDULED = "DISCLOSURE_SCHEDULED", "Divulgation planifiee"
-    PUBLISHED = "PUBLISHED", "Publie"
+    VERIFICATION = "VERIFICATION", "Vérification du correctif"
+    FIX_VERIFIED = "FIX_VERIFIED", "Correctif vérifié"
+    DISCLOSURE_SCHEDULED = "DISCLOSURE_SCHEDULED", "Divulgation planifiée"
+    PUBLISHED = "PUBLISHED", "Publié"
     CLOSED = "CLOSED", "Clos"
 
     @classmethod
@@ -85,6 +85,27 @@ DISMISSED_STATES = frozenset(
         CaseStatus.OUT_OF_SCOPE,
         CaseStatus.NOT_APPLICABLE,
         CaseStatus.INFORMATIVE,
+    }
+)
+
+#: Etats a partir desquels l'organisation affectee peut voir le dossier.
+#: Jamais avant que le CSIRT ne l'ait explicitement engagee (transition vers
+#: VENDOR_CONTACTED) : pendant le triage, le declarant doit rester protege
+#: d'une reaction prematuree de l'organisation sur un signalement encore non
+#: valide -- c'est la raison d'etre meme d'un CSIRT coordinateur plutot qu'un
+#: signalement direct (cf. cahier des charges : absence de canal officiel =
+#: risque de poursuites pour le declarant).
+ORG_VISIBLE_STATES = frozenset(
+    {
+        CaseStatus.VENDOR_CONTACTED,
+        CaseStatus.VENDOR_ACKNOWLEDGED,
+        CaseStatus.REMEDIATION,
+        CaseStatus.FIX_AVAILABLE,
+        CaseStatus.VERIFICATION,
+        CaseStatus.FIX_VERIFIED,
+        CaseStatus.DISCLOSURE_SCHEDULED,
+        CaseStatus.PUBLISHED,
+        CaseStatus.CLOSED,
     }
 )
 
@@ -191,7 +212,7 @@ KANBAN_COLUMNS = [
     ("TRIAGE", "Triage", [CaseStatus.TRIAGE, CaseStatus.NEEDS_INFORMATION]),
     (
         "VALIDATED",
-        "Valide",
+        "Validé",
         [
             CaseStatus.VALIDATED,
             CaseStatus.SEVERITY_ASSIGNED,
@@ -201,7 +222,7 @@ KANBAN_COLUMNS = [
     ),
     (
         "REMEDIATION",
-        "Remediation",
+        "Remédiation",
         [
             CaseStatus.IN_PROGRESS,
             CaseStatus.VENDOR_CONTACTED,
@@ -210,7 +231,7 @@ KANBAN_COLUMNS = [
             CaseStatus.FIX_AVAILABLE,
         ],
     ),
-    ("VERIFICATION", "Verification", [CaseStatus.VERIFICATION, CaseStatus.FIX_VERIFIED]),
+    ("VERIFICATION", "Vérification", [CaseStatus.VERIFICATION, CaseStatus.FIX_VERIFIED]),
     ("DISCLOSURE", "Divulgation", [CaseStatus.DISCLOSURE_SCHEDULED, CaseStatus.PUBLISHED]),
     (
         "CLOSED",
@@ -255,7 +276,7 @@ def required_capability(target_status):
 def check_transition(current_status, target_status, workflow, user=None):
     """Valide une transition. Leve TransitionNotAllowed si elle est interdite."""
     if current_status == target_status:
-        raise TransitionNotAllowed("Le case est deja dans cet etat.")
+        raise TransitionNotAllowed("Le case est déjà dans cet état.")
     if not can_transition(current_status, target_status, workflow):
         raise TransitionNotAllowed(
             f"Transition interdite : {current_status} -> {target_status} "
@@ -264,10 +285,10 @@ def check_transition(current_status, target_status, workflow, user=None):
     if user is not None:
         needed = required_capability(target_status)
         if not user.has_capability(needed):
-            raise TransitionNotAllowed(f"Capacite requise pour cette transition : {needed}.")
+            raise TransitionNotAllowed(f"Capacité requise pour cette transition : {needed}.")
         if not user.has_capability(Capability.CHANGE_CASE_STATUS):
             raise TransitionNotAllowed(
-                "Vous n'etes pas autorise a changer le statut d'un case."
+                "Vous n'êtes pas autorisé à changer le statut d'un case."
             )
     return True
 
@@ -277,3 +298,49 @@ def kanban_column_for(status):
         if status in states:
             return key
     return "CLOSED"
+
+
+#: Statut public simplifie affiche a un declarant sans compte (page de suivi
+#: par lien ou code). Volontairement plus grossier que les 25 statuts
+#: internes : ne revele ni la file d'attente interne ni la raison exacte
+#: d'une cloture, seulement une progression comprehensible.
+PUBLIC_STATUS_BUCKETS = [
+    ("RECEIVED", "Reçu", [CaseStatus.DRAFT, CaseStatus.SUBMITTED, CaseStatus.RECEIVED]),
+    (
+        "ANALYSIS",
+        "En cours d'analyse",
+        [
+            CaseStatus.TRIAGE,
+            CaseStatus.NEEDS_INFORMATION,
+            CaseStatus.ACKNOWLEDGED,
+            CaseStatus.VALIDATED,
+            CaseStatus.SEVERITY_ASSIGNED,
+            CaseStatus.BOUNTY_REVIEW,
+            CaseStatus.REWARD_APPROVED,
+        ],
+    ),
+    (
+        "IN_PROGRESS",
+        "Correction en cours",
+        [
+            CaseStatus.IN_PROGRESS,
+            CaseStatus.VENDOR_CONTACTED,
+            CaseStatus.VENDOR_ACKNOWLEDGED,
+            CaseStatus.REMEDIATION,
+            CaseStatus.FIX_AVAILABLE,
+            CaseStatus.VERIFICATION,
+            CaseStatus.FIX_VERIFIED,
+            CaseStatus.DISCLOSURE_SCHEDULED,
+        ],
+    ),
+    ("RESOLVED", "Résolu", [CaseStatus.PUBLISHED, CaseStatus.CLOSED]),
+    ("DISMISSED", "Clôturé sans suite", list(DISMISSED_STATES)),
+]
+
+
+def public_status_bucket(status):
+    """(cle, libelle) simplifies pour la page de suivi publique."""
+    for key, label, states in PUBLIC_STATUS_BUCKETS:
+        if status in states:
+            return key, label
+    return "ANALYSIS", "En cours d'analyse"

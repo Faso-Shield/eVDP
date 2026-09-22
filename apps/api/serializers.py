@@ -5,6 +5,7 @@ champs et marque en lecture seule tout ce qui releve du workflow, du RBAC ou
 de l'identite. Aucun champ sensible n'est modifiable par le client.
 """
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.utils import OpenApiTypes, extend_schema_field
 from rest_framework import serializers
 
@@ -61,9 +62,7 @@ class ProgramScopeSerializer(serializers.ModelSerializer):
 class RewardTierSerializer(serializers.ModelSerializer):
     """Palier de recompense. `scope` vide signifie : grille par defaut."""
 
-    scope = serializers.CharField(
-        source="scope.identifier", read_only=True, default=None
-    )
+    scope = serializers.CharField(source="scope.identifier", read_only=True, default=None)
 
     class Meta:
         model = RewardTier
@@ -107,9 +106,7 @@ class ProgramSerializer(serializers.ModelSerializer):
         policy = getattr(obj, "reward_policy", None)
         if not policy or not policy.is_active:
             return []
-        return RewardTierSerializer(
-            policy.tiers.select_related("scope"), many=True
-        ).data
+        return RewardTierSerializer(policy.tiers.select_related("scope"), many=True).data
 
 
 class ProgramWriteSerializer(serializers.ModelSerializer):
@@ -132,7 +129,33 @@ class ProgramWriteSerializer(serializers.ModelSerializer):
             "ends_on",
             "contact_email",
             "disclosure_delay_days",
+            # Deux conditions de participation, exposees comme dans le
+            # formulaire : sans elles, un Bug Bounty cree par l'API resterait
+            # sur le defaut `allows_anonymous_reports=True`, que son propre
+            # invariant refuse. Le client n'aurait aucun moyen de corriger.
+            "requires_verified_email",
+            "allows_anonymous_reports",
         ]
+
+    def validate(self, attrs):
+        """Fait passer l'ecriture API par Program.clean().
+
+        Un ModelSerializer ne declenche pas la validation du modele : seul le
+        formulaire d'administration y passait. L'API creait donc des
+        programmes que le formulaire refuse : dates inversees, ou Bug
+        Bounty configure pour l'anonymat.
+
+        `slug` est exclu : il est engendre par `Program.save()` et vaut ""
+        jusque-la, ce que son unicite refuserait.
+        """
+        instance = self.instance or Program()
+        for champ, valeur in attrs.items():
+            setattr(instance, champ, valeur)
+        try:
+            instance.full_clean(exclude=["slug"])
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict) from exc
+        return attrs
 
 
 class ReportSubmissionSerializer(serializers.ModelSerializer):
@@ -182,7 +205,7 @@ class ReportSubmissionSerializer(serializers.ModelSerializer):
     def validate_description(self, value):
         if len(value.strip()) < 30:
             raise serializers.ValidationError(
-                "La description doit comporter au moins 30 caracteres."
+                "La description doit comporter au moins 30 caractères."
             )
         return value
 
@@ -200,7 +223,7 @@ class ReportSubmissionSerializer(serializers.ModelSerializer):
             ]
         ):
             raise serializers.ValidationError(
-                "Precisez l'organisation affectee ou un programme."
+                "Précisez l'organisation affectée ou un programme."
             )
         return attrs
 

@@ -37,10 +37,10 @@ class CWE(TimeStampedModel):
 
 
 class CVEState(models.TextChoices):
-    REQUESTED = "REQUESTED", "Demande"
-    RESERVED = "RESERVED", "Reserve"
-    PUBLISHED = "PUBLISHED", "Publie"
-    REJECTED = "REJECTED", "Rejete"
+    REQUESTED = "REQUESTED", "Demandé"
+    RESERVED = "RESERVED", "Réservé"
+    PUBLISHED = "PUBLISHED", "Publié"
+    REJECTED = "REJECTED", "Rejeté"
 
 
 class CVE(TimeStampedModel):
@@ -85,7 +85,7 @@ class ReferenceKind(models.TextChoices):
     PATCH = "PATCH", "Correctif"
     EXPLOIT = "EXPLOIT", "Exploit"
     ARTICLE = "ARTICLE", "Article"
-    VENDOR = "VENDOR", "Editeur"
+    VENDOR = "VENDOR", "Éditeur"
     OTHER = "OTHER", "Autre"
 
 
@@ -112,7 +112,7 @@ class VulnerabilityReference(BaseModel):
         max_length=16, choices=ReferenceKind.choices, default=ReferenceKind.OTHER
     )
     is_public = models.BooleanField(
-        default=False, help_text="Une reference publique peut apparaitre dans un advisory."
+        default=False, help_text="Une référence publique peut apparaître dans un advisory."
     )
 
     class Meta:

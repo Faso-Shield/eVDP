@@ -1,21 +1,28 @@
 {% extends "base_dashboard.html" %}
 {% load evdp_tags %}
 {% block title %}Kanban{% endblock %}
+{% comment %}
+Le tableau vaut par sa vue d'ensemble : cette page seule prend toute la largeur
+de la fenetre, navbar et pied de page compris, pour que les sept colonnes du
+workflow respirent au lieu de tenir dans la gouttiere commune de 1240px.
+{% endcomment %}
+{% block body_class %}page-pleine-largeur{% endblock %}
 {% block dashboard_content %}
 <div class="flex-between mb-2">
   <h1 class="mb-0">Tableau Kanban</h1>
   <a class="btn btn-sm btn-outline" href="{% url 'coordination:case_list' %}">Vue liste</a>
 </div>
 
-<div class="kanban">
+{% comment %}Le nombre de colonnes vient du workflow : la grille le recoit pour repartir la largeur disponible sans jamais deborder a droite.{% endcomment %}
+<div class="kanban" style="--kanban-cols: {{ board|length }}">
   {% for column in board %}
   <div class="kanban-col">
     <h3>{{ column.label }} <span class="pill">{{ column.count }}</span></h3>
     {% for case in column.cases %}
       <a class="kanban-card {{ case.severity|severity_class }}-border" href="{{ case.get_absolute_url }}">
         <span class="kc-id">{{ case.case_id }}</span>
-        <div><strong>{{ case.title|truncatechars:56 }}</strong></div>
-        <div class="flex" style="gap:.3rem;margin-top:.35rem">
+        <div class="kc-title">{{ case.title|truncatechars:90 }}</div>
+        <div class="kc-tags">
           <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
           {% if case.organization %}<span class="pill">{% firstof case.organization.acronym case.organization.name %}</span>{% endif %}
         </div>

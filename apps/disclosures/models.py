@@ -19,10 +19,10 @@ from apps.vulnerabilities.constants import Severity
 class AdvisoryStatus(models.TextChoices):
     DRAFT = "DRAFT", "Brouillon"
     IN_REVIEW = "IN_REVIEW", "En relecture"
-    APPROVED = "APPROVED", "Approuve"
-    SCHEDULED = "SCHEDULED", "Planifie"
-    PUBLISHED = "PUBLISHED", "Publie"
-    RETRACTED = "RETRACTED", "Retire"
+    APPROVED = "APPROVED", "Approuvé"
+    SCHEDULED = "SCHEDULED", "Planifié"
+    PUBLISHED = "PUBLISHED", "Publié"
+    RETRACTED = "RETRACTED", "Retiré"
 
 
 ADVISORY_TRANSITIONS = {
@@ -54,7 +54,7 @@ class Advisory(BaseModel):
         blank=True,
         on_delete=models.SET_NULL,
         related_name="advisories",
-        help_text="Case prive source. Jamais expose publiquement.",
+        help_text="Case privé source. Jamais exposé publiquement.",
     )
     organization = models.ForeignKey(
         "organizations.Organization",
@@ -64,14 +64,14 @@ class Advisory(BaseModel):
         related_name="advisories",
     )
     title = models.CharField(max_length=250)
-    summary = models.TextField(help_text="Resume public. Markdown autorise.")
+    summary = models.TextField(help_text="Résumé public. Markdown autorisé.")
     product = models.CharField(max_length=200, blank=True)
     affected_versions = models.CharField(max_length=255, blank=True)
     fixed_versions = models.CharField(max_length=255, blank=True)
-    description = models.TextField(blank=True, help_text="Markdown autorise.")
-    impact = models.TextField(blank=True, help_text="Markdown autorise.")
-    solution = models.TextField(blank=True, help_text="Markdown autorise.")
-    workaround = models.TextField(blank=True, help_text="Markdown autorise.")
+    description = models.TextField(blank=True, help_text="Markdown autorisé.")
+    impact = models.TextField(blank=True, help_text="Markdown autorisé.")
+    solution = models.TextField(blank=True, help_text="Markdown autorisé.")
+    workaround = models.TextField(blank=True, help_text="Markdown autorisé.")
     severity = models.CharField(
         max_length=16, choices=Severity.choices, default=Severity.MEDIUM, db_index=True
     )
@@ -94,7 +94,7 @@ class Advisory(BaseModel):
     credit = models.CharField(
         max_length=255,
         blank=True,
-        help_text="Credit affiche publiquement, conforme au choix du chercheur.",
+        help_text="Crédit affiché publiquement, conforme au choix du chercheur.",
     )
     status = models.CharField(
         max_length=16,

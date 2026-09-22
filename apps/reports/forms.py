@@ -19,8 +19,8 @@ class VulnerabilityReportForm(forms.ModelForm):
     """Saisie d'un signalement. Le contenu est du Markdown assaini a l'affichage."""
 
     accept_policy = forms.BooleanField(
-        label="Je confirme avoir lu la politique de divulgation et m'engage a "
-        "respecter les regles de test.",
+        label="Je confirme avoir lu la politique de divulgation et m'engage à "
+        "respecter les règles de test.",
         required=True,
     )
     contact_email = forms.EmailField(
@@ -58,34 +58,34 @@ class VulnerabilityReportForm(forms.ModelForm):
         ]
         labels = {
             "title": "Titre du signalement",
-            "program": "Programme concerne",
-            "affected_organization": "Organisation affectee",
+            "program": "Programme concerné",
+            "affected_organization": "Organisation affectée",
             "affected_organization_name": "Organisation (si absente de la liste)",
             "product": "Produit / service",
-            "target_url": "URL ou endpoint concerne",
-            "vulnerability_type": "Type de vulnerabilite",
+            "target_url": "URL ou endpoint concerné",
+            "vulnerability_type": "Type de vulnérabilité",
             "cwe": "CWE",
             "cvss_vector": "Vecteur CVSS v3.1",
-            "reported_severity": "Severite estimee",
+            "reported_severity": "Sévérité estimée",
             "description": "Description",
-            "steps_to_reproduce": "Etapes de reproduction",
+            "steps_to_reproduce": "Étapes de reproduction",
             "impact": "Impact",
             "proof_of_concept": "Preuve de concept",
             "recommendations": "Recommandations",
-            "affected_version": "Version affectee",
-            "fixed_version": "Version corrigee (si connue)",
+            "affected_version": "Version affectée",
+            "fixed_version": "Version corrigée (si connue)",
             "environment": "Environnement",
-            "external_reference": "Reference externe",
+            "external_reference": "Référence externe",
             "requests_cve": "Je demande l'attribution d'un CVE",
-            "wants_credit": "Je souhaite etre credite publiquement",
-            "is_anonymous": "Signaler de maniere anonyme",
-            "pgp_payload": "Rapport chiffre PGP (optionnel)",
+            "wants_credit": "Je souhaite être crédité publiquement",
+            "is_anonymous": "Signaler de manière anonyme",
+            "pgp_payload": "Rapport chiffré PGP (optionnel)",
         }
         help_texts = {
-            "description": "Markdown autorise. Decrivez la vulnerabilite factuellement.",
-            "steps_to_reproduce": "Markdown autorise. Une etape par ligne.",
+            "description": "Markdown autorisé. Décrivez la vulnérabilité factuellement.",
+            "steps_to_reproduce": "Markdown autorisé. Une étape par ligne.",
             "cvss_vector": "Exemple : CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-            "pgp_payload": "Collez ici un bloc PGP MESSAGE chiffre avec la cle "
+            "pgp_payload": "Collez ici un bloc PGP MESSAGE chiffré avec la clé "
             "publique nationale si le contenu est trop sensible.",
         }
         widgets = {
@@ -128,7 +128,7 @@ class VulnerabilityReportForm(forms.ModelForm):
         payload = (self.cleaned_data.get("pgp_payload") or "").strip()
         if payload and not is_encrypted_blob(payload):
             raise ValidationError(
-                "Le bloc doit etre un message PGP chiffre " "(-----BEGIN PGP MESSAGE-----)."
+                "Le bloc doit être un message PGP chiffré " "(-----BEGIN PGP MESSAGE-----)."
             )
         return payload
 
@@ -136,11 +136,11 @@ class VulnerabilityReportForm(forms.ModelForm):
         description = (self.cleaned_data.get("description") or "").strip()
         if len(description) < 30:
             raise ValidationError(
-                "La description doit comporter au moins 30 caracteres pour "
+                "La description doit comporter au moins 30 caractères pour "
                 "permettre une qualification."
             )
         if len(description) > MAX_TEXT:
-            raise ValidationError("Description trop longue (20 000 caracteres maximum).")
+            raise ValidationError("Description trop longue (20 000 caractères maximum).")
         return description
 
     def clean(self):
@@ -167,7 +167,7 @@ class VulnerabilityReportForm(forms.ModelForm):
         if not organization and not org_name and not program:
             self.add_error(
                 "affected_organization",
-                "Precisez l'organisation affectee ou selectionnez un programme.",
+                "Précisez l'organisation affectée ou sélectionnez un programme.",
             )
 
         if program is not None and not program.is_open:
@@ -187,6 +187,22 @@ class VulnerabilityReportForm(forms.ModelForm):
         if commit:
             report.save()
         return report
+
+
+class TrackingCodeForm(forms.Form):
+    code = forms.CharField(
+        label="Code ou lien de suivi",
+        max_length=120,
+        widget=forms.TextInput(attrs={"placeholder": "Collez ici votre code de suivi"}),
+    )
+
+    def clean_code(self):
+        value = (self.cleaned_data.get("code") or "").strip()
+        # Tolerance : accepte aussi bien le code seul que le lien complet
+        # colle par erreur (ex. https://.../suivi/<code>/).
+        if "/" in value:
+            value = value.rstrip("/").rsplit("/", 1)[-1]
+        return value
 
 
 class AttachmentUploadForm(forms.Form):

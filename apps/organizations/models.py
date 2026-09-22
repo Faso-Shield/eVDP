@@ -11,24 +11,24 @@ from apps.core.pgp import PGPError, validate_public_key
 
 class OrganizationType(models.TextChoices):
     PUBLIC_ADMIN = "PUBLIC_ADMIN", "Administration publique"
-    MINISTRY = "MINISTRY", "Ministere"
-    LOCAL_AUTHORITY = "LOCAL_AUTHORITY", "Collectivite territoriale"
-    PUBLIC_INSTITUTION = "PUBLIC_INSTITUTION", "Etablissement public"
+    MINISTRY = "MINISTRY", "Ministère"
+    LOCAL_AUTHORITY = "LOCAL_AUTHORITY", "Collectivité territoriale"
+    PUBLIC_INSTITUTION = "PUBLIC_INSTITUTION", "Établissement public"
     PUBLIC_COMPANY = "PUBLIC_COMPANY", "Entreprise publique"
-    PRIVATE_COMPANY = "PRIVATE_COMPANY", "Entreprise privee"
-    OPERATOR = "OPERATOR", "Operateur d'importance vitale"
-    UNIVERSITY = "UNIVERSITY", "Universite / recherche"
+    PRIVATE_COMPANY = "PRIVATE_COMPANY", "Entreprise privée"
+    OPERATOR = "OPERATOR", "Opérateur d'importance vitale"
+    UNIVERSITY = "UNIVERSITY", "Université / recherche"
     OTHER = "OTHER", "Autre"
 
 
 class Sector(models.TextChoices):
     GOVERNMENT = "GOVERNMENT", "Gouvernement"
-    DEFENSE = "DEFENSE", "Defense et securite"
-    HEALTH = "HEALTH", "Sante"
-    EDUCATION = "EDUCATION", "Education"
+    DEFENSE = "DEFENSE", "Défense et sécurité"
+    HEALTH = "HEALTH", "Santé"
+    EDUCATION = "EDUCATION", "Éducation"
     FINANCE = "FINANCE", "Finance et banque"
-    TELECOM = "TELECOM", "Telecommunications"
-    ENERGY = "ENERGY", "Energie"
+    TELECOM = "TELECOM", "Télécommunications"
+    ENERGY = "ENERGY", "Énergie"
     WATER = "WATER", "Eau et assainissement"
     TRANSPORT = "TRANSPORT", "Transport"
     JUSTICE = "JUSTICE", "Justice"
@@ -41,7 +41,7 @@ class OrganizationStatus(models.TextChoices):
     ACTIVE = "ACTIVE", "Active"
     PENDING = "PENDING", "En attente de validation"
     SUSPENDED = "SUSPENDED", "Suspendue"
-    ARCHIVED = "ARCHIVED", "Archivee"
+    ARCHIVED = "ARCHIVED", "Archivée"
 
 
 class Organization(BaseModel):
@@ -119,7 +119,7 @@ class Organization(BaseModel):
 class MembershipRole(models.TextChoices):
     MANAGER = "MANAGER", "Responsable"
     DSI = "DSI", "DSI"
-    SECURITY_CONTACT = "SECURITY_CONTACT", "Contact securite"
+    SECURITY_CONTACT = "SECURITY_CONTACT", "Contact sécurité"
     ANALYST = "ANALYST", "Analyste"
     OBSERVER = "OBSERVER", "Observateur"
 

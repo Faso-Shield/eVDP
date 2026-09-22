@@ -44,7 +44,7 @@ projet.
 | Multi-appartenance | ✅ | `OrganizationMember` avec rôle d'appartenance |
 | Profils chercheurs | ✅ | Identité publique / pseudonyme / anonyme |
 | Réputation | ✅ | Barème configurable, historique non modifiable par le chercheur |
-| MFA | 🟡 | Champs et dépendance `pyotp` en place ; activation non implémentée (**TODO**) |
+| MFA (TOTP) | ✅ | Obligatoire pour les comptes administrateurs et métiers ; les comptes signaleurs en sont exempts |
 | SSO / OIDC / LDAP | ⬜ | Point d'accroche documenté (`AUTHENTICATION_BACKENDS`) |
 
 ## Phase 3 — VDP, signalement, case management ✅
@@ -120,7 +120,7 @@ projet.
 | `/health/` `/ready/` `/metrics/` | ✅ | Métriques au format Prometheus |
 | Logs JSON structurés | ✅ | Loggers dédiés audit / sécurité / SLA |
 | Prometheus / Grafana | ⬜ | Endpoint prêt, stack non fournie |
-| MFA, SSO | ⬜ | Voir phase 2 |
+| SSO | ⬜ | Voir phase 2 ; la MFA est livrée |
 
 ## Qualité et exploitation ✅
 
@@ -142,15 +142,14 @@ projet.
 Ces éléments sont volontairement absents du MVP. Chacun dispose d'un point
 d'accroche documenté et d'un `TODO` dans le code.
 
-1. **MFA (TOTP)** — champs et dépendance présents, parcours d'activation absent.
-2. **SSO / OIDC / Keycloak / LDAP** — écarté du MVP pour ne pas complexifier le déploiement (conforme §32 du cahier des charges).
-3. **CVSS v4.0** — le calculateur détecte et rejette explicitement les vecteurs v4 plutôt que de produire un score faux.
-4. **Synchronisation NVD / MITRE / CISA KEV / EPSS** — le fonctionnement de base ne dépend d'aucune API externe (conforme §20).
-5. **Export CSAF** — seul l'import est implémenté.
-6. **Elasticsearch / OpenSearch** — PostgreSQL suffit au volume du MVP (conforme §36).
-7. **Paiement réel des récompenses** — délibérément absent (conforme §18).
-8. **Carte du Burkina Faso** — prévue en version ultérieure (conforme §29).
-9. **HSM** — l'interface de vérification PGP est prête pour cette bascule.
+1. **SSO / OIDC / Keycloak / LDAP** — écarté du MVP pour ne pas complexifier le déploiement (conforme §32 du cahier des charges).
+2. **CVSS v4.0** — le calculateur détecte et rejette explicitement les vecteurs v4 plutôt que de produire un score faux.
+3. **Synchronisation NVD / MITRE / CISA KEV / EPSS** — le fonctionnement de base ne dépend d'aucune API externe (conforme §20).
+4. **Export CSAF** — seul l'import est implémenté.
+5. **Elasticsearch / OpenSearch** — PostgreSQL suffit au volume du MVP (conforme §36).
+6. **Paiement réel des récompenses** — délibérément absent (conforme §18).
+7. **Carte du Burkina Faso** — prévue en version ultérieure (conforme §29).
+8. **HSM** — l'interface de vérification PGP est prête pour cette bascule.
 
 ---
 

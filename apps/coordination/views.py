@@ -86,7 +86,14 @@ def case_list(request):
 
 
 @login_required
+@require_capability(Capability.VIEW_ALL_CASES, Capability.VIEW_ORG_CASES)
 def kanban(request):
+    """Tableau de triage : l'outil de ceux qui traitent les dossiers d'autrui.
+
+    La vue n'exigeait que d'etre connecte. Un signaleur y accedait donc, pour
+    y trouver un tableau reduit a ses propres rapports, que son espace lui
+    presente deja mieux.
+    """
     return render(
         request,
         "coordination/kanban.html",
@@ -108,6 +115,7 @@ def case_detail(request, case_id):
 
     is_reporter = case.reporter_id == request.user.id
     can_manage = request.user.has_capability(Capability.CHANGE_CASE_STATUS)
+    can_draft_advisory = request.user.has_capability(Capability.DRAFT_ADVISORY)
 
     context = {
         "case": case,
@@ -156,6 +164,7 @@ def case_detail(request, case_id):
         "allowed_targets": allowed_targets(case.status, case.workflow),
         "is_reporter": is_reporter,
         "can_manage": can_manage,
+        "can_draft_advisory": can_draft_advisory,
         "bounty": getattr(case, "bounty", None),
         "advisories": case.advisories.all(),
         # Le case original d'un doublon n'est jamais expose au declarant.
@@ -178,7 +187,7 @@ def post_case_message(request, case_id):
                 confidentiality=form.cleaned_data["confidentiality"],
                 request=request,
             )
-            messages.success(request, "Message publie.")
+            messages.success(request, "Message publié.")
         except (PermissionDenied, ValidationError) as exc:
             messages.error(request, str(exc))
     else:
@@ -201,7 +210,7 @@ def change_status(request, case_id):
                 comment=form.cleaned_data.get("comment", ""),
                 request=request,
             )
-            messages.success(request, f"Statut mis a jour : {case.get_status_display()}.")
+            messages.success(request, f"Statut mis à jour : {case.get_status_display()}.")
         except TransitionNotAllowed as exc:
             messages.error(request, str(exc))
     else:
@@ -253,7 +262,7 @@ def triage(request, case_id):
                 request=request,
                 fields=updates,
             )
-        messages.success(request, "Qualification enregistree.")
+        messages.success(request, "Qualification enregistrée.")
     else:
         messages.error(request, "Qualification invalide : " + form.errors.as_text())
     return redirect("coordination:case_detail", case_id=case.case_id)
@@ -273,7 +282,7 @@ def assign(request, case_id):
             note=form.cleaned_data.get("note", ""),
             request=request,
         )
-        messages.success(request, "Assignation mise a jour.")
+        messages.success(request, "Assignation mise à jour.")
     else:
         messages.error(request, "Assignation invalide.")
     return redirect("coordination:case_detail", case_id=case.case_id)
@@ -294,7 +303,7 @@ def mark_as_duplicate(request, case_id):
                 comment=form.cleaned_data.get("comment", ""),
                 request=request,
             )
-            messages.success(request, "Dossier marque comme doublon.")
+            messages.success(request, "Dossier marqué comme doublon.")
         except (PermissionDenied, ValidationError, TransitionNotAllowed) as exc:
             messages.error(request, str(exc))
     else:
@@ -312,7 +321,7 @@ def set_disclosure_date(request, case_id):
         schedule_disclosure(
             case, request.user, form.cleaned_data["disclosure_date"], request=request
         )
-        messages.success(request, "Date de divulgation planifiee.")
+        messages.success(request, "Date de divulgation planifiée.")
     else:
         messages.error(request, "Date invalide.")
     return redirect("coordination:case_detail", case_id=case.case_id)
@@ -354,7 +363,7 @@ def upload_attachment(request, case_id):
                 description=form.cleaned_data.get("description", ""),
                 request=request,
             )
-            messages.success(request, "Piece jointe enregistree.")
+            messages.success(request, "Pièce jointe enregistrée.")
         except (PermissionDenied, ValidationError) as exc:
             messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:

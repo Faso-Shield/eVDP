@@ -9,5 +9,10 @@ urlpatterns = [
     path("manage/", views.organization_manage_list, name="manage_list"),
     path("manage/new/", views.organization_create, name="create"),
     path("manage/<slug:slug>/", views.organization_manage, name="manage"),
+    path(
+        "manage/<slug:slug>/members/add/",
+        views.organization_member_add,
+        name="member_add",
+    ),
     path("<slug:slug>/", views.organization_detail, name="detail"),
 ]
