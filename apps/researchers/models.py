@@ -167,6 +167,15 @@ class IdDocumentType(models.TextChoices):
     OTHER = "OTHER", "Autre piece d'identite"
 
 
+def payout_document_upload_path(instance, filename):
+    """Chemin de stockage opaque : aucune donnee utilisateur dans le chemin.
+
+    Le nom d'origine (`filename`) est ignore : seul `id_document_storage_name`,
+    genere par le service au moment du televersement, determine le chemin.
+    """
+    return f"payout_documents/{instance.created_at:%Y/%m}/{instance.id_document_storage_name}"
+
+
 class PayoutProfile(BaseModel):
     """Informations personnelles necessaires au versement d'une recompense."""
 
@@ -196,6 +205,21 @@ class PayoutProfile(BaseModel):
         help_text="Le chercheur atteste l'exactitude des informations fournies.",
     )
 
+    # -- Justificatif d'identite -------------------------------------------
+    # Stocke sous nom opaque, jamais servi directement (voir
+    # apps.researchers.views.id_document_download) : memes principes que les
+    # pieces jointes de dossier (apps.attachments), perimetre de formats
+    # volontairement plus etroit (voir apps.researchers.services).
+    id_document_file = models.FileField(
+        upload_to=payout_document_upload_path, max_length=300, blank=True
+    )
+    id_document_storage_name = models.CharField(max_length=80, blank=True, editable=False)
+    id_document_original_filename = models.CharField(max_length=255, blank=True)
+    id_document_content_type = models.CharField(max_length=120, blank=True)
+    id_document_size = models.PositiveBigIntegerField(default=0, editable=False)
+    id_document_sha256 = models.CharField(max_length=64, blank=True, editable=False)
+    id_document_uploaded_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         db_table = "payout_profiles"
         verbose_name = "Profil de versement"
@@ -208,7 +232,10 @@ class PayoutProfile(BaseModel):
     def is_complete(self):
         """Conditionne l'affichage d'un moyen de paiement comme utilisable."""
         return bool(
-            self.legal_full_name.strip() and self.contact_phone.strip() and self.accepted_terms
+            self.legal_full_name.strip()
+            and self.contact_phone.strip()
+            and self.accepted_terms
+            and self.id_document_file
         )
 
 

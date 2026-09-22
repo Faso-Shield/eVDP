@@ -5,17 +5,21 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.http import Http404
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import require_not_read_only, require_roles
 from apps.accounts.roles import RESEARCHER_ROLES
+from apps.attachments.views import safe_filename
+from apps.audit.models import AuditAction
+from apps.audit.services import log_action
 
 from .forms import PayoutMethodForm, PayoutProfileForm
 from .models import IdentityMode, PayoutMethod, ResearcherProfile
 from .services import (
     add_payout_method,
+    attach_id_document,
     get_or_create_payout_profile,
     remove_payout_method,
     set_primary_payout_method,
@@ -77,10 +81,19 @@ def wallet_home(request):
     if request.method == "POST" and request.POST.get("form") == "profile":
         if getattr(request.user, "is_read_only", False):
             raise PermissionDenied("Role en lecture seule.")
-        profile_form = PayoutProfileForm(request.POST, instance=profile)
+        profile_form = PayoutProfileForm(request.POST, request.FILES, instance=profile)
         if profile_form.is_valid():
+            uploaded_document = profile_form.cleaned_data.pop("id_document", None)
             profile = profile_form.save(commit=False)
             update_payout_profile(profile, request.user, request=request)
+            if uploaded_document:
+                try:
+                    attach_id_document(
+                        profile, request.user, uploaded_document, request=request
+                    )
+                except ValidationError as exc:
+                    messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+                    return redirect("wallet:home")
             messages.success(request, "Informations personnelles enregistrées.")
             return redirect("wallet:home")
     else:
@@ -161,3 +174,36 @@ def payout_method_remove(request, method_id):
     remove_payout_method(method, request.user, request=request)
     messages.success(request, "Moyen de paiement retiré.")
     return redirect("wallet:home")
+
+
+@login_required
+@require_roles(*RESEARCHER_ROLES)
+def id_document_download(request):
+    """Telechargement controle du justificatif d'identite du portefeuille.
+
+    Comme pour les pieces jointes de dossier : aucun fichier n'est servi
+    directement, l'acces est reserve au titulaire et journalise. Il n'existe
+    pour l'instant aucune voie d'acces pour un role staff (voir le suivi
+    prevu pour la verification des versements).
+    """
+    profile = get_or_create_payout_profile(request.user)
+    if not profile.id_document_file:
+        raise Http404("Aucun justificatif enregistré.")
+
+    log_action(
+        AuditAction.PAYOUT_DOCUMENT_DOWNLOADED,
+        actor=request.user,
+        obj=profile,
+        request=request,
+    )
+    response = FileResponse(
+        profile.id_document_file.open("rb"),
+        as_attachment=True,
+        filename=safe_filename(profile.id_document_original_filename),
+        # Type generique : le navigateur ne doit jamais interpreter le contenu.
+        content_type="application/octet-stream",
+    )
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    response["Cache-Control"] = "no-store, private"
+    return response

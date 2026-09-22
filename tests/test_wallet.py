@@ -8,24 +8,33 @@ auditee, et un identifiant hors perimetre renvoie 404, jamais 403.
 
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from apps.audit.models import AuditAction, AuditLog
-from apps.researchers.forms import PayoutMethodForm
+from apps.researchers.forms import PayoutMethodForm, PayoutProfileForm
 from apps.researchers.models import PayoutMethod, PayoutMethodType, PayoutProfile
 from apps.researchers.services import (
     add_payout_method,
+    attach_id_document,
     get_or_create_payout_profile,
     remove_payout_method,
     set_primary_payout_method,
     update_payout_method,
     update_payout_profile,
+    validate_id_document,
 )
 
 pytestmark = pytest.mark.django_db
 
 
-def _profile(user, **overrides):
+def _upload(
+    name="cnib.pdf", content=b"%PDF-1.4 contenu de test", content_type="application/pdf"
+):
+    return SimpleUploadedFile(name, content, content_type=content_type)
+
+
+def _profile(user, with_document=True, **overrides):
     profile = get_or_create_payout_profile(user)
     defaults = {
         "legal_full_name": "Awa Traore",
@@ -36,6 +45,9 @@ def _profile(user, **overrides):
     for key, value in defaults.items():
         setattr(profile, key, value)
     profile.save()
+    if with_document:
+        attach_id_document(profile, user, _upload())
+        profile.refresh_from_db()
     return profile
 
 
@@ -71,7 +83,10 @@ def test_get_or_create_is_idempotent(researcher_a):
 def test_profile_incomplete_until_terms_accepted(researcher_a):
     profile = get_or_create_payout_profile(researcher_a)
     assert profile.is_complete is False
-    profile = _profile(researcher_a)
+    profile = _profile(researcher_a, with_document=False)
+    assert profile.is_complete is False  # aucun justificatif encore joint
+    attach_id_document(profile, researcher_a, _upload())
+    profile.refresh_from_db()
     assert profile.is_complete is True
 
 
@@ -240,7 +255,11 @@ def test_update_profile_via_view(client_for, researcher_a):
     )
     assert response.status_code == 302
     profile = PayoutProfile.objects.get(user=researcher_a)
-    assert profile.is_complete is True
+    assert profile.legal_full_name == "Awa Traore"
+    assert profile.accepted_terms is True
+    # Sans justificatif joint, le portefeuille reste incomplet : voir
+    # test_upload_document_via_view pour le parcours menant a is_complete.
+    assert profile.is_complete is False
 
 
 def test_add_method_via_view(client_for, researcher_a):
@@ -315,3 +334,181 @@ def test_sidebar_link_visible_only_to_researchers(client_for, researcher_a, dsi_
         client_for(dsi_alpha).get(reverse("dashboard:home"), follow=True).content.decode()
     )
     assert reverse("wallet:home") not in dsi_content
+
+
+# ---------------------------------------------------------------- justificatif
+def test_valid_document_is_accepted():
+    extension, content_type = validate_id_document(_upload("cnib.pdf"))
+    assert extension == "pdf"
+    assert content_type == "application/pdf"
+
+
+def test_unlisted_extension_is_rejected():
+    with pytest.raises(ValidationError, match="Format non accepte"):
+        validate_id_document(_upload("cnib.docx", content_type="application/msword"))
+
+
+def test_executable_disguised_as_document_is_rejected():
+    """Le contenu prime sur l'extension declaree."""
+    with pytest.raises(ValidationError):
+        validate_id_document(_upload("cnib.pdf", content=b"MZ\x90\x00faux document"))
+
+
+def test_oversized_document_is_rejected(settings):
+    settings.EVDP = {**settings.EVDP, "MAX_ID_DOCUMENT_SIZE": 10}
+    with pytest.raises(ValidationError, match="volumineux"):
+        validate_id_document(_upload(content=b"contenu plus grand que 10 octets"))
+
+
+def test_empty_document_is_rejected():
+    with pytest.raises(ValidationError, match="vide"):
+        validate_id_document(_upload(content=b""))
+
+
+def test_attach_document_stores_metadata_and_audits(researcher_a):
+    profile = get_or_create_payout_profile(researcher_a)
+    attach_id_document(profile, researcher_a, _upload("cnib.pdf"))
+    profile.refresh_from_db()
+
+    assert profile.id_document_file.name
+    assert profile.id_document_original_filename == "cnib.pdf"
+    assert profile.id_document_content_type == "application/pdf"
+    assert profile.id_document_sha256
+    assert profile.id_document_uploaded_at is not None
+    assert AuditLog.objects.filter(action=AuditAction.PAYOUT_DOCUMENT_UPLOADED).exists()
+
+
+def test_storage_name_is_opaque_and_not_the_original_filename(researcher_a):
+    profile = get_or_create_payout_profile(researcher_a)
+    attach_id_document(profile, researcher_a, _upload("piece_identite_awa.pdf"))
+    profile.refresh_from_db()
+    assert "piece_identite_awa" not in profile.id_document_file.name
+
+
+def test_replacing_a_document_deletes_the_old_file(researcher_a):
+    profile = get_or_create_payout_profile(researcher_a)
+    attach_id_document(profile, researcher_a, _upload("premier.pdf"))
+    profile.refresh_from_db()
+    # Nom capture comme chaine : `profile.id_document_file` est un FieldFile
+    # mutable en place (delete() met son .name a None) - le lire APRES le
+    # second televersement testerait un objet deja mute, pas la ligne DB.
+    old_name = profile.id_document_file.name
+    storage = profile.id_document_file.storage
+    assert storage.exists(old_name)
+
+    attach_id_document(profile, researcher_a, _upload("second.pdf"))
+    profile.refresh_from_db()
+
+    assert not storage.exists(old_name)
+    assert profile.id_document_file.name != old_name
+
+
+def test_cannot_attach_document_to_someone_elses_profile(researcher_a, researcher_b):
+    profile = get_or_create_payout_profile(researcher_a)
+    with pytest.raises(PermissionDenied):
+        attach_id_document(profile, researcher_b, _upload())
+
+
+def test_profile_form_rejects_invalid_document_extension():
+    form = PayoutProfileForm(
+        data={
+            "legal_full_name": "Awa Traore",
+            "contact_phone": "+22670000000",
+            "country": "Burkina Faso",
+            "accepted_terms": "on",
+        },
+        files={"id_document": _upload("cnib.exe", content_type="application/octet-stream")},
+    )
+    assert not form.is_valid()
+    assert "id_document" in form.errors
+
+
+def test_profile_form_accepts_no_document():
+    """Le justificatif est facultatif a chaque soumission : ne pas en
+    fournir de nouveau conserve celui deja enregistre."""
+    form = PayoutProfileForm(
+        data={
+            "legal_full_name": "Awa Traore",
+            "contact_phone": "+22670000000",
+            "country": "Burkina Faso",
+            "accepted_terms": "on",
+        }
+    )
+    assert form.is_valid(), form.errors
+
+
+# --------------------------------------------------------------------- vues
+def test_upload_document_via_view(client_for, researcher_a):
+    client = client_for(researcher_a)
+    response = client.post(
+        reverse("wallet:home"),
+        {
+            "form": "profile",
+            "legal_full_name": "Awa Traore",
+            "contact_phone": "+22670000000",
+            "country": "Burkina Faso",
+            "accepted_terms": "on",
+            "id_document": _upload("cnib.pdf"),
+        },
+    )
+    assert response.status_code == 302
+    profile = PayoutProfile.objects.get(user=researcher_a)
+    assert profile.id_document_original_filename == "cnib.pdf"
+    assert profile.is_complete is True
+
+
+def test_document_owner_can_download(client_for, researcher_a):
+    profile = get_or_create_payout_profile(researcher_a)
+    attach_id_document(profile, researcher_a, _upload("cnib.pdf"))
+
+    client = client_for(researcher_a)
+    response = client.get(reverse("wallet:id_document_download"))
+    assert response.status_code == 200
+    assert AuditLog.objects.filter(action=AuditAction.PAYOUT_DOCUMENT_DOWNLOADED).exists()
+
+
+def test_download_without_document_is_404(client_for, researcher_a):
+    client = client_for(researcher_a)
+    response = client.get(reverse("wallet:id_document_download"))
+    assert response.status_code == 404
+
+
+def test_another_researcher_cannot_reach_the_first_ones_document(
+    client_for, researcher_a, researcher_b
+):
+    """Chaque compte n'a acces qu'a SON PROPRE document : la vue est
+    volontairement liee a request.user, jamais a un identifiant d'URL."""
+    profile = get_or_create_payout_profile(researcher_a)
+    attach_id_document(profile, researcher_a, _upload("cnib.pdf"))
+
+    client = client_for(researcher_b)
+    response = client.get(reverse("wallet:id_document_download"))
+    assert response.status_code == 404
+
+
+def test_wallet_form_has_multipart_enctype(client_for, researcher_a):
+    """Regression : sans enctype='multipart/form-data', le navigateur
+    n'envoie jamais le contenu d'un fichier joint, seulement son nom."""
+    client = client_for(researcher_a)
+    content = client.get(reverse("wallet:home")).content.decode()
+    assert 'enctype="multipart/form-data"' in content
+
+
+def test_wallet_page_shows_current_document_status(client_for, researcher_a):
+    profile = get_or_create_payout_profile(researcher_a)
+    attach_id_document(profile, researcher_a, _upload("cnib.pdf"))
+
+    client = client_for(researcher_a)
+    content = client.get(reverse("wallet:home")).content.decode()
+    assert "cnib.pdf" in content
+    assert reverse("wallet:id_document_download") in content
+
+
+def test_wallet_page_leaks_no_django_comment_markers(client_for, researcher_a):
+    """Regression : les commentaires Django multi-lignes en syntaxe {# #}
+    ne sont pas supportes et s'affichent comme texte brut (voir aussi
+    tests/test_programs.py, meme piege deja rencontre sur un autre gabarit)."""
+    client = client_for(researcher_a)
+    content = client.get(reverse("wallet:home")).content.decode()
+    assert "{#" not in content
+    assert "#}" not in content

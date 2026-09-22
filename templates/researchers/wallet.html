@@ -22,7 +22,30 @@
 <div class="card mb-2">
   <div class="card-header"><h2>Informations personnelles</h2></div>
   <div class="card-body">
-    <form method="post">
+    {% if profile.id_document_file %}
+    <div class="notice-secure notice">
+      <div class="doc-badge">
+        <span class="doc-badge-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        </span>
+        <div>
+          <div class="doc-badge-name">{{ profile.id_document_original_filename }}</div>
+          <div class="small muted">
+            {{ profile.id_document_size|filesizeformat }} — téléversé le
+            {{ profile.id_document_uploaded_at|date:"d/m/Y à H:i" }}
+          </div>
+        </div>
+        <a class="btn btn-sm btn-outline" href="{% url 'wallet:id_document_download' %}">Télécharger</a>
+      </div>
+      <p class="small muted mb-0 mt-1">Téléverser un nouveau fichier ci-dessous le remplacera.</p>
+    </div>
+    {% endif %}
+    {% comment %}
+    enctype obligatoire : sans lui, le navigateur n'envoie que le nom du
+    fichier en texte, jamais son contenu - le formulaire echouerait
+    silencieusement des qu'un justificatif est joint.
+    {% endcomment %}
+    <form method="post" enctype="multipart/form-data">
       {% csrf_token %}
       <input type="hidden" name="form" value="profile">
       <div class="form-grid">

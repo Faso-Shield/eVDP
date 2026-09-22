@@ -223,6 +223,34 @@ input:focus, select:focus, textarea:focus {
 .checkbox-field label { font-weight: 500; color: var(--text); margin: 0; }
 .required { color: var(--evdp-red); }
 
+/* ------------------------------------------------------- televersement */
+/* Zone de depot stylee par CSS seul (aucun JS) : le navigateur affiche deja
+   nativement le nom du fichier choisi a cote du bouton une fois selectionne. */
+input.upload-input {
+  padding: 1rem; border: 1px dashed var(--border-strong); border-radius: var(--radius);
+  background: var(--surface-alt); cursor: pointer; font-size: .88rem; color: var(--text-muted);
+  transition: border-color .15s ease, background-color .15s ease;
+}
+input.upload-input:hover, input.upload-input:focus {
+  border-color: var(--evdp-accent); background: var(--evdp-accent-light); outline: none;
+}
+input.upload-input::file-selector-button {
+  margin-right: .9rem; padding: .5rem .95rem; border: none; border-radius: var(--radius);
+  background: var(--evdp-navy); color: #fff; font-weight: 600; font-size: .87rem;
+  font-family: inherit; cursor: pointer; transition: background-color .15s ease;
+}
+input.upload-input::file-selector-button:hover { background: var(--evdp-navy-light); }
+
+.doc-badge {
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+}
+.doc-badge-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.2rem; height: 2.2rem; border-radius: var(--radius);
+  background: var(--evdp-accent-light); color: var(--evdp-accent); flex: none;
+}
+.doc-badge-name { font-weight: 600; color: var(--evdp-navy); }
+
 .filters { display: flex; gap: .7rem; flex-wrap: wrap; align-items: flex-end; }
 .filters .form-field { margin-bottom: 0; min-width: 165px; }
 /* Pousse le contenu a l'extremite droite de la ligne : "float: right" n'a

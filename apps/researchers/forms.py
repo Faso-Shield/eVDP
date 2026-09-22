@@ -9,9 +9,38 @@ ne sont jamais publiees.
 from django import forms
 
 from .models import PayoutMethod, PayoutMethodType, PayoutProfile
+from .services import ID_DOCUMENT_ALLOWED_EXTENSIONS, validate_id_document
 
 
 class PayoutProfileForm(forms.ModelForm):
+    """Informations personnelles + justificatif d'identite.
+
+    `id_document` n'est pas un champ du modele : c'est un fichier a
+    televerser, valide ici puis enregistre par
+    apps.researchers.services.attach_id_document (nom opaque, stockage
+    controle). Optionnel a chaque soumission : ne pas en fournir un nouveau
+    conserve le document deja enregistre.
+    """
+
+    id_document = forms.FileField(
+        label="Justificatif d'identite (CNIB, passeport…)",
+        required=False,
+        widget=forms.FileInput(
+            attrs={
+                "class": "upload-input",
+                # Filtre la boite de dialogue du navigateur ; ne remplace pas
+                # la validation serveur (voir validate_id_document), seule
+                # autorite en la matiere.
+                "accept": ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*",
+            }
+        ),
+        help_text=(
+            "Formats acceptes : "
+            + ", ".join(sorted(ID_DOCUMENT_ALLOWED_EXTENSIONS))
+            + ". Televerser un nouveau fichier remplace le document existant."
+        ),
+    )
+
     class Meta:
         model = PayoutProfile
         fields = [
@@ -41,6 +70,12 @@ class PayoutProfileForm(forms.ModelForm):
                 "Vous devez attester l'exactitude de vos informations."
             )
         return accepted
+
+    def clean_id_document(self):
+        uploaded = self.cleaned_data.get("id_document")
+        if uploaded:
+            validate_id_document(uploaded)
+        return uploaded
 
 
 class PayoutMethodForm(forms.ModelForm):

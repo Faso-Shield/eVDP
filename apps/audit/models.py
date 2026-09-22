@@ -55,6 +55,8 @@ class AuditAction(models.TextChoices):
     PAYOUT_METHOD_ADDED = "PAYOUT_METHOD_ADDED", "Moyen de paiement ajoute"
     PAYOUT_METHOD_UPDATED = "PAYOUT_METHOD_UPDATED", "Moyen de paiement modifie"
     PAYOUT_METHOD_REMOVED = "PAYOUT_METHOD_REMOVED", "Moyen de paiement retire"
+    PAYOUT_DOCUMENT_UPLOADED = "PAYOUT_DOCUMENT_UPLOADED", "Piece d'identite televersee"
+    PAYOUT_DOCUMENT_DOWNLOADED = "PAYOUT_DOCUMENT_DOWNLOADED", "Piece d'identite telechargee"
 
 
 class AuditResult(models.TextChoices):

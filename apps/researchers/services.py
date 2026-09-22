@@ -4,12 +4,17 @@ La reputation n'est jamais modifiable par le chercheur : elle derive
 exclusivement d'evenements emis par le moteur de coordination.
 """
 
+import mimetypes
+import uuid
+
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
+from apps.core.utils import sha256_hexdigest
 from apps.vulnerabilities.constants import Severity
 
 from .models import (
@@ -18,6 +23,21 @@ from .models import (
     ReputationEvent,
     ReputationReason,
     ResearcherProfile,
+)
+
+#: Perimetre volontairement plus etroit qu'une piece jointe generique
+#: (apps.attachments) : un justificatif d'identite n'a pas vocation a etre
+#: une archive, un journal ou un fichier de configuration.
+ID_DOCUMENT_ALLOWED_EXTENSIONS = frozenset({"pdf", "jpg", "jpeg", "png", "webp"})
+
+#: Signatures binaires refusees quel que soit le nom du fichier (meme liste
+#: que apps.attachments.services.DANGEROUS_MAGIC, dupliquee ici pour ne pas
+#: coupler le portefeuille au module de pieces jointes de dossier).
+_DANGEROUS_MAGIC = (
+    b"MZ",  # executable Windows (PE)
+    b"\x7fELF",  # executable Linux (ELF)
+    b"\xca\xfe\xba\xbe",  # class Java / Mach-O fat
+    b"#!/",  # script shell
 )
 
 
@@ -200,3 +220,82 @@ def remove_payout_method(method, actor, request=None):
     # Si le moyen retire etait le seul, aucun autre n'est promu
     # automatiquement : le chercheur choisit lui-meme son nouveau principal.
     return method
+
+
+# ---------------------------------------------------------------------------
+# Justificatif d'identite
+# ---------------------------------------------------------------------------
+def validate_id_document(uploaded_file):
+    """Controle taille, extension et signature binaire d'un justificatif.
+
+    Leve ValidationError au premier probleme rencontre. Retourne
+    (extension, content_type) si le fichier est accepte.
+    """
+    name = (uploaded_file.name or "").strip()
+    if not name:
+        raise ValidationError("Nom de fichier manquant.")
+    if len(name) > 255:
+        raise ValidationError("Nom de fichier trop long.")
+    if uploaded_file.size == 0:
+        raise ValidationError("Fichier vide.")
+
+    max_size = settings.EVDP["MAX_ID_DOCUMENT_SIZE"]
+    if uploaded_file.size > max_size:
+        limit_mb = max_size // (1024 * 1024)
+        raise ValidationError(f"Fichier trop volumineux (maximum {limit_mb} Mo).")
+
+    extension = name.rsplit(".", 1)[1].lower() if "." in name else ""
+    if extension not in ID_DOCUMENT_ALLOWED_EXTENSIONS:
+        allowed = ", ".join(sorted(ID_DOCUMENT_ALLOWED_EXTENSIONS))
+        raise ValidationError(
+            f"Format non accepte : .{extension or '?'}. Formats acceptes : {allowed}."
+        )
+
+    head = uploaded_file.read(8)
+    uploaded_file.seek(0)
+    for magic in _DANGEROUS_MAGIC:
+        if head.startswith(magic):
+            raise ValidationError(
+                "Le contenu du fichier ne correspond pas a un document valide."
+            )
+
+    guessed, _ = mimetypes.guess_type(name)
+    return extension, (guessed or "application/octet-stream")[:120]
+
+
+@transaction.atomic
+def attach_id_document(profile, actor, uploaded_file, request=None):
+    """Enregistre le justificatif d'identite du portefeuille.
+
+    Remplace tout document existant : l'ancien fichier est supprime du
+    stockage (jamais laisse orphelin), le nouveau recoit un nom opaque
+    genere ici, distinct a chaque televersement.
+    """
+    if actor.pk != profile.user_id:
+        raise PermissionDenied("Vous ne pouvez modifier que votre propre portefeuille.")
+
+    extension, content_type = validate_id_document(uploaded_file)
+    digest = sha256_hexdigest(iter(lambda: uploaded_file.read(65536), b""))
+    uploaded_file.seek(0)
+
+    if profile.id_document_file:
+        profile.id_document_file.delete(save=False)
+
+    profile.id_document_storage_name = f"{uuid.uuid4().hex}.{extension}"
+    profile.id_document_original_filename = uploaded_file.name[:255]
+    profile.id_document_content_type = content_type
+    profile.id_document_size = uploaded_file.size
+    profile.id_document_sha256 = digest
+    profile.id_document_uploaded_at = timezone.now()
+    profile.save()
+    profile.id_document_file.save(profile.id_document_storage_name, uploaded_file, save=True)
+
+    log_action(
+        AuditAction.PAYOUT_DOCUMENT_UPLOADED,
+        actor=actor,
+        obj=profile,
+        request=request,
+        filename=profile.id_document_original_filename,
+        sha256=digest,
+    )
+    return profile

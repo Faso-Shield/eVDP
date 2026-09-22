@@ -415,6 +415,7 @@ EVDP = {
     ],
     "MAX_ATTACHMENTS_PER_CASE": env.int("EVDP_MAX_ATTACHMENTS_PER_CASE", default=20),
     "MAX_PAYOUT_METHODS": env.int("EVDP_MAX_PAYOUT_METHODS", default=5),
+    "MAX_ID_DOCUMENT_SIZE": env.int("EVDP_MAX_ID_DOCUMENT_SIZE", default=10 * 1024 * 1024),
     "CAPTCHA_ENABLED": env("EVDP_CAPTCHA_ENABLED"),
     "PGP_PUBLIC_KEY": env("PGP_PUBLIC_KEY", default=""),
     "PGP_FINGERPRINT": env("PGP_FINGERPRINT", default=""),
