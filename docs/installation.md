@@ -22,7 +22,7 @@ pour les tests).
 ### 2.1 Récupération
 
 ```bash
-git clone <url-du-depot> evdp
+git clone https://github.com/wendiouedraogo8-art/evdp.git
 cd evdp
 ```
 
@@ -79,16 +79,43 @@ Ouvrez ensuite **http://localhost/**.
 docker compose exec evdp-web python manage.py createsuperuser
 ```
 
-### 2.6 Données de démonstration (optionnel)
+### 2.6 Données de référence (recommandé pour une vraie instance)
+
+```bash
+docker compose exec evdp-web python manage.py seed_reference
+```
+
+Charge uniquement des données réelles et réutilisables, sans aucun compte
+ni mot de passe de démonstration : le référentiel CWE, la politique SLA
+nationale par défaut, les textes de la plateforme (politique de
+divulgation, à propos), l'ANSSI-BF, le CSIRT National, et les 15
+principaux ministères du Burkina Faso (organisation_type `MINISTRY`,
+domaine `.gov.bf` indicatif).
+
+Option `--with-programs` : ajoute un programme VDP national (ANSSI-BF) et
+deux programmes Bug Bounty réalistes (CSIRT National ; Ministère de la
+Santé), avec périmètre technique, règles de test et matrice de
+récompenses en XOF — toujours sans faux compte ni faux dossier.
+
+Idempotente : peut être relancée sans dupliquer. Les coordonnées de
+contact de chaque organisation (email officiel, responsable DSI) sont
+volontairement laissées vides — à compléter depuis l'interface (fiche de
+l'organisation) ou en invitant le vrai responsable
+(**Organisations → *nom* → Ajouter un membre**).
+
+### 2.7 Données de démonstration (optionnel, tests uniquement)
 
 ```bash
 docker compose run --rm evdp-web seed
 ```
 
-Crée 4 organisations, 9 comptes, 2 programmes, 3 dossiers, 1 récompense
-approuvée et 1 advisory publié.
+Crée 4 organisations, 9 comptes, 2 programmes, 4 dossiers (dont un
+signalement anonyme, sans compte), 1 récompense approuvée et 1 advisory
+publié — tous fictifs, avec un mot de passe commun et documenté.
 
 > ⚠️ **Jamais en production.** Ces comptes utilisent un mot de passe connu.
+> Si vous avez déjà chargé `seed_reference`, `seed_demo` s'ajoute par-dessus
+> sans conflit (organisations différentes).
 
 ---
 
