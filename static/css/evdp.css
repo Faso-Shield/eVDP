@@ -216,6 +216,10 @@ input:focus, select:focus, textarea:focus {
 .form-field { margin-bottom: .95rem; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0 1.1rem; }
 @media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } }
+
+/* Bloc de champs specifique a un type de moyen de paiement (portefeuille) :
+   separe visuellement du type/nom communs, sans effet tant que visible. */
+.method-group { margin-top: .9rem; padding-top: .9rem; border-top: 1px dashed var(--border); }
 .help { font-size: .79rem; color: var(--text-muted); margin-top: .2rem; }
 .errorlist { color: var(--evdp-red); font-size: .82rem; margin: .25rem 0 0; padding-left: 1.1rem; }
 .checkbox-field { display: flex; gap: .5rem; align-items: flex-start; margin-bottom: .8rem; }

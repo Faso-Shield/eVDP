@@ -73,6 +73,26 @@ def _mobile_method(**overrides):
     return PayoutMethod(**defaults)
 
 
+def _crypto_method(**overrides):
+    defaults = {
+        "method_type": PayoutMethodType.CRYPTO,
+        "crypto_currency": "USDT",
+        "crypto_network": "Tron (TRC-20)",
+        "crypto_wallet_address": "TXaBcDeFgHiJkLmNoPqRsTuVwXyZ12345",
+    }
+    defaults.update(overrides)
+    return PayoutMethod(**defaults)
+
+
+def _paypal_method(**overrides):
+    defaults = {
+        "method_type": PayoutMethodType.PAYPAL,
+        "paypal_email": "awa.traore@example.com",
+    }
+    defaults.update(overrides)
+    return PayoutMethod(**defaults)
+
+
 # --------------------------------------------------------------------- profil
 def test_get_or_create_is_idempotent(researcher_a):
     first = get_or_create_payout_profile(researcher_a)
@@ -512,3 +532,194 @@ def test_wallet_page_leaks_no_django_comment_markers(client_for, researcher_a):
     content = client.get(reverse("wallet:home")).content.decode()
     assert "{#" not in content
     assert "#}" not in content
+
+
+# ------------------------------------------------------- cryptomonnaie
+def test_add_crypto_method(researcher_a):
+    profile = _profile(researcher_a)
+    method = add_payout_method(profile, researcher_a, _crypto_method())
+    assert method.pk is not None
+    assert method.method_type == PayoutMethodType.CRYPTO
+
+
+def test_crypto_wallet_address_is_masked_in_summary(researcher_a):
+    profile = _profile(researcher_a)
+    method = add_payout_method(profile, researcher_a, _crypto_method())
+    assert "TXaBcDeFgHiJkLmNoPqRsTuVwXyZ12345" not in method.summary
+    assert method.summary.endswith("2345")
+    assert "USDT" in method.summary
+    assert "Tron (TRC-20)" in method.summary
+
+
+def test_crypto_requires_its_fields():
+    form = PayoutMethodForm(data={"method_type": PayoutMethodType.CRYPTO})
+    assert not form.is_valid()
+    assert "crypto_currency" in form.errors
+    assert "crypto_network" in form.errors
+    assert "crypto_wallet_address" in form.errors
+
+
+def test_valid_crypto_form_passes():
+    form = PayoutMethodForm(
+        data={
+            "method_type": PayoutMethodType.CRYPTO,
+            "crypto_currency": "BTC",
+            "crypto_network": "Bitcoin",
+            "crypto_wallet_address": "bc1qxyz0000000000000000000000000000000000",
+        }
+    )
+    assert form.is_valid(), form.errors
+
+
+def test_add_crypto_method_via_view(client_for, researcher_a):
+    client = client_for(researcher_a)
+    response = client.post(
+        reverse("wallet:method_add"),
+        {
+            "method_type": PayoutMethodType.CRYPTO,
+            "crypto_currency": "ETH",
+            "crypto_network": "Ethereum (ERC-20)",
+            "crypto_wallet_address": "0x0000000000000000000000000000000000dEaD",
+        },
+    )
+    assert response.status_code == 302
+    method = PayoutMethod.objects.get(profile__user=researcher_a)
+    assert method.method_type == PayoutMethodType.CRYPTO
+    assert method.crypto_currency == "ETH"
+
+
+# --------------------------------------- un formulaire par type, pas un seul
+def test_switching_type_never_persists_the_other_types_fields():
+    """Coeur de la demande : remplir plusieurs blocs puis choisir un type ne
+    doit conserver QUE les champs de ce type, jamais les autres."""
+    form = PayoutMethodForm(
+        data={
+            "method_type": PayoutMethodType.CRYPTO,
+            "crypto_currency": "BTC",
+            "crypto_network": "Bitcoin",
+            "crypto_wallet_address": "bc1qxyz0000000000000000000000000000000000",
+            # Champs d'un AUTRE type, remplis avant de finalement choisir crypto :
+            "bank_name": "Coris Bank",
+            "account_holder_name": "Awa Traore",
+            "account_number": "BF1234567890123456",
+            "mobile_operator": "ORANGE_MONEY",
+            "mobile_number": "70000000",
+            "mobile_holder_name": "Awa Traore",
+        }
+    )
+    assert form.is_valid(), form.errors
+    method = form.save(commit=False)
+    assert method.bank_name == ""
+    assert method.account_number == ""
+    assert method.mobile_number == ""
+    assert method.crypto_wallet_address == "bc1qxyz0000000000000000000000000000000000"
+
+
+def test_method_form_renders_one_group_per_type(client_for, researcher_a):
+    client = client_for(researcher_a)
+    content = client.get(reverse("wallet:home")).content.decode()
+    for group in ("BANK_TRANSFER", "MOBILE_MONEY", "CRYPTO", "OTHER"):
+        assert f'data-method-group="{group}"' in content
+
+
+def test_add_form_shows_no_group_before_a_type_is_chosen(client_for, researcher_a):
+    """Le type n'a pas de valeur par defaut (champ obligatoire, liste
+    deroulante sur "---------") : aucun groupe ne doit presupposer un type
+    tant que l'utilisateur n'a rien choisi."""
+    client = client_for(researcher_a)
+    content = client.get(reverse("wallet:home")).content.decode()
+    add_form_html = content.split("Ajouter un moyen de paiement")[1]
+    for group in ("BANK_TRANSFER", "MOBILE_MONEY", "CRYPTO", "OTHER"):
+        block = add_form_html.split(f'data-method-group="{group}"')[1][:40]
+        assert "hidden" in block
+
+
+def test_edit_form_shows_the_methods_own_group_by_default(client_for, researcher_a):
+    profile = _profile(researcher_a)
+    method = add_payout_method(profile, researcher_a, _crypto_method())
+
+    client = client_for(researcher_a)
+    content = client.get(reverse("wallet:method_edit", args=[method.id])).content.decode()
+    crypto_block = content.split('data-method-group="CRYPTO"')[1][:40]
+    bank_block = content.split('data-method-group="BANK_TRANSFER"')[1][:40]
+    assert "hidden" not in crypto_block
+    assert "hidden" in bank_block
+
+
+def test_wallet_page_loads_the_dynamic_form_script(client_for, researcher_a):
+    client = client_for(researcher_a)
+    content = client.get(reverse("wallet:home")).content.decode()
+    assert "js/wallet.js" in content
+
+
+# ------------------------------------------------------------------- paypal
+def test_add_paypal_method(researcher_a):
+    profile = _profile(researcher_a)
+    method = add_payout_method(profile, researcher_a, _paypal_method())
+    assert method.pk is not None
+    assert method.method_type == PayoutMethodType.PAYPAL
+
+
+def test_paypal_email_is_masked_in_summary(researcher_a):
+    profile = _profile(researcher_a)
+    method = add_payout_method(profile, researcher_a, _paypal_method())
+    assert "awa.traore@example.com" not in method.summary
+    assert method.summary.startswith("PayPal — ")
+    assert method.summary.endswith(".com")
+
+
+def test_paypal_requires_its_email():
+    form = PayoutMethodForm(data={"method_type": PayoutMethodType.PAYPAL})
+    assert not form.is_valid()
+    assert "paypal_email" in form.errors
+
+
+def test_paypal_rejects_an_invalid_email():
+    form = PayoutMethodForm(
+        data={"method_type": PayoutMethodType.PAYPAL, "paypal_email": "pas-un-email"}
+    )
+    assert not form.is_valid()
+    assert "paypal_email" in form.errors
+
+
+def test_valid_paypal_form_passes():
+    form = PayoutMethodForm(
+        data={"method_type": PayoutMethodType.PAYPAL, "paypal_email": "awa@example.com"}
+    )
+    assert form.is_valid(), form.errors
+
+
+def test_add_paypal_method_via_view(client_for, researcher_a):
+    client = client_for(researcher_a)
+    response = client.post(
+        reverse("wallet:method_add"),
+        {"method_type": PayoutMethodType.PAYPAL, "paypal_email": "awa@example.com"},
+    )
+    assert response.status_code == 302
+    method = PayoutMethod.objects.get(profile__user=researcher_a)
+    assert method.method_type == PayoutMethodType.PAYPAL
+    assert method.paypal_email == "awa@example.com"
+
+
+def test_switching_to_paypal_never_persists_other_types_fields():
+    form = PayoutMethodForm(
+        data={
+            "method_type": PayoutMethodType.PAYPAL,
+            "paypal_email": "awa@example.com",
+            "bank_name": "Coris Bank",
+            "account_holder_name": "Awa Traore",
+            "account_number": "BF1234567890123456",
+        }
+    )
+    assert form.is_valid(), form.errors
+    method = form.save(commit=False)
+    assert method.bank_name == ""
+    assert method.account_number == ""
+    assert method.paypal_email == "awa@example.com"
+
+
+def test_method_form_renders_a_paypal_group(client_for, researcher_a):
+    client = client_for(researcher_a)
+    content = client.get(reverse("wallet:home")).content.decode()
+    assert 'data-method-group="PAYPAL"' in content
+    assert "Adresse email PayPal" in content

@@ -1,5 +1,5 @@
 {% extends "base_dashboard.html" %}
-{% load evdp_tags %}
+{% load evdp_tags static %}
 {% block title %}Mon portefeuille{% endblock %}
 
 {% block dashboard_content %}
@@ -98,14 +98,25 @@
   {% if methods|length < max_methods %}
   <div class="card-footer">
     <h3>Ajouter un moyen de paiement</h3>
-    <form method="post" action="{% url 'wallet:method_add' %}">
+    <form method="post" action="{% url 'wallet:method_add' %}" class="method-form">
       {% csrf_token %}
-      <div class="form-grid">
-        {% for field in method_form %}{% include "partials/form_field.html" %}{% endfor %}
-      </div>
+      {% include "researchers/_method_form_fields.html" with form=method_form %}
       <button class="btn btn-accent" type="submit">Ajouter</button>
     </form>
   </div>
   {% endif %}
 </div>
+
+<datalist id="crypto-currency-suggestions">
+  <option value="BTC"></option>
+  <option value="ETH"></option>
+  <option value="USDT"></option>
+  <option value="USDC"></option>
+  <option value="BNB"></option>
+  <option value="TRX"></option>
+</datalist>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/wallet.js' %}" defer></script>
 {% endblock %}

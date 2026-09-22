@@ -242,6 +242,8 @@ class PayoutProfile(BaseModel):
 class PayoutMethodType(models.TextChoices):
     BANK_TRANSFER = "BANK_TRANSFER", "Virement bancaire"
     MOBILE_MONEY = "MOBILE_MONEY", "Mobile money"
+    CRYPTO = "CRYPTO", "Cryptomonnaie"
+    PAYPAL = "PAYPAL", "PayPal"
     OTHER = "OTHER", "Autre"
 
 
@@ -284,6 +286,19 @@ class PayoutMethod(BaseModel):
     mobile_number = models.CharField(max_length=32, blank=True)
     mobile_holder_name = models.CharField(max_length=150, blank=True)
 
+    # -- Cryptomonnaie ------------------------------------------------------
+    crypto_currency = models.CharField(max_length=16, blank=True, help_text="BTC, ETH, USDT…")
+    crypto_network = models.CharField(
+        max_length=60,
+        blank=True,
+        help_text="Reseau/chaine (ex. Bitcoin, Ethereum ERC-20, Tron TRC-20). "
+        "Un envoi sur le mauvais reseau est irrecuperable.",
+    )
+    crypto_wallet_address = models.CharField(max_length=128, blank=True)
+
+    # -- PayPal ---------------------------------------------------------------
+    paypal_email = models.EmailField(blank=True)
+
     # -- Autre ------------------------------------------------------------------
     other_label = models.CharField(max_length=120, blank=True)
     other_reference = models.CharField(max_length=120, blank=True)
@@ -313,6 +328,10 @@ class PayoutMethod(BaseModel):
             return mask_value(self.account_number)
         if self.method_type == PayoutMethodType.MOBILE_MONEY:
             return mask_value(self.mobile_number)
+        if self.method_type == PayoutMethodType.CRYPTO:
+            return mask_value(self.crypto_wallet_address)
+        if self.method_type == PayoutMethodType.PAYPAL:
+            return mask_value(self.paypal_email)
         return self.other_reference or "—"
 
     @property
@@ -323,4 +342,11 @@ class PayoutMethod(BaseModel):
         if self.method_type == PayoutMethodType.MOBILE_MONEY:
             operator = self.get_mobile_operator_display() if self.mobile_operator else "Mobile"
             return f"{operator} — {self.masked_identifier}"
+        if self.method_type == PayoutMethodType.CRYPTO:
+            currency = self.crypto_currency or "Crypto"
+            if self.crypto_network:
+                return f"{currency} ({self.crypto_network}) — {self.masked_identifier}"
+            return f"{currency} — {self.masked_identifier}"
+        if self.method_type == PayoutMethodType.PAYPAL:
+            return f"PayPal — {self.masked_identifier}"
         return self.other_label or "Autre moyen"
