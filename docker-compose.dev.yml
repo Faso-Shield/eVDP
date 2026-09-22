@@ -43,6 +43,15 @@ services:
     ports:
       - "127.0.0.1:8025:8025"
 
+  # Cache "no-cache" sur /static/ au lieu de l'immutable 30j de prod : en dev,
+  # config.settings.dev n'empreinte pas les noms de fichiers (pas de manifest),
+  # donc un cache longue duree servirait une ancienne version apres chaque
+  # modification de CSS/JS. Ce mount ne remplace que ce fichier precis, pas
+  # tout le dossier conf.d (proxy_headers.inc reste celui de la prod).
+  evdp-nginx:
+    volumes:
+      - ./docker/nginx/dev/evdp.conf:/etc/nginx/conf.d/evdp.conf:ro
+
   # Console MinIO, strictement locale.
   evdp-minio:
     ports:
