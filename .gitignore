@@ -46,3 +46,6 @@ desktop.ini
 backups/
 *.dump
 *.sql.gz
+
+# --- Outillage local -----------------------------------------------------
+.claude/
