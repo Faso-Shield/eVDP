@@ -126,8 +126,6 @@ class BusinessAccountAdmin(BaseAccountAdmin):
                     "email_verified",
                     "mfa_enabled",
                     "mfa_confirmed_at",
-                    "pgp_public_key",
-                    "pgp_fingerprint",
                     "last_login_ip",
                 )
             },
@@ -202,8 +200,6 @@ class ReporterAccountAdmin(BaseAccountAdmin):
             {
                 "fields": (
                     "email_verified",
-                    "pgp_public_key",
-                    "pgp_fingerprint",
                     "last_login_ip",
                 ),
                 "description": "Un compte signaleur n'est jamais soumis à la "

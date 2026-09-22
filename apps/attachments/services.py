@@ -104,10 +104,23 @@ def store_attachment(
     metadata = validate_upload(uploaded_file)
     digest = compute_digest(uploaded_file)
 
-    head = uploaded_file.read(200)
+    # Un bloc PGP armure porte son en-tete au tout debut du fichier mais son
+    # pied de page (et le checksum qui le precede) seulement a la toute fin :
+    # les deux doivent etre verifies pour ne pas rater un fichier legitimement
+    # chiffre (voir apps/core/pgp.is_encrypted_blob). On lit un echantillon
+    # borne a chaque extremite plutot que le fichier entier, pour rester
+    # efficace meme sur une piece jointe volumineuse.
+    sample_size = 4096
+    uploaded_file.seek(0)
+    head = uploaded_file.read(sample_size)
+    tail = b""
+    if uploaded_file.size > sample_size:
+        uploaded_file.seek(max(uploaded_file.size - sample_size, 0))
+        tail = uploaded_file.read(sample_size)
     uploaded_file.seek(0)
     try:
-        encrypted = is_encrypted_blob(head.decode("utf-8", errors="ignore"))
+        sample_text = (head + tail).decode("utf-8", errors="ignore")
+        encrypted = is_encrypted_blob(sample_text)
     except Exception:  # pragma: no cover
         encrypted = False
 
