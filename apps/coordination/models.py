@@ -515,6 +515,38 @@ class SLAEvent(BaseModel):
         return self.created_at + timedelta(seconds=total.total_seconds() * ratio)
 
 
+class CaseTrackingToken(BaseModel):
+    """Jeton de suivi pour un declarant sans compte (avec ou sans email).
+
+    Permet de consulter un statut simplifie du dossier en lecture seule, sans
+    authentification. Seul le hash est conserve (meme principe que les cles
+    d'API) : une fuite de la base ne permet pas de rejouer les jetons.
+    """
+
+    case = models.OneToOneField(Case, on_delete=models.CASCADE, related_name="tracking_token")
+    token_hash = models.CharField(max_length=64, unique=True, db_index=True)
+    expires_at = models.DateTimeField()
+    last_accessed_at = models.DateTimeField(null=True, blank=True)
+    access_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "case_tracking_tokens"
+        verbose_name = "Jeton de suivi"
+        verbose_name_plural = "Jetons de suivi"
+
+    def __str__(self):
+        return f"Suivi {self.case.case_id}"
+
+    @property
+    def is_valid(self):
+        return timezone.now() < self.expires_at
+
+    def record_access(self):
+        self.last_accessed_at = timezone.now()
+        self.access_count = models.F("access_count") + 1
+        self.save(update_fields=["last_accessed_at", "access_count", "updated_at"])
+
+
 def validate_no_self_duplicate(case):
     if case.duplicate_of_id and case.duplicate_of_id == case.id:
         raise ValidationError("Un case ne peut pas être le doublon de lui-même.")

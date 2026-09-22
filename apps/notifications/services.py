@@ -104,6 +104,13 @@ DEFAULT_TEMPLATES = {
         "[eVDP] Notification de compte",
         "Une action concernant votre compte eVDP requiert votre " "attention.\n\n{link}",
     ),
+    NotificationKind.TRACKING_LINK: (
+        "[eVDP] Suivre votre signalement {case_id}",
+        "Votre signalement a bien ete enregistre sous la reference {case_id}.\n\n"
+        "Vous pouvez suivre son avancement, sans creer de compte, via ce lien "
+        "personnel et confidentiel - ne le transmettez a personne :\n{link}\n\n"
+        "Ce lien reste valable plusieurs mois.",
+    ),
 }
 
 

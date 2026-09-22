@@ -17,6 +17,7 @@ from apps.coordination.services import (
     add_participant,
     add_timeline_event,
     ensure_default_participants,
+    generate_tracking_token,
     schedule_initial_sla,
 )
 from apps.coordination.workflow import CaseStatus
@@ -136,7 +137,15 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
 
 
 def _notify_new_case(case, report):
-    """Avise l'equipe de coordination et accuse reception au declarant."""
+    """Avise l'equipe de coordination et accuse reception au declarant.
+
+    Un declarant sans compte (avec ou sans email) recoit un jeton de suivi
+    lui permettant de consulter l'avancement de son dossier sans jamais
+    creer de compte ni lever son anonymat. La valeur en clair transite une
+    seule fois : par email s'il a laisse un contact, sinon elle est exposee
+    sur `case.tracking_token_raw` pour un affichage unique a l'ecran (voir
+    apps.reports.views.submit).
+    """
     from apps.accounts.models import User
     from apps.accounts.roles import Role
 
@@ -150,8 +159,17 @@ def _notify_new_case(case, report):
         from apps.notifications.services import notify
 
         notify(report.reporter, NotificationKind.ACKNOWLEDGEMENT, case=case)
-    elif report.reporter_email:
-        notify_external(report.reporter_email, NotificationKind.ACKNOWLEDGEMENT, case=case)
+        return
+
+    raw_token = generate_tracking_token(case)
+    case.tracking_token_raw = raw_token
+    if report.reporter_email:
+        notify_external(
+            report.reporter_email,
+            NotificationKind.TRACKING_LINK,
+            case=case,
+            url=f"/suivi/{raw_token}/",
+        )
 
 
 def reports_for(user):

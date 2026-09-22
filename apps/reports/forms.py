@@ -189,6 +189,22 @@ class VulnerabilityReportForm(forms.ModelForm):
         return report
 
 
+class TrackingCodeForm(forms.Form):
+    code = forms.CharField(
+        label="Code ou lien de suivi",
+        max_length=120,
+        widget=forms.TextInput(attrs={"placeholder": "Collez ici votre code de suivi"}),
+    )
+
+    def clean_code(self):
+        value = (self.cleaned_data.get("code") or "").strip()
+        # Tolerance : accepte aussi bien le code seul que le lien complet
+        # colle par erreur (ex. https://.../suivi/<code>/).
+        if "/" in value:
+            value = value.rstrip("/").rsplit("/", 1)[-1]
+        return value
+
+
 class AttachmentUploadForm(forms.Form):
     file = forms.FileField(label="Fichier")
     description = forms.CharField(

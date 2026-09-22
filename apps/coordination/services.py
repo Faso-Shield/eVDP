@@ -4,6 +4,7 @@ Aucune vue n'ecrit directement dans les modeles : tout passe par ces services,
 qui garantissent la coherence workflow + audit + notifications + SLA.
 """
 
+import secrets
 from datetime import datetime, time, timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -13,6 +14,7 @@ from django.utils import timezone
 from apps.accounts.roles import Capability
 from apps.audit.models import AuditAction, AuditResult
 from apps.audit.services import log_action
+from apps.core.utils import hash_text
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify, notify_case_team, notify_external
 from apps.vulnerabilities.constants import Severity
@@ -31,10 +33,19 @@ from .models import (
     CaseParticipant,
     CaseStatusHistory,
     CaseTimelineEvent,
+    CaseTrackingToken,
     SLAEvent,
     SLAPolicy,
 )
-from .workflow import CaseStatus, TransitionNotAllowed, check_transition
+from .workflow import (
+    CaseStatus,
+    TransitionNotAllowed,
+    check_transition,
+    public_status_bucket,
+)
+
+#: Duree de validite d'un lien de suivi remis a un declarant sans compte.
+TRACKING_TOKEN_VALIDITY = timedelta(days=180)
 
 #: Statut -> evenement de chronologie correspondant.
 STATUS_TIMELINE_EVENTS = {
@@ -517,6 +528,58 @@ def default_severity_for(report):
     return report.reported_severity or Severity.MEDIUM
 
 
+def generate_tracking_token(case):
+    """Cree (ou renouvelle) le jeton de suivi public d'un case sans compte.
+
+    La valeur en clair n'est jamais persistee : seul son hash est stocke,
+    au meme titre que les cles d'API. Elle est renvoyee a l'appelant pour
+    etre transmise une seule fois (email ou affichage a l'ecran), puis
+    perdue cote serveur.
+    """
+    raw = secrets.token_urlsafe(32)
+    CaseTrackingToken.objects.update_or_create(
+        case=case,
+        defaults={
+            "token_hash": hash_text(raw),
+            "expires_at": timezone.now() + TRACKING_TOKEN_VALIDITY,
+        },
+    )
+    return raw
+
+
+def resolve_tracking_token(raw_token):
+    """Retrouve le case associe a un jeton de suivi valide, ou None.
+
+    Ne distingue jamais "jeton inconnu" de "jeton expire" dans la reponse
+    appelante : les deux doivent produire le meme message generique cote vue,
+    pour ne rien laisser deviner sur l'existence d'un jeton proche.
+    """
+    if not raw_token or not raw_token.strip():
+        return None
+    token = (
+        CaseTrackingToken.objects.select_related("case")
+        .filter(token_hash=hash_text(raw_token.strip()))
+        .first()
+    )
+    if token is None or not token.is_valid:
+        return None
+    token.record_access()
+    return token.case
+
+
+def public_status_for(case):
+    """(cle, libelle, resultat) simplifies pour la page de suivi publique."""
+    key, label = public_status_bucket(case.status)
+    return {
+        "key": key,
+        "label": label,
+        "case_id": case.case_id,
+        "submitted_at": case.created_at,
+        "is_dismissed": key == "DISMISSED",
+        "is_resolved": key == "RESOLVED",
+    }
+
+
 __all__ = [
     "transition_case",
     "assign_case",
@@ -529,5 +592,8 @@ __all__ = [
     "ensure_default_participants",
     "add_timeline_event",
     "schedule_initial_sla",
+    "generate_tracking_token",
+    "resolve_tracking_token",
+    "public_status_for",
     "WorkflowType",
 ]
