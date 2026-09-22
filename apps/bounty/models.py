@@ -208,6 +208,16 @@ class BountyPayment(BaseModel):
     reference = models.CharField(
         max_length=120, blank=True, help_text="Reference comptable externe."
     )
+    payout_snapshot = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=(
+            "Resume masque du moyen de paiement principal declare par le "
+            "chercheur au moment du versement (voir apps.researchers.PayoutMethod). "
+            "Copie a titre indicatif, jamais une reference forte : le wallet "
+            "peut changer ou etre desactive apres coup sans alterer cet historique."
+        ),
+    )
     settled_at = models.DateTimeField(null=True, blank=True)
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

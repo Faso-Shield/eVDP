@@ -23,7 +23,7 @@ class BountyReviewInline(admin.TabularInline):
 class BountyPaymentInline(admin.TabularInline):
     model = BountyPayment
     extra = 0
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("payout_snapshot", "created_at", "updated_at")
 
 
 def _apply(modeladmin, request, queryset, service, success_label, **kwargs):
@@ -108,6 +108,15 @@ class BountyAdmin(admin.ModelAdmin):
 
 @admin.register(BountyPayment)
 class BountyPaymentAdmin(admin.ModelAdmin):
-    list_display = ("bounty", "amount", "currency", "method", "status", "settled_at")
+    list_display = (
+        "bounty",
+        "amount",
+        "currency",
+        "method",
+        "payout_snapshot",
+        "status",
+        "settled_at",
+    )
     list_filter = ("status", "method")
     search_fields = ("bounty__case__case_id", "reference")
+    readonly_fields = ("payout_snapshot",)

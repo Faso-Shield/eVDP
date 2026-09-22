@@ -262,18 +262,46 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
     if bounty.status != BountyStatus.APPROVED:
         raise ValidationError("Seule une recompense approuvee peut etre versee.")
 
+    # Simple copie a titre indicatif du moyen principal declare par le
+    # chercheur (voir apps.researchers.PayoutMethod) : jamais une reference
+    # forte (pas de ForeignKey) pour ne pas coupler les deux modules ni
+    # perdre l'historique si le wallet change ensuite. Meme principe que le
+    # depassement de budget plus haut : jamais bloquant, jamais silencieux.
+    payout_profile = (
+        getattr(bounty.researcher, "payout_profile", None) if bounty.researcher_id else None
+    )
+    primary_method = (
+        payout_profile.methods.filter(is_primary=True, is_active=True).first()
+        if payout_profile
+        else None
+    )
+    payout_warnings = []
+    if not payout_profile or not payout_profile.is_complete:
+        payout_warnings.append("portefeuille du chercheur incomplet")
+    if not primary_method:
+        payout_warnings.append("aucun moyen de paiement principal declare")
+
     payment = BountyPayment.objects.create(
         bounty=bounty,
         amount=Decimal(amount) if amount is not None else bounty.approved_amount,
         currency=bounty.currency,
         method=method or BountyPayment._meta.get_field("method").default,
         reference=reference[:120],
+        payout_snapshot=primary_method.summary if primary_method else "",
         status=PaymentStatus.RECORDED,
         recorded_by=actor,
     )
     bounty.status = BountyStatus.PAID
     bounty.save(update_fields=["status", "updated_at"])
 
+    if payout_warnings:
+        log_action(
+            AuditAction.BOUNTY_PAID,
+            actor=actor,
+            obj=bounty,
+            request=request,
+            warning="; ".join(payout_warnings),
+        )
     log_action(
         AuditAction.BOUNTY_PAID,
         actor=actor,
@@ -288,6 +316,9 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
         profile = getattr(bounty.researcher, "researcher_profile", None)
         if profile:
             profile.recompute()
+    # Transitoire, non persiste : permet a la vue d'afficher l'avertissement
+    # sans recalculer la meme logique.
+    payment.payout_warning = "; ".join(payout_warnings)
     return payment
 
 

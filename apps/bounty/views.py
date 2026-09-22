@@ -56,6 +56,14 @@ def bounty_list(request):
 @login_required
 def bounty_detail(request, bounty_id):
     bounty = _get_bounty(request, bounty_id)
+    payout_profile = (
+        getattr(bounty.researcher, "payout_profile", None) if bounty.researcher_id else None
+    )
+    payout_method = (
+        payout_profile.methods.filter(is_primary=True, is_active=True).first()
+        if payout_profile
+        else None
+    )
     return render(
         request,
         "bounty/detail.html",
@@ -63,6 +71,8 @@ def bounty_detail(request, bounty_id):
             "bounty": bounty,
             "reviews": bounty.reviews.select_related("reviewer"),
             "payments": bounty.payments.select_related("recorded_by"),
+            "payout_profile": payout_profile,
+            "payout_method": payout_method,
             "decision_form": BountyDecisionForm(initial={"amount": bounty.proposed_amount}),
             "review_form": BountyReviewForm(),
             "payment_form": PaymentForm(initial={"amount": bounty.approved_amount}),
@@ -193,7 +203,7 @@ def payment(request, bounty_id):
     form = PaymentForm(request.POST)
     if form.is_valid():
         try:
-            record_payment(
+            recorded = record_payment(
                 bounty,
                 request.user,
                 amount=form.cleaned_data.get("amount"),
@@ -201,6 +211,13 @@ def payment(request, bounty_id):
                 reference=form.cleaned_data.get("reference", ""),
                 request=request,
             )
+            if recorded.payout_warning:
+                messages.warning(
+                    request,
+                    f"Versement enregistre, mais {recorded.payout_warning} "
+                    "cote portefeuille : verifiez aupres du chercheur avant "
+                    "d'executer le versement reel.",
+                )
             messages.success(
                 request,
                 "Versement enregistre. Aucun flux financier reel n'est declenche "
