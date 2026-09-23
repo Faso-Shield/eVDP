@@ -184,9 +184,37 @@ def test_cvss_v30_is_accepted():
     assert base_score("CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") == 9.8
 
 
-def test_cvss_v4_is_rejected_explicitly():
-    with pytest.raises(CVSSError, match="v4.0"):
+@pytest.mark.parametrize(
+    "vector,expected",
+    [
+        # Valeurs du calculateur de reference FIRST CVSS v4.0.
+        ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", 9.3),
+        ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H", 10.0),
+        ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:N/SC:N/SI:N/SA:N", 0.0),
+        ("CVSS:4.0/AV:L/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", 8.5),
+        ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N", 5.3),
+        ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/E:U", 8.1),
+    ],
+)
+def test_cvss_v4_base_score(vector, expected):
+    assert base_score(vector) == expected
+
+
+def test_cvss_v4_severity_mapping():
+    _score, severity = evaluate(
+        "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+    )
+    assert severity == Severity.CRITICAL
+
+
+def test_cvss_v4_missing_metric_is_rejected():
+    with pytest.raises(CVSSError, match="manquantes"):
         base_score("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H")
+
+
+def test_cvss_v4_unknown_metric_is_rejected():
+    with pytest.raises(CVSSError, match="inconnue"):
+        base_score("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/ZZ:X")
 
 
 def test_cvss_missing_metric_is_rejected():

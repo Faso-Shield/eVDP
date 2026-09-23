@@ -1,18 +1,19 @@
-"""Calculateur CVSS v3.1 (score de base).
+"""Calculateur CVSS v3.1 et v4.0 (score de base).
 
-Implementation autonome de la specification FIRST CVSS v3.1, section 8.1.
-Aucun appel reseau : le score reste calculable hors ligne, conformement a
-l'exigence "ne pas dependre d'une API externe pour le fonctionnement de base".
-
-TODO : ajouter CVSS v4.0 (le format de vecteur est deja detecte et rejete
-proprement pour eviter un score errone).
+Implementation autonome des specifications FIRST CVSS v3.1 (section 8.1) et
+CVSS v4.0 (voir `cvss4`). Aucun appel reseau : le score reste calculable hors
+ligne, conformement a l'exigence "ne pas dependre d'une API externe pour le
+fonctionnement de base". Le prefixe du vecteur choisit la version.
 """
 
 import math
 from decimal import Decimal
 
+from . import cvss4
+
 PREFIX_31 = "CVSS:3.1"
 PREFIX_30 = "CVSS:3.0"
+PREFIX_40 = cvss4.PREFIX_40
 
 METRIC_ORDER = ["AV", "AC", "PR", "UI", "S", "C", "I", "A"]
 
@@ -55,11 +56,11 @@ def parse_vector(vector):
     if not vector:
         raise CVSSError("Vecteur CVSS vide.")
     raw = vector.strip().upper()
-    if raw.startswith("CVSS:4"):
-        raise CVSSError("CVSS v4.0 n'est pas encore pris en charge par le calculateur eVDP.")
     parts = raw.split("/")
     if not parts or parts[0] not in (PREFIX_31, PREFIX_30):
-        raise CVSSError("Le vecteur doit commencer par CVSS:3.1/ ou CVSS:3.0/.")
+        raise CVSSError(
+            "Le vecteur doit commencer par CVSS:3.1/, CVSS:3.0/ ou CVSS:4.0/."
+        )
     metrics = {}
     for chunk in parts[1:]:
         if ":" not in chunk:
@@ -87,8 +88,16 @@ def _round_up1(value):
     return (math.floor(integer / 10000) + 1) / 10.0
 
 
+def is_v4(vector):
+    return (vector or "").strip().upper().startswith(PREFIX_40)
+
+
 def base_score(vector):
-    """Retourne le score de base CVSS v3.1 (0.0 - 10.0)."""
+    """Retourne le score de base CVSS v3.1 ou v4.0 (0.0 - 10.0)."""
+    if not vector:
+        raise CVSSError("Vecteur CVSS vide.")
+    if is_v4(vector):
+        return cvss4.base_score(vector, error_cls=CVSSError)
     metrics = parse_vector(vector)
     scope_changed = metrics["S"] == "C"
 
@@ -143,6 +152,8 @@ def severity_from_score(score):
 
 def describe(vector):
     """Decompose un vecteur en libelles lisibles pour l'interface."""
+    if is_v4(vector):
+        return cvss4.describe(vector, error_cls=CVSSError)
     metrics = parse_vector(vector)
     return [
         {

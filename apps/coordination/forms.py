@@ -79,7 +79,7 @@ class TriageForm(forms.Form):
         required=False,
         help_text="Détermine la grille de récompense lorsqu'elle varie par actif.",
     )
-    cvss_vector = forms.CharField(label="Vecteur CVSS v3.1", required=False)
+    cvss_vector = forms.CharField(label="Vecteur CVSS (v3.1 ou v4.0)", required=False)
     cwe = forms.ModelChoiceField(label="CWE", queryset=CWE.objects.all(), required=False)
     organization = forms.ModelChoiceField(
         label="Organisation affectée",

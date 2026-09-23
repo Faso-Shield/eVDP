@@ -65,7 +65,7 @@ class VulnerabilityReportForm(forms.ModelForm):
             "target_url": "URL ou endpoint concerné",
             "vulnerability_type": "Type de vulnérabilité",
             "cwe": "CWE",
-            "cvss_vector": "Vecteur CVSS v3.1",
+            "cvss_vector": "Vecteur CVSS (v3.1 ou v4.0)",
             "reported_severity": "Sévérité estimée",
             "description": "Description",
             "steps_to_reproduce": "Étapes de reproduction",

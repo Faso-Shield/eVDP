@@ -260,8 +260,14 @@ def _export_product_tree(advisory):
 
 
 def _export_scores(advisory):
-    """Score CVSS v3.x, rattache au produit affecte (`products` est requis)."""
+    """Score CVSS v3.x, rattache au produit affecte (`products` est requis).
+
+    CSAF 2.0 ne connait pas CVSS v4.0 (introduit par CSAF 2.1) : un vecteur
+    v4 n'est pas exporte plutot que d'etre range a tort sous `cvss_v3`.
+    """
     if not advisory.cvss_vector or advisory.cvss_score is None:
+        return []
+    if advisory.cvss_vector.upper().startswith("CVSS:4"):
         return []
     version = "3.0" if advisory.cvss_vector.upper().startswith("CVSS:3.0") else "3.1"
     return [
