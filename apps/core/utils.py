@@ -63,3 +63,16 @@ def next_sequence(model, field, prefix, year=None, width=6):
 def truncate(text, limit=120):
     text = (text or "").strip()
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def mask_value(value, keep=4):
+    """Masque une donnee sensible (IBAN, numero mobile money...) en ne
+    conservant que les `keep` derniers caracteres. Usage : affichage dans
+    les listes, jamais dans un formulaire d'edition (voir apps.researchers).
+    """
+    value = (value or "").strip()
+    if not value:
+        return "—"
+    if len(value) <= keep:
+        return "•" * len(value)
+    return "•" * (len(value) - keep) + value[-keep:]

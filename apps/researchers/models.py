@@ -149,3 +149,151 @@ class ReputationEvent(BaseModel):
 
     def __str__(self):
         return f"{self.profile} {self.points:+d} ({self.reason})"
+
+
+# ---------------------------------------------------------------------------
+# Portefeuille de versement
+# ---------------------------------------------------------------------------
+# Distinct de ResearcherProfile (identite PUBLIQUE, choisie par le chercheur) :
+# ces donnees ne sont jamais publiees ni partagees, uniquement utilisees en
+# interne pour executer un virement (voir apps.bounty.services.record_payment
+# et docs/bug-bounty.md). Elles sont strictement en libre-service : seul le
+# titulaire du compte peut les consulter ou les modifier.
+
+
+class IdDocumentType(models.TextChoices):
+    CNIB = "CNIB", "Carte Nationale d'Identite Burkinabe (CNIB)"
+    PASSPORT = "PASSPORT", "Passeport"
+    OTHER = "OTHER", "Autre piece d'identite"
+
+
+class PayoutProfile(BaseModel):
+    """Informations personnelles necessaires au versement d'une recompense."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="payout_profile",
+    )
+    legal_full_name = models.CharField(
+        max_length=150,
+        blank=True,
+        help_text="Nom complet tel qu'il figure sur votre piece d'identite.",
+    )
+    id_document_type = models.CharField(
+        max_length=16, choices=IdDocumentType.choices, blank=True
+    )
+    id_document_number = models.CharField(max_length=60, blank=True)
+    contact_phone = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text="Numero utilisable pour vous joindre au sujet d'un versement.",
+    )
+    address = models.TextField(blank=True)
+    country = models.CharField(max_length=80, default="Burkina Faso")
+    accepted_terms = models.BooleanField(
+        default=False,
+        help_text="Le chercheur atteste l'exactitude des informations fournies.",
+    )
+
+    class Meta:
+        db_table = "payout_profiles"
+        verbose_name = "Profil de versement"
+        verbose_name_plural = "Profils de versement"
+
+    def __str__(self):
+        return f"Profil de versement - {self.user}"
+
+    @property
+    def is_complete(self):
+        """Conditionne l'affichage d'un moyen de paiement comme utilisable."""
+        return bool(
+            self.legal_full_name.strip() and self.contact_phone.strip() and self.accepted_terms
+        )
+
+
+class PayoutMethodType(models.TextChoices):
+    BANK_TRANSFER = "BANK_TRANSFER", "Virement bancaire"
+    MOBILE_MONEY = "MOBILE_MONEY", "Mobile money"
+    OTHER = "OTHER", "Autre"
+
+
+class MobileMoneyOperator(models.TextChoices):
+    ORANGE_MONEY = "ORANGE_MONEY", "Orange Money"
+    MOOV_MONEY = "MOOV_MONEY", "Moov Money"
+    OTHER = "OTHER", "Autre operateur"
+
+
+class PayoutMethod(BaseModel):
+    """Moyen de paiement declare par le chercheur pour recevoir une recompense.
+
+    Plusieurs moyens peuvent coexister ; un seul est marque principal a la
+    fois (voir save()). La suppression depuis l'interface desactive
+    (is_active=False) plutot que supprimer : la trace reste disponible pour
+    l'audit et aucune reference existante n'est cassee.
+    """
+
+    profile = models.ForeignKey(
+        PayoutProfile, on_delete=models.CASCADE, related_name="methods"
+    )
+    method_type = models.CharField(max_length=16, choices=PayoutMethodType.choices)
+    label = models.CharField(
+        max_length=80, blank=True, help_text="Nom libre pour vous y retrouver."
+    )
+    is_primary = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+
+    # -- Virement bancaire ----------------------------------------------------
+    bank_name = models.CharField(max_length=150, blank=True)
+    account_holder_name = models.CharField(max_length=150, blank=True)
+    account_number = models.CharField(
+        max_length=64, blank=True, help_text="IBAN ou numero de compte."
+    )
+
+    # -- Mobile money -----------------------------------------------------------
+    mobile_operator = models.CharField(
+        max_length=16, choices=MobileMoneyOperator.choices, blank=True
+    )
+    mobile_number = models.CharField(max_length=32, blank=True)
+    mobile_holder_name = models.CharField(max_length=150, blank=True)
+
+    # -- Autre ------------------------------------------------------------------
+    other_label = models.CharField(max_length=120, blank=True)
+    other_reference = models.CharField(max_length=120, blank=True)
+
+    class Meta:
+        db_table = "payout_methods"
+        ordering = ["-is_primary", "-created_at"]
+        verbose_name = "Moyen de paiement"
+        verbose_name_plural = "Moyens de paiement"
+
+    def __str__(self):
+        return f"{self.get_method_type_display()} - {self.masked_identifier}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_primary:
+            PayoutMethod.objects.filter(profile_id=self.profile_id).exclude(pk=self.pk).update(
+                is_primary=False
+            )
+
+    @property
+    def masked_identifier(self):
+        """Identifiant partiellement masque, pour l'affichage dans les listes."""
+        from apps.core.utils import mask_value
+
+        if self.method_type == PayoutMethodType.BANK_TRANSFER:
+            return mask_value(self.account_number)
+        if self.method_type == PayoutMethodType.MOBILE_MONEY:
+            return mask_value(self.mobile_number)
+        return self.other_reference or "—"
+
+    @property
+    def summary(self):
+        """Libelle complet mais masque, utilise dans les listes."""
+        if self.method_type == PayoutMethodType.BANK_TRANSFER:
+            return f"{self.bank_name or 'Banque'} — {self.masked_identifier}"
+        if self.method_type == PayoutMethodType.MOBILE_MONEY:
+            operator = self.get_mobile_operator_display() if self.mobile_operator else "Mobile"
+            return f"{operator} — {self.masked_identifier}"
+        return self.other_label or "Autre moyen"

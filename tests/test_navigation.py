@@ -32,9 +32,12 @@ def libelles(user):
 #:
 #: « Espace chercheur » n'y figure pas : `dashboard:home` aiguille un
 #: signaleur vers cette page precise, donc l'entree doublait « Tableau de
-#: bord » a l'octet pres.
+#: bord » a l'octet pres. « Portefeuille » y figure en revanche : c'est une
+#: page a part, ouverte aux memes roles que la vue qu'elle mene
+#: (require_roles(*RESEARCHER_ROLES)).
 MENU_SIGNALEUR = [
     ("Espace", "Tableau de bord"),
+    ("Espace", "Portefeuille"),
     ("Bug Bounty", "Récompenses"),
     ("Publication", "Advisories publiés"),
     (None, "Mon profil"),

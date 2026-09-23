@@ -72,6 +72,11 @@ def sidebar_sections(user):
     ]:
         if ouverte and route != atterrissage:
             espace.append(_lien(libelle, route))
+    # Le portefeuille de versement est une page a part, pas un tableau de
+    # bord : il est liste meme quand « Espace chercheur » est l'atterrissage.
+    # La condition reprend la garde de la vue, require_roles(*RESEARCHER_ROLES).
+    if user.is_researcher:
+        espace.append(_lien("Portefeuille", "wallet:home"))
     sections.append(("Espace", espace))
 
     # Un signaleur atteint ses propres dossiers depuis son espace ; la

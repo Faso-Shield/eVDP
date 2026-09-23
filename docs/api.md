@@ -230,11 +230,45 @@ catégorie, présence du titre et du suivi, au moins une vulnérabilité, 50
 maximum. Un document invalide est rejeté **sans création partielle**
 (transaction atomique).
 
-> L'export CSAF n'est pas implémenté (voir PLAN.md).
+---
+
+## 8. Export CSAF 2.0
+
+```http
+GET /api/v1/export/csaf/{advisory_id}/
+```
+
+Renvoie le document CSAF 2.0 correspondant à un advisory **publié**.
+
+```bash
+curl -fsS http://localhost/api/v1/export/csaf/EVDP-ADV-2026-000001/   -o EVDP-ADV-2026-000001.json
+```
+
+Lecture **publique**, comme la fiche advisory elle-même : aucune clé d'API
+n'est nécessaire. Un identifiant inconnu, en brouillon, planifié ou retiré
+renvoie **404** — jamais 403.
+
+Le document est construit à partir des seuls champs de l'advisory. Aucune
+donnée du case privé (PoC, étapes de reproduction, URL cible, messages, pièces
+jointes, identifiant de dossier) n'est atteignable par cette voie.
+
+| Champ eVDP | Champ CSAF |
+|------------|------------|
+| `advisory_id` | `document.tracking.id` |
+| `summary` / `description` / `impact` | `vulnerabilities[].notes` |
+| Chronologie publique | `vulnerabilities[].notes` (catégorie `general`) |
+| `cvss_vector` / `cvss_score` / `severity` | `vulnerabilities[].scores[].cvss_v3` |
+| `cwe` / `cve` | `vulnerabilities[].cwe` / `.cve` |
+| `credit` | `vulnerabilities[].acknowledgments` |
+| `solution` / `workaround` | `vulnerabilities[].remediations` |
+| `product` / `affected_versions` / `fixed_versions` | `product_tree.full_product_names` |
+| Références externes | `document.references` |
+
+Chaque export est journalisé (`EXPORT_GENERATED`).
 
 ---
 
-## 8. Recherche
+## 9. Recherche
 
 ```http
 GET /api/v1/search/?q=EVDP-2026-000001
@@ -246,7 +280,7 @@ programme — dans le périmètre autorisé uniquement.
 
 ---
 
-## 9. Limitation de débit
+## 10. Limitation de débit
 
 | Portée | Défaut | Variable |
 |--------|--------|----------|
@@ -261,7 +295,7 @@ journalisé (voir `docs/security.md` §8).
 
 ---
 
-## 10. Codes d'erreur
+## 11. Codes d'erreur
 
 | Code | Signification |
 |------|---------------|
@@ -276,7 +310,7 @@ journalisé (voir `docs/security.md` §8).
 
 ---
 
-## 11. Observabilité
+## 12. Observabilité
 
 ```http
 GET /health/     # liveness

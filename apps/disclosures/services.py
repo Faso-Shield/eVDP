@@ -78,6 +78,54 @@ def create_advisory_from_case(case, actor, request=None, **overrides):
 
 
 @transaction.atomic
+def create_advisory(advisory, actor, case=None, request=None):
+    """Enregistre un advisory redige a la main.
+
+    Complement de `create_advisory_from_case` pour les advisories sans case
+    source. La vue ne sauvegarde jamais le modele elle-meme : l'ecriture passe
+    ici afin que la creation soit toujours auditee.
+    """
+    if not actor.has_capability(Capability.DRAFT_ADVISORY):
+        raise PermissionDenied("Capacité requise pour rédiger un advisory.")
+
+    advisory.created_by = actor
+    if case is not None:
+        advisory.case = case
+        advisory.organization = case.organization
+    advisory.save()
+
+    log_action(
+        AuditAction.ADVISORY_CREATED,
+        actor=actor,
+        obj=advisory,
+        request=request,
+        case=case.case_id if case is not None else None,
+    )
+    return advisory
+
+
+@transaction.atomic
+def update_advisory(advisory, actor, request=None):
+    """Enregistre une modification redactionnelle et l'audite.
+
+    Un advisory publie reste modifiable (correction editoriale), mais chaque
+    modification laisse une trace nominative.
+    """
+    if not actor.has_capability(Capability.DRAFT_ADVISORY):
+        raise PermissionDenied("Capacite requise pour modifier un advisory.")
+
+    advisory.save()
+    log_action(
+        AuditAction.ADVISORY_UPDATED,
+        actor=actor,
+        obj=advisory,
+        request=request,
+        status=advisory.status,
+    )
+    return advisory
+
+
+@transaction.atomic
 def transition_advisory(advisory, target_status, actor, request=None):
     if target_status == AdvisoryStatus.PUBLISHED:
         return publish_advisory(advisory, actor, request=request)

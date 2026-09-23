@@ -15,6 +15,7 @@ from .forms import BountyDecisionForm, BountyProposalForm, BountyReviewForm, Pay
 from .models import Bounty
 from .services import (
     approve_bounty,
+    budget_status,
     propose_bounty,
     record_payment,
     reject_bounty,
@@ -80,11 +81,18 @@ def bounty_detail(request, bounty_id):
         "bounty": bounty,
         "payments": bounty.payments.select_related("recorded_by"),
         "peut_instruire": peut_instruire,
-        "can_approve": request.user.has_capability(Capability.APPROVE_BOUNTY),
+        # Le proposant ne peut pas statuer sur sa propre proposition :
+        # l'interface masque l'action, le service la refuse (defense en
+        # profondeur, voir bounty.services.approve_bounty).
+        "can_approve": (
+            request.user.has_capability(Capability.APPROVE_BOUNTY)
+            and bounty.proposed_by_id != request.user.pk
+        ),
         "can_pay": request.user.has_capability(Capability.RECORD_PAYMENT),
     }
     # Les elements d'instruction ne sont pas seulement masques par le gabarit :
-    # ils ne quittent pas la base pour un compte qui n'a pas a les lire.
+    # ils ne quittent pas la base pour un compte qui n'a pas a les lire. Le
+    # budget du programme en fait partie - il ne regarde pas le beneficiaire.
     if peut_instruire:
         contexte.update(
             {
@@ -95,6 +103,7 @@ def bounty_detail(request, bounty_id):
                 "review_form": BountyReviewForm(),
                 "payment_form": PaymentForm(initial={"amount": bounty.approved_amount}),
                 "within_policy": bounty.within_policy(),
+                "budget": budget_status(bounty),
             }
         )
     return render(request, "bounty/detail.html", contexte)

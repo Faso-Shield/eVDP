@@ -36,6 +36,23 @@ def money(value):
         return value
 
 
+@register.filter(name="initials")
+def initials(value):
+    """Monogramme d'une organisation : acronyme, sinon initiales du nom.
+
+    Sert de logo de substitution : la plateforme ne stocke aucune image
+    d'organisation.
+    """
+    acronym = (getattr(value, "acronym", "") or "").strip()
+    if acronym:
+        return acronym[:4].upper()
+    name = str(getattr(value, "name", value) or "").strip()
+    words = [word for word in name.split() if len(word) > 2]
+    if not words:
+        return (name[:2] or "?").upper()
+    return "".join(word[0] for word in words[:3]).upper()
+
+
 @register.simple_tag(takes_context=True)
 def query_replace(context, **kwargs):
     """Reconstruit la query string en remplacant certains parametres."""

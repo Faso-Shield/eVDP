@@ -1,0 +1,88 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Mon portefeuille{% endblock %}
+
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Mon portefeuille</h1>
+</div>
+
+<div class="notice-secure notice">
+  Ces informations servent uniquement à préparer le versement de vos récompenses.
+  Elles ne sont jamais publiées ni partagées, et chaque modification est journalisée.
+</div>
+
+{% if not profile.is_complete %}
+<div class="notice">
+  <strong>Portefeuille incomplet.</strong> Complétez vos informations personnelles
+  et ajoutez au moins un moyen de paiement pour pouvoir recevoir une récompense.
+</div>
+{% endif %}
+
+<div class="card mb-2">
+  <div class="card-header"><h2>Informations personnelles</h2></div>
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="form" value="profile">
+      <div class="form-grid">
+        {% for field in profile_form %}{% include "partials/form_field.html" %}{% endfor %}
+      </div>
+      <button class="btn" type="submit">Enregistrer</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Moyens de paiement</h2>
+    <span class="pill">{{ methods|length }} / {{ max_methods }}</span>
+  </div>
+  <div class="card-body table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Type</th><th>Détail</th><th>Principal</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for method in methods %}
+        <tr>
+          <td>{{ method.get_method_type_display }}{% if method.label %}<div class="small muted">{{ method.label }}</div>{% endif %}</td>
+          <td class="mono">{{ method.summary }}</td>
+          <td>
+            {% if method.is_primary %}
+              <span class="status status-done">Principal</span>
+            {% else %}
+              <form method="post" action="{% url 'wallet:method_set_primary' method.id %}">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline" type="submit">Définir comme principal</button>
+              </form>
+            {% endif %}
+          </td>
+          <td class="nowrap">
+            <a class="btn btn-sm btn-outline" href="{% url 'wallet:method_edit' method.id %}">Modifier</a>
+            <form method="post" action="{% url 'wallet:method_remove' method.id %}" style="display:inline">
+              {% csrf_token %}
+              <button class="btn btn-sm btn-danger" type="submit">Retirer</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="muted">Aucun moyen de paiement enregistré.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if methods|length < max_methods %}
+  <div class="card-footer">
+    <h3>Ajouter un moyen de paiement</h3>
+    <form method="post" action="{% url 'wallet:method_add' %}">
+      {% csrf_token %}
+      <div class="form-grid">
+        {% for field in method_form %}{% include "partials/form_field.html" %}{% endfor %}
+      </div>
+      <button class="btn btn-accent" type="submit">Ajouter</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

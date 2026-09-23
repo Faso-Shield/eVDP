@@ -8,7 +8,7 @@ from drf_spectacular.views import (
 )
 from rest_framework.routers import DefaultRouter
 
-from apps.csaf.views import CsafImportView
+from apps.csaf.views import CsafExportView, CsafImportView
 
 from . import views
 
@@ -26,6 +26,11 @@ app_name = "api"
 urlpatterns = [
     path("v1/", include(router.urls)),
     path("v1/import/csaf/", CsafImportView.as_view(), name="csaf_import"),
+    path(
+        "v1/export/csaf/<str:advisory_id>/",
+        CsafExportView.as_view(),
+        name="csaf_export",
+    ),
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         "docs/",

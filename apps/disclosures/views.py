@@ -15,10 +15,12 @@ from apps.vulnerabilities.constants import Severity
 from .forms import AdvisoryForm, AdvisoryTimelineFormSet
 from .models import Advisory, AdvisoryStatus
 from .services import (
+    create_advisory,
     create_advisory_from_case,
     publish_advisory,
     retract_advisory,
     transition_advisory,
+    update_advisory,
 )
 
 
@@ -93,12 +95,9 @@ def advisory_create(request, case_id=None):
     if request.method == "POST":
         form = AdvisoryForm(request.POST)
         if form.is_valid():
-            advisory = form.save(commit=False)
-            advisory.created_by = request.user
-            if case is not None:
-                advisory.case = case
-                advisory.organization = case.organization
-            advisory.save()
+            advisory = create_advisory(
+                form.save(commit=False), request.user, case=case, request=request
+            )
             messages.success(request, f"Advisory {advisory.advisory_id} créé.")
             return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
     elif case is not None:
@@ -168,7 +167,7 @@ def advisory_manage(request, advisory_id):
         form = AdvisoryForm(request.POST, instance=advisory)
         formset = AdvisoryTimelineFormSet(request.POST, instance=advisory)
         if form.is_valid() and formset.is_valid():
-            form.save()
+            update_advisory(form.save(commit=False), request.user, request=request)
             formset.save()
             _appliquer_action(request, advisory)
             return redirect("disclosures:manage", advisory_id=advisory.advisory_id)

@@ -22,6 +22,7 @@ urlpatterns = [
     path("researchers/", include("apps.researchers.urls")),
     # Espace authentifie
     path("dashboard/", include("apps.dashboard.urls")),
+    path("wallet/", include("apps.researchers.wallet_urls")),
     path("cases/", include("apps.coordination.urls")),
     path("bounties/", include("apps.bounty.urls")),
     path("attachments/", include("apps.attachments.urls")),

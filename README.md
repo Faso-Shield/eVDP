@@ -295,6 +295,7 @@ curl -X POST http://localhost/api/v1/reports/ \
 | `GET` | `/api/v1/organizations/` | Organisations |
 | `GET` | `/api/v1/researchers/` | Chercheurs publics |
 | `POST` | `/api/v1/import/csaf/` | Import CSAF 2.0 |
+| `GET` | `/api/v1/export/csaf/{advisory_id}/` | Export CSAF 2.0 d'un advisory publié |
 
 Voir **[docs/api.md](docs/api.md)**.
 

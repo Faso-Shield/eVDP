@@ -106,6 +106,11 @@ def coordinator(db):
 
 
 @pytest.fixture
+def coordinator_b(db):
+    return make_user("coordinateur-b@test.bf", Role.NATIONAL_COORDINATOR)
+
+
+@pytest.fixture
 def analyst(db):
     return make_user("analyste@test.bf", Role.CSIRT_ANALYST)
 

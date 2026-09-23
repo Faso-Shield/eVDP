@@ -8,10 +8,12 @@ from apps.coordination.services import transition_case
 from apps.coordination.workflow import CaseStatus
 from apps.disclosures.models import Advisory, AdvisoryStatus
 from apps.disclosures.services import (
+    create_advisory,
     create_advisory_from_case,
     credit_for,
     publish_advisory,
     retract_advisory,
+    update_advisory,
 )
 
 pytestmark = pytest.mark.django_db
@@ -161,6 +163,44 @@ def test_timeline_copied_only_from_public_events(case_alpha, coordinator):
 def test_case_report_never_reachable_anonymously(client, case_alpha):
     assert client.get(f"/cases/{case_alpha.case_id}/").status_code == 302
     assert Advisory.objects.count() == 0
+
+
+# ------------------------------------------------------- ecritures auditees
+def test_manual_creation_is_audited(coordinator, organization):
+    """Un advisory sans case source passe par le service, donc par l'audit."""
+    advisory = create_advisory(
+        Advisory(
+            title="Advisory redige a la main",
+            summary="Resume public.",
+            organization=organization,
+        ),
+        coordinator,
+    )
+
+    assert advisory.created_by == coordinator
+    assert AuditLog.objects.filter(
+        action=AuditAction.ADVISORY_CREATED, object_id=str(advisory.pk)
+    ).exists()
+
+
+def test_manual_creation_requires_capability(researcher_a, organization):
+    with pytest.raises(PermissionDenied):
+        create_advisory(
+            Advisory(title="Interdit", summary="x", organization=organization),
+            researcher_a,
+        )
+
+
+def test_editorial_update_is_audited(case_alpha, coordinator):
+    advisory = build_advisory(case_alpha, coordinator)
+    advisory.summary = "Resume corrige apres relecture."
+    update_advisory(advisory, coordinator)
+    advisory.refresh_from_db()
+
+    assert advisory.summary == "Resume corrige apres relecture."
+    assert AuditLog.objects.filter(
+        action=AuditAction.ADVISORY_UPDATED, object_id=str(advisory.pk)
+    ).exists()
 
 
 # ------------------------------------------------- redaction depuis l'ecran

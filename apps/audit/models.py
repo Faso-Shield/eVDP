@@ -55,6 +55,10 @@ class AuditAction(models.TextChoices):
     PERMISSION_DENIED = "PERMISSION_DENIED", "Accès refusé"
     SLA_BREACHED = "SLA_BREACHED", "SLA dépassé"
     CSAF_IMPORTED = "CSAF_IMPORTED", "Import CSAF"
+    PAYOUT_PROFILE_UPDATED = "PAYOUT_PROFILE_UPDATED", "Profil de versement modifie"
+    PAYOUT_METHOD_ADDED = "PAYOUT_METHOD_ADDED", "Moyen de paiement ajoute"
+    PAYOUT_METHOD_UPDATED = "PAYOUT_METHOD_UPDATED", "Moyen de paiement modifie"
+    PAYOUT_METHOD_REMOVED = "PAYOUT_METHOD_REMOVED", "Moyen de paiement retire"
 
 
 class AuditResult(models.TextChoices):

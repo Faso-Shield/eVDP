@@ -3,7 +3,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Avg, DurationField, ExpressionWrapper, F
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -13,12 +13,22 @@ from apps.accounts.roles import Capability
 from apps.accounts.verification import grace_deadline
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
-from apps.coordination.models import Case
+from apps.bounty.models import BountyStatus
+from apps.coordination.models import Case, SLAPolicy
 from apps.coordination.workflow import CaseStatus
 from apps.disclosures.models import Advisory, AdvisoryStatus
 
-from .forms import ProgramForm, ProgramScopeForm, RewardTierFormSet
+from .forms import ProgramFilterForm, ProgramForm, ProgramScopeForm, RewardTierFormSet
 from .models import Program, ProgramType, RewardPolicy
+
+#: Champ de tri par cle du formulaire de filtre (programs:list).
+#: "reward" pousse les VDP (sans recompense, max_reward NULL) en fin de
+#: liste plutot qu'en tete, ce que l'ordre par defaut de Postgres ferait.
+SORT_FIELDS = {
+    "reward": F("max_reward").desc(nulls_last=True),
+    "reports": "-cases_count",
+    "name": "name",
+}
 
 #: Etats attestant qu'un dossier a au moins ete corrige (pas seulement soumis).
 _RESOLVED_STATUSES = [
@@ -82,19 +92,88 @@ def _hall_of_fame(program, limit=12):
 
 
 def program_list(request):
-    """Annuaire public des programmes actifs."""
-    queryset = Program.objects.public().select_related("organization")
+    """Annuaire public des programmes actifs.
+
+    Les compteurs affiches sur chaque carte sont annotes en une seule requete :
+    calcules dans le gabarit, ils provoqueraient une requete par programme.
+    """
+    # Le statut par defaut (Actif) est injecte AVANT de lier le formulaire :
+    # un ChoiceField ignore totalement son `initial` des qu'il est lie, meme
+    # si la cle est absente du querystring - sans ce filet, le widget
+    # afficherait un statut vide au lieu d'"Actif" des qu'un AUTRE filtre
+    # est soumis (recherche, tri, ...).
+    params = request.GET.copy()
+    params.setdefault("status", "ACTIVE")
+    form = ProgramFilterForm(params)
+    filters = form.cleaned_data if form.is_valid() else {}
+
+    status = filters.get("status") or "ACTIVE"
+    base = (
+        Program.objects.public_disabled() if status == "DISABLED" else Program.objects.public()
+    )
+    queryset = (
+        base.select_related("organization", "sla_policy", "reward_policy")
+        .prefetch_related("reward_policy__tiers")
+        .annotate(
+            cases_count=Count("cases", distinct=True),
+            scopes_count=Count(
+                "scopes",
+                filter=Q(scopes__in_scope=True, scopes__is_active=True),
+                distinct=True,
+            ),
+            rewarded_count=Count(
+                "bounties__researcher",
+                filter=Q(bounties__status=BountyStatus.PAID),
+                distinct=True,
+            ),
+            max_reward=Max("reward_policy__tiers__max_amount"),
+        )
+    )
+
+    query = (filters.get("q") or "").strip()
+    if query:
+        queryset = queryset.filter(
+            Q(name__icontains=query)
+            | Q(summary__icontains=query)
+            | Q(organization__name__icontains=query)
+            | Q(organization__acronym__icontains=query)
+        )
     program_type = request.GET.get("type", "").upper()
     if program_type in ProgramType.values:
         queryset = queryset.filter(program_type=program_type)
+    scope_type = filters.get("scope_type")
+    if scope_type:
+        queryset = queryset.filter(
+            scopes__target_type=scope_type, scopes__in_scope=True, scopes__is_active=True
+        )
+    queryset = queryset.distinct()
+
+    # L'agregation fait perdre l'ordre implicite du modele : sans tri
+    # explicite, la pagination peut renvoyer deux fois le meme programme.
+    sort = filters.get("sort") or "recent"
+    queryset = queryset.order_by(SORT_FIELDS.get(sort, "-created_at"), "-created_at")
+
     page = Paginator(queryset, 12).get_page(request.GET.get("page"))
+
+    # Preserve les filtres actifs sur les liens de pagination (page suivante,
+    # etc.) : sans cela, changer de page reinitialise la recherche.
+    extra_query = request.GET.copy()
+    extra_query.pop("page", None)
+
+    # Repli lorsqu'un programme ne declare pas sa propre politique de delais.
+    default_policy = SLAPolicy.get_default()
     return render(
         request,
         "programs/list.html",
         {
             "page_obj": page,
+            "form": form,
             "program_type": program_type,
             "types": ProgramType.choices,
+            "extra_query": extra_query.urlencode(),
+            "default_ack_hours": (
+                default_policy.acknowledgement_hours if default_policy else None
+            ),
         },
     )
 
