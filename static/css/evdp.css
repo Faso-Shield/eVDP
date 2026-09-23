@@ -308,6 +308,18 @@ table.table tbody tr:hover { background: var(--surface-alt); }
   background: var(--evdp-accent-light); border-color: #bfe3d6; color: #0a5843;
 }
 
+/* Carte "reference de paiement en clair" (super-admin uniquement) : doit se
+   remarquer au premier coup d'oeil parmi les cartes neutres qui l'entourent. */
+.card-payout {
+  border: 2px solid var(--evdp-gold); box-shadow: 0 0 0 3px rgba(200,144,30,.12);
+}
+.card-payout .card-header { background: #fdf6e0; border-bottom-color: var(--evdp-gold); }
+.card-payout .card-header h3 { color: #6f5208; }
+.payout-value {
+  font-size: 1.15rem; font-weight: 700; color: var(--evdp-navy);
+  word-break: break-all; margin: 0 0 .5rem;
+}
+
 /* ------------------------------------------------------------------- hero */
 .hero {
   background: linear-gradient(135deg, var(--evdp-navy-dark), var(--evdp-navy-light));

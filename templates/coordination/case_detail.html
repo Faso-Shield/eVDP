@@ -330,13 +330,18 @@
     </div>
 
     {% if payout_method %}
-    <div class="card">
-      <div class="card-header"><h3>Référence de paiement</h3></div>
-      <div class="card-body small">
-        <p class="mono" style="word-break:break-all">{{ payout_method.full_summary }}</p>
+    <div class="card card-payout">
+      <div class="card-header">
+        <h3 class="flex" style="align-items:center;gap:.45rem">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          Référence de paiement
+        </h3>
+        <span class="pill">Super-admin</span>
+      </div>
+      <div class="card-body">
+        <p class="payout-value mono">{{ payout_method.full_summary }}</p>
         <p class="small muted mb-0">
-          Moyen principal du déclarant, en clair — réservé au super-administrateur.
-          Consultation journalisée.
+          Moyen principal du déclarant, en clair. Consultation journalisée.
         </p>
       </div>
     </div>
