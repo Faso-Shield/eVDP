@@ -462,15 +462,27 @@ def test_confirm_settlement_succeeds_once_the_fix_is_verified(
     assert payment.status == PaymentStatus.SETTLED
 
 
-def test_mark_payment_failed_does_not_require_a_verified_fix(
-    bounty_case, analyst, coordinator
-):
-    """Un versement peut echouer (mauvais compte, virement rejete...) pour
-    des raisons sans rapport avec l'avancement de la remediation : cette
-    action reste possible quel que soit le statut du dossier."""
+def test_mark_payment_failed_also_requires_a_verified_fix(bounty_case, analyst, coordinator):
+    """Ni la confirmation ni l'echec ne doivent pouvoir statuer sur un
+    versement tant que le processus de remediation n'est pas termine : le
+    versement reste simplement "Enregistre" jusque-la, dans les deux sens."""
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     approve_bounty(bounty, coordinator)
     payment = record_payment(bounty, coordinator)  # dossier toujours SUBMITTED
+
+    with pytest.raises(ValidationError, match="correctif"):
+        mark_payment_failed(payment, coordinator, reason="Compte errone")
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.RECORDED
+
+
+def test_mark_payment_failed_succeeds_once_the_fix_is_verified(
+    bounty_case, analyst, coordinator
+):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)
+    _verify_the_fix(bounty_case, coordinator)
 
     mark_payment_failed(payment, coordinator, reason="Compte errone")
     payment.refresh_from_db()

@@ -27,11 +27,12 @@ from .models import (
     ReviewDecision,
 )
 
-#: Le versement ne peut etre confirme regle que si le correctif du dossier
-#: source a ete verifie - jamais avant, quel que soit l'avancement de la
-#: recompense elle-meme. Le workflow Bug Bounty (apps.coordination.workflow)
-#: impose deja de passer par FIX_VERIFIED avant tout etat qui suit : verifier
-#: l'appartenance a cet ensemble suffit, pas besoin de rejouer le graphe.
+#: Un versement enregistre ne peut etre statue (regle ou en echec) que si le
+#: correctif du dossier source a ete verifie - jamais avant, quel que soit
+#: l'avancement de la recompense elle-meme. Le workflow Bug Bounty
+#: (apps.coordination.workflow) impose deja de passer par FIX_VERIFIED avant
+#: tout etat qui suit : verifier l'appartenance a cet ensemble suffit, pas
+#: besoin de rejouer le graphe.
 SETTLEMENT_ELIGIBLE_CASE_STATUSES = frozenset(
     {
         CaseStatus.FIX_VERIFIED,
@@ -426,6 +427,11 @@ def mark_payment_failed(payment, actor, reason, request=None):
         raise PermissionDenied("Capacite requise pour signaler un echec de versement.")
     if payment.status != PaymentStatus.RECORDED:
         raise ValidationError("Seul un versement enregistre peut etre marque en echec.")
+    if payment.bounty.case.status not in SETTLEMENT_ELIGIBLE_CASE_STATUSES:
+        raise ValidationError(
+            "Le correctif du dossier doit etre verifie avant de statuer sur ce versement "
+            f"(statut actuel : {payment.bounty.case.get_status_display()})."
+        )
     if not reason.strip():
         raise ValidationError({"reason": "Un motif est obligatoire."})
 
