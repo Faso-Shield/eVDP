@@ -136,6 +136,47 @@ def test_rejection_blocks_further_transitions(bounty_case, analyst, coordinator)
 
     assert bounty.status == BountyStatus.REJECTED
     assert bounty.is_final is True
+
+
+# --------------------------------------------------------- mutations en GET
+# Regression : approve/reject n'exigeaient aucune methode HTTP particuliere,
+# et BountyDecisionForm a tous ses champs facultatifs - un simple GET (donc
+# hors protection CSRF, qui ne couvre que les methodes non sures) suffisait
+# a declencher la decision. Meme classe de probleme que celle deja corrigee
+# sur le portefeuille (payout_method_remove/set_primary).
+def test_approve_via_get_is_rejected(client_for, bounty_case, coordinator, coordinator_b):
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    client = client_for(coordinator_b)
+    response = client.get(reverse("bounty:approve", args=[bounty.pk]))
+    assert response.status_code == 405
+    bounty.refresh_from_db()
+    assert bounty.status == BountyStatus.PENDING
+
+
+def test_reject_via_get_is_rejected(client_for, bounty_case, coordinator, coordinator_b):
+    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    client = client_for(coordinator_b)
+    response = client.get(reverse("bounty:reject", args=[bounty.pk]))
+    assert response.status_code == 405
+    bounty.refresh_from_db()
+    assert bounty.status == BountyStatus.PENDING
+
+
+def test_review_via_get_is_rejected(client_for, bounty_case, analyst):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    client = client_for(analyst)
+    response = client.get(reverse("bounty:review", args=[bounty.pk]))
+    assert response.status_code == 405
+
+
+def test_payment_via_get_is_rejected(client_for, bounty_case, analyst, coordinator):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:payment", args=[bounty.pk]))
+    assert response.status_code == 405
+    bounty.refresh_from_db()
+    assert bounty.status == BountyStatus.APPROVED
     with pytest.raises(ValidationError):
         approve_bounty(bounty, coordinator)
 
@@ -199,6 +240,113 @@ def test_paid_bounty_updates_researcher_totals(bounty_case, analyst, coordinator
     profile = bounty_case.reporter.researcher_profile
     profile.refresh_from_db()
     assert profile.total_rewards == Decimal("200000.00")
+
+
+# ------------------------------------------------- portefeuille du chercheur
+# Simple copie a titre indicatif (voir apps.bounty.services.record_payment) :
+# jamais une reference forte vers apps.researchers.PayoutMethod, jamais
+# bloquant si le portefeuille est incomplet ou absent, mais jamais silencieux
+# non plus (avertissement journalise + affiche a l'agent qui enregistre).
+def test_payment_snapshots_the_researchers_primary_method(bounty_case, analyst, coordinator):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.researchers.models import PayoutMethod, PayoutMethodType
+    from apps.researchers.services import (
+        add_payout_method,
+        attach_id_document,
+        get_or_create_payout_profile,
+    )
+
+    researcher = bounty_case.reporter
+    profile = get_or_create_payout_profile(researcher)
+    profile.legal_full_name = "Fatou Kone"
+    profile.contact_phone = "+22670000001"
+    profile.accepted_terms = True
+    profile.save()
+    attach_id_document(
+        profile,
+        researcher,
+        SimpleUploadedFile(
+            "cnib.pdf", b"%PDF-1.4 contenu de test", content_type="application/pdf"
+        ),
+    )
+    profile.refresh_from_db()
+    add_payout_method(
+        profile,
+        researcher,
+        PayoutMethod(
+            method_type=PayoutMethodType.MOBILE_MONEY,
+            mobile_operator="ORANGE_MONEY",
+            mobile_number="70000001",
+            mobile_holder_name="Fatou Kone",
+        ),
+    )
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)
+
+    assert "Orange Money" in payment.payout_snapshot
+    assert "70000001" not in payment.payout_snapshot  # masque
+    assert payment.payout_warning == ""
+
+
+def test_payment_warns_without_any_payout_profile(bounty_case, analyst, coordinator):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)
+
+    assert payment.payout_snapshot == ""
+    assert "incomplet" in payment.payout_warning
+    assert "aucun moyen" in payment.payout_warning
+    warnings = [
+        entry.metadata.get("warning", "")
+        for entry in AuditLog.objects.filter(action=AuditAction.BOUNTY_PAID)
+    ]
+    assert any("incomplet" in warning for warning in warnings)
+
+
+def test_payment_warns_when_profile_incomplete_despite_a_method(
+    bounty_case, analyst, coordinator
+):
+    from apps.researchers.models import PayoutMethod, PayoutMethodType
+    from apps.researchers.services import add_payout_method, get_or_create_payout_profile
+
+    researcher = bounty_case.reporter
+    profile = get_or_create_payout_profile(researcher)  # accepted_terms jamais coche
+    add_payout_method(
+        profile,
+        researcher,
+        PayoutMethod(
+            method_type=PayoutMethodType.MOBILE_MONEY,
+            mobile_operator="ORANGE_MONEY",
+            mobile_number="70000001",
+            mobile_holder_name="Fatou Kone",
+        ),
+    )
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)
+
+    # Le moyen existe : la copie a titre indicatif reste utile...
+    assert "Orange Money" in payment.payout_snapshot
+    # ... mais le profil est incomplet (conditions non acceptees) : averti quand meme.
+    assert "incomplet" in payment.payout_warning
+
+
+def test_payment_view_flashes_the_payout_warning(
+    client_for, bounty_case, analyst, coordinator
+):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+
+    client = client_for(coordinator)
+    response = client.post(
+        reverse("bounty:payment", args=[bounty.pk]), {"method": "BANK_TRANSFER"}, follow=True
+    )
+    content = response.content.decode()
+    assert "portefeuille" in content.lower()
 
 
 # ---------------------------------------------------------------- isolation

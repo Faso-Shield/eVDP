@@ -13,6 +13,7 @@ app_name = "wallet"
 
 urlpatterns = [
     path("", views.wallet_home, name="home"),
+    path("document/", views.id_document_download, name="id_document_download"),
     path("methods/add/", views.payout_method_add, name="method_add"),
     path("methods/<uuid:method_id>/edit/", views.payout_method_edit, name="method_edit"),
     path(

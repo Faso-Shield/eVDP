@@ -213,6 +213,10 @@ input:focus, select:focus, textarea:focus {
 .form-field { margin-bottom: .95rem; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0 1.1rem; }
 @media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } }
+
+/* Bloc de champs specifique a un type de moyen de paiement (portefeuille) :
+   separe visuellement du type/nom communs, sans effet tant que visible. */
+.method-group { margin-top: .9rem; padding-top: .9rem; border-top: 1px dashed var(--border); }
 .help { font-size: .79rem; color: var(--text-muted); margin-top: .2rem; }
 .errorlist { color: var(--evdp-red); font-size: .82rem; margin: .25rem 0 0; padding-left: 1.1rem; }
 .checkbox-field { display: flex; gap: .5rem; align-items: flex-start; margin-bottom: .8rem; }
@@ -238,6 +242,34 @@ input:focus, select:focus, textarea:focus {
   background: #fff8e6; color: #6f5208; border-color: #ecdcae; font-weight: 600;
 }
 .reward-scope .table { margin-bottom: 0; }
+
+/* ------------------------------------------------------- televersement */
+/* Zone de depot stylee par CSS seul (aucun JS) : le navigateur affiche deja
+   nativement le nom du fichier choisi a cote du bouton une fois selectionne. */
+input.upload-input {
+  padding: 1rem; border: 1px dashed var(--border-strong); border-radius: var(--radius);
+  background: var(--surface-alt); cursor: pointer; font-size: .88rem; color: var(--text-muted);
+  transition: border-color .15s ease, background-color .15s ease;
+}
+input.upload-input:hover, input.upload-input:focus {
+  border-color: var(--evdp-accent); background: var(--evdp-accent-light); outline: none;
+}
+input.upload-input::file-selector-button {
+  margin-right: .9rem; padding: .5rem .95rem; border: none; border-radius: var(--radius);
+  background: var(--evdp-navy); color: #fff; font-weight: 600; font-size: .87rem;
+  font-family: inherit; cursor: pointer; transition: background-color .15s ease;
+}
+input.upload-input::file-selector-button:hover { background: var(--evdp-navy-light); }
+
+.doc-badge {
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+}
+.doc-badge-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.2rem; height: 2.2rem; border-radius: var(--radius);
+  background: var(--evdp-accent-light); color: var(--evdp-accent); flex: none;
+}
+.doc-badge-name { font-weight: 600; color: var(--evdp-navy); }
 
 .filters { display: flex; gap: .7rem; flex-wrap: wrap; align-items: flex-end; }
 .filters .form-field { margin-bottom: 0; min-width: 165px; }

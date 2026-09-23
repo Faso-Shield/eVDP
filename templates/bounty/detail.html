@@ -128,7 +128,7 @@ vue ne charge même pas les avis pour un bénéficiaire.
         <div class="table-wrap">
           <table class="table">
             <thead><tr>
-              <th>Montant</th><th>Moyen</th><th>Référence</th><th>Statut</th>
+              <th>Montant</th><th>Moyen</th><th>Référence</th><th>Portefeuille</th><th>Statut</th>
               {% if peut_instruire %}<th>Enregistré par</th>{% endif %}<th>Date</th>
             </tr></thead>
             <tbody>
@@ -137,12 +137,13 @@ vue ne charge même pas les avis pour un bénéficiaire.
                 <td class="mono">{{ payment.amount|floatformat:0 }} {{ payment.currency }}</td>
                 <td class="small">{{ payment.get_method_display }}</td>
                 <td class="small">{{ payment.reference|default:"—" }}</td>
+                <td class="small mono">{{ payment.payout_snapshot|default:"—" }}</td>
                 <td><span class="status">{{ payment.get_status_display }}</span></td>
                 {% if peut_instruire %}<td class="small">{{ payment.recorded_by.display_name|default:"—" }}</td>{% endif %}
                 <td class="small">{{ payment.created_at|date:"d/m/Y" }}</td>
               </tr>
             {% empty %}
-              <tr><td colspan="{% if peut_instruire %}6{% else %}5{% endif %}" class="muted">Aucun versement enregistré.</td></tr>
+              <tr><td colspan="{% if peut_instruire %}7{% else %}6{% endif %}" class="muted">Aucun versement enregistré.</td></tr>
             {% endfor %}
             </tbody>
           </table>
@@ -179,6 +180,17 @@ vue ne charge même pas les avis pour un bénéficiaire.
     <div class="card">
       <div class="card-header"><h3>Enregistrer un versement</h3></div>
       <div class="card-body">
+        {% if payout_method and payout_profile.is_complete %}
+        <p class="small muted mb-1">
+          Moyen principal déclaré : <span class="mono">{{ payout_method.summary }}</span>
+        </p>
+        {% else %}
+        <div class="notice mb-1">
+          <strong>Portefeuille incomplet ou sans moyen principal.</strong>
+          Vérifiez auprès du chercheur avant d'exécuter le versement réel —
+          ce n'est jamais bloquant ici, mais c'est journalisé.
+        </div>
+        {% endif %}
         <form method="post" action="{% url 'bounty:payment' bounty.id %}">
           {% csrf_token %}
           {% for field in payment_form %}{% include "partials/form_field.html" %}{% endfor %}

@@ -1,0 +1,58 @@
+{% load evdp_tags %}
+{% comment %}
+Un bloc de champs par type de moyen de paiement (voir static/js/wallet.js).
+Sans JavaScript, seul le groupe correspondant au type actuellement retenu
+est visible des le rendu serveur - JS ne fait qu'y reagir sans rechargement
+quand l'utilisateur change de type. Le controle qui compte reste cote
+serveur (PayoutMethodForm.clean()) : masquer un groupe n'empeche jamais sa
+validation si ses champs sont malgre tout soumis.
+
+Sur un formulaire neuf, Django affiche "---------" (aucune valeur) tant que
+le type n'a pas ete choisi : aucun groupe n'apparait avant ce choix explicite
+- deliberement, plutot que de presupposer un type par defaut. Sur le
+formulaire de modification, le type deja enregistre determine le groupe
+visible des le premier rendu.
+{% endcomment %}
+{% with current_type=form.method_type.value %}
+<div class="form-grid">
+  {% include "partials/form_field.html" with field=form.method_type %}
+  {% include "partials/form_field.html" with field=form.label %}
+</div>
+
+<div class="method-group" data-method-group="BANK_TRANSFER" {% if current_type != "BANK_TRANSFER" %}hidden{% endif %}>
+  <div class="form-grid">
+    {% include "partials/form_field.html" with field=form.bank_name %}
+    {% include "partials/form_field.html" with field=form.account_holder_name %}
+    {% include "partials/form_field.html" with field=form.account_number %}
+  </div>
+</div>
+
+<div class="method-group" data-method-group="MOBILE_MONEY" {% if current_type != "MOBILE_MONEY" %}hidden{% endif %}>
+  <div class="form-grid">
+    {% include "partials/form_field.html" with field=form.mobile_operator %}
+    {% include "partials/form_field.html" with field=form.mobile_number %}
+    {% include "partials/form_field.html" with field=form.mobile_holder_name %}
+  </div>
+</div>
+
+<div class="method-group" data-method-group="CRYPTO" {% if current_type != "CRYPTO" %}hidden{% endif %}>
+  <div class="form-grid">
+    {% include "partials/form_field.html" with field=form.crypto_currency %}
+    {% include "partials/form_field.html" with field=form.crypto_network %}
+    {% include "partials/form_field.html" with field=form.crypto_wallet_address %}
+  </div>
+</div>
+
+<div class="method-group" data-method-group="PAYPAL" {% if current_type != "PAYPAL" %}hidden{% endif %}>
+  <div class="form-grid">
+    {% include "partials/form_field.html" with field=form.paypal_email %}
+  </div>
+</div>
+
+<div class="method-group" data-method-group="OTHER" {% if current_type != "OTHER" %}hidden{% endif %}>
+  <div class="form-grid">
+    {% include "partials/form_field.html" with field=form.other_label %}
+    {% include "partials/form_field.html" with field=form.other_reference %}
+  </div>
+</div>
+{% endwith %}

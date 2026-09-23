@@ -2,6 +2,7 @@
 
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.urls import reverse
 
 from apps.audit.models import AuditAction, AuditLog
 from apps.coordination.services import transition_case
@@ -94,6 +95,138 @@ def test_retraction_requires_reason(case_alpha, coordinator):
     publish_advisory(advisory, coordinator)
     with pytest.raises(ValidationError):
         retract_advisory(advisory, coordinator, reason="  ")
+
+
+# --------------------------------------------------------- mutations en GET
+# Regression : publish/retract/transition vivaient dans des vues separees qui
+# n'exigeaient aucune methode HTTP particuliere ; publish_advisory ne
+# verifiait meme pas request.method - un advisory deja APPROVED avec un
+# resume rempli pouvait etre publie par un simple GET (donc hors protection
+# CSRF, qui ne couvre que les methodes non sures). Ces vues ont depuis ete
+# fusionnees dans advisory_manage (_appliquer_action) : l'action de cycle de
+# vie ne peut plus etre declenchee que depuis la branche POST de cette vue,
+# ce qui rend la classe de probleme structurellement impossible. On le
+# verifie : un GET sur la page de gestion ne change jamais le statut.
+def test_manage_via_get_never_changes_status(client_for, case_alpha, coordinator):
+    advisory = build_advisory(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+
+    client = client_for(coordinator)
+    response = client.get(reverse("disclosures:manage", args=[advisory.advisory_id]))
+    assert response.status_code == 200
+    advisory.refresh_from_db()
+    assert advisory.status == AdvisoryStatus.APPROVED
+    assert advisory.is_published is False
+
+
+def _manage_request(rf, user, action, **extra):
+    from django.contrib.messages.storage.fallback import FallbackStorage
+
+    request = rf.post("/advisories/manage/", {"action": action, **extra})
+    request.user = user
+    request.session = {}
+    request._messages = FallbackStorage(request)
+    return request
+
+
+def test_appliquer_action_publishes(rf, case_alpha, coordinator):
+    from apps.disclosures.views import _appliquer_action
+
+    advisory = build_advisory(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+
+    _appliquer_action(_manage_request(rf, coordinator, "publish"), advisory)
+    advisory.refresh_from_db()
+
+    assert advisory.status == AdvisoryStatus.PUBLISHED
+    assert advisory.is_published is True
+
+
+def test_appliquer_action_publish_refuses_missing_capability(
+    rf, case_alpha, coordinator, analyst
+):
+    from apps.disclosures.views import _appliquer_action
+
+    advisory = build_advisory(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+
+    _appliquer_action(_manage_request(rf, analyst, "publish"), advisory)
+    advisory.refresh_from_db()
+
+    assert advisory.status == AdvisoryStatus.APPROVED  # inchange
+    assert advisory.is_published is False
+
+
+def test_appliquer_action_retracts(rf, case_alpha, coordinator):
+    from apps.disclosures.views import _appliquer_action
+
+    advisory = build_advisory(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+    publish_advisory(advisory, coordinator)
+
+    _appliquer_action(
+        _manage_request(rf, coordinator, "retract", reason="Information erronee."), advisory
+    )
+    advisory.refresh_from_db()
+
+    assert advisory.status == AdvisoryStatus.RETRACTED
+
+
+# -------------------------------------------------------------- administration
+def test_admin_publish_goes_through_the_service(rf, case_alpha, coordinator):
+    """L'admin ne doit pas reimplementer le cycle de vie : capacite, resume
+    obligatoire, published_at/published_by et audit doivent etre traites
+    comme via l'interface web."""
+    from django.contrib.admin.sites import AdminSite
+    from django.contrib.messages.storage.fallback import FallbackStorage
+
+    from apps.disclosures.admin import AdvisoryAdmin, action_publish
+
+    advisory = build_advisory(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+
+    request = rf.post("/admin/disclosures/advisory/")
+    request.user = coordinator
+    request.session = {}
+    request._messages = FallbackStorage(request)
+
+    action_publish(
+        AdvisoryAdmin(Advisory, AdminSite()), request, Advisory.objects.filter(pk=advisory.pk)
+    )
+    advisory.refresh_from_db()
+
+    assert advisory.status == AdvisoryStatus.PUBLISHED
+    assert advisory.published_by == coordinator
+    assert advisory.published_at is not None
+    assert AuditLog.objects.filter(action=AuditAction.ADVISORY_PUBLISHED).exists()
+
+
+def test_admin_publish_refuses_missing_capability(rf, case_alpha, coordinator, analyst):
+    from django.contrib.admin.sites import AdminSite
+    from django.contrib.messages.storage.fallback import FallbackStorage
+
+    from apps.disclosures.admin import AdvisoryAdmin, action_publish
+
+    advisory = build_advisory(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+
+    request = rf.post("/admin/disclosures/advisory/")
+    request.user = analyst
+    request.session = {}
+    request._messages = FallbackStorage(request)
+
+    action_publish(
+        AdvisoryAdmin(Advisory, AdminSite()), request, Advisory.objects.filter(pk=advisory.pk)
+    )
+    advisory.refresh_from_db()
+
+    assert advisory.status == AdvisoryStatus.APPROVED  # inchange
 
 
 # ------------------------------------------------------------ credit chercheur

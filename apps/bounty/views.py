@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
@@ -77,6 +78,7 @@ def bounty_list(request):
 def bounty_detail(request, bounty_id):
     bounty = _get_bounty(request, bounty_id)
     peut_instruire = _instruit_les_recompenses(request.user)
+    can_pay = request.user.has_capability(Capability.RECORD_PAYMENT)
     contexte = {
         "bounty": bounty,
         "payments": bounty.payments.select_related("recorded_by"),
@@ -88,7 +90,7 @@ def bounty_detail(request, bounty_id):
             request.user.has_capability(Capability.APPROVE_BOUNTY)
             and bounty.proposed_by_id != request.user.pk
         ),
-        "can_pay": request.user.has_capability(Capability.RECORD_PAYMENT),
+        "can_pay": can_pay,
     }
     # Les elements d'instruction ne sont pas seulement masques par le gabarit :
     # ils ne quittent pas la base pour un compte qui n'a pas a les lire. Le
@@ -105,6 +107,20 @@ def bounty_detail(request, bounty_id):
                 "within_policy": bounty.within_policy(),
                 "budget": budget_status(bounty),
             }
+        )
+    # Le portefeuille du chercheur ne regarde que qui va effectivement payer :
+    # meme principe que ci-dessus, applique a la capacite la plus precise.
+    if can_pay:
+        payout_profile = (
+            getattr(bounty.researcher, "payout_profile", None)
+            if bounty.researcher_id
+            else None
+        )
+        contexte["payout_profile"] = payout_profile
+        contexte["payout_method"] = (
+            payout_profile.methods.filter(is_primary=True, is_active=True).first()
+            if payout_profile
+            else None
         )
     return render(request, "bounty/detail.html", contexte)
 
@@ -144,6 +160,7 @@ def propose(request, case_id):
     )
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.PROPOSE_BOUNTY)
@@ -168,6 +185,7 @@ def review(request, bounty_id):
     return redirect("bounty:detail", bounty_id=bounty.pk)
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.APPROVE_BOUNTY)
@@ -191,23 +209,27 @@ def approve(request, bounty_id):
     return redirect("bounty:detail", bounty_id=bounty.pk)
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.APPROVE_BOUNTY)
 def reject(request, bounty_id):
     bounty = _get_bounty(request, bounty_id)
     form = BountyDecisionForm(request.POST)
-    note = (
-        form.data.get("note", "") if not form.is_valid() else form.cleaned_data.get("note", "")
-    )
-    try:
-        reject_bounty(bounty, request.user, note=note, request=request)
-        messages.success(request, "Récompense rejetée.")
-    except (PermissionDenied, ValidationError) as exc:
-        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    if form.is_valid():
+        try:
+            reject_bounty(
+                bounty, request.user, note=form.cleaned_data.get("note", ""), request=request
+            )
+            messages.success(request, "Récompense rejetée.")
+        except (PermissionDenied, ValidationError) as exc:
+            messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.error(request, form.errors.as_text())
     return redirect("bounty:detail", bounty_id=bounty.pk)
 
 
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.RECORD_PAYMENT)
@@ -216,7 +238,7 @@ def payment(request, bounty_id):
     form = PaymentForm(request.POST)
     if form.is_valid():
         try:
-            record_payment(
+            recorded = record_payment(
                 bounty,
                 request.user,
                 amount=form.cleaned_data.get("amount"),
@@ -224,6 +246,13 @@ def payment(request, bounty_id):
                 reference=form.cleaned_data.get("reference", ""),
                 request=request,
             )
+            if recorded.payout_warning:
+                messages.warning(
+                    request,
+                    f"Versement enregistre, mais {recorded.payout_warning} "
+                    "cote portefeuille : verifiez aupres du chercheur avant "
+                    "d'executer le versement reel.",
+                )
             messages.success(
                 request,
                 "Versement enregistre. Aucun flux financier réel n'est déclenché "

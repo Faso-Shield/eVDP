@@ -9,9 +9,38 @@ ne sont jamais publiees.
 from django import forms
 
 from .models import PayoutMethod, PayoutMethodType, PayoutProfile
+from .services import ID_DOCUMENT_ALLOWED_EXTENSIONS, validate_id_document
 
 
 class PayoutProfileForm(forms.ModelForm):
+    """Informations personnelles + justificatif d'identite.
+
+    `id_document` n'est pas un champ du modele : c'est un fichier a
+    televerser, valide ici puis enregistre par
+    apps.researchers.services.attach_id_document (nom opaque, stockage
+    controle). Optionnel a chaque soumission : ne pas en fournir un nouveau
+    conserve le document deja enregistre.
+    """
+
+    id_document = forms.FileField(
+        label="Justificatif d'identite (CNIB, passeport…)",
+        required=False,
+        widget=forms.FileInput(
+            attrs={
+                "class": "upload-input",
+                # Filtre la boite de dialogue du navigateur ; ne remplace pas
+                # la validation serveur (voir validate_id_document), seule
+                # autorite en la matiere.
+                "accept": ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*",
+            }
+        ),
+        help_text=(
+            "Formats acceptes : "
+            + ", ".join(sorted(ID_DOCUMENT_ALLOWED_EXTENSIONS))
+            + ". Televerser un nouveau fichier remplace le document existant."
+        ),
+    )
+
     class Meta:
         model = PayoutProfile
         fields = [
@@ -42,10 +71,39 @@ class PayoutProfileForm(forms.ModelForm):
             )
         return accepted
 
+    def clean_id_document(self):
+        uploaded = self.cleaned_data.get("id_document")
+        if uploaded:
+            validate_id_document(uploaded)
+        return uploaded
+
 
 class PayoutMethodForm(forms.ModelForm):
-    """Un seul formulaire pour les trois types : seuls les champs pertinents
-    au type choisi sont exiges, valide cote serveur dans clean()."""
+    """Un formulaire distinct par type de moyen : cote serveur, seuls les
+    champs du type choisi sont exiges (clean()) et persistes (les autres
+    sont vides quoi que l'utilisateur y ait saisi avant de changer de type).
+    Cote client, le gabarit n'affiche que le groupe correspondant - voir
+    static/js/wallet.js - mais le controle serveur reste la seule autorite,
+    un client sans JavaScript soumettant tous les champs a la fois.
+    """
+
+    #: Champs propres a chaque type. Les cles correspondent aux valeurs de
+    #: PayoutMethodType et aux attributs `data-method-group` du gabarit.
+    FIELD_GROUPS = {
+        PayoutMethodType.BANK_TRANSFER: ["bank_name", "account_holder_name", "account_number"],
+        PayoutMethodType.MOBILE_MONEY: [
+            "mobile_operator",
+            "mobile_number",
+            "mobile_holder_name",
+        ],
+        PayoutMethodType.CRYPTO: [
+            "crypto_currency",
+            "crypto_network",
+            "crypto_wallet_address",
+        ],
+        PayoutMethodType.PAYPAL: ["paypal_email"],
+        PayoutMethodType.OTHER: ["other_label", "other_reference"],
+    }
 
     class Meta:
         model = PayoutMethod
@@ -58,6 +116,10 @@ class PayoutMethodForm(forms.ModelForm):
             "mobile_operator",
             "mobile_number",
             "mobile_holder_name",
+            "crypto_currency",
+            "crypto_network",
+            "crypto_wallet_address",
+            "paypal_email",
             "other_label",
             "other_reference",
         ]
@@ -70,8 +132,21 @@ class PayoutMethodForm(forms.ModelForm):
             "mobile_operator": "Operateur",
             "mobile_number": "Numero mobile money",
             "mobile_holder_name": "Titulaire du compte mobile money",
+            "crypto_currency": "Cryptomonnaie",
+            "crypto_network": "Reseau",
+            "crypto_wallet_address": "Adresse du portefeuille",
+            "paypal_email": "Adresse email PayPal",
             "other_label": "Intitule",
             "other_reference": "Reference",
+        }
+        widgets = {
+            "crypto_currency": forms.TextInput(
+                attrs={"list": "crypto-currency-suggestions", "placeholder": "BTC, ETH, USDT…"}
+            ),
+            "crypto_network": forms.TextInput(
+                attrs={"placeholder": "Bitcoin, Ethereum (ERC-20), Tron (TRC-20)…"}
+            ),
+            "paypal_email": forms.EmailInput(attrs={"placeholder": "vous@exemple.com"}),
         }
 
     def clean(self):
@@ -83,10 +158,14 @@ class PayoutMethodForm(forms.ModelForm):
                 if not (cleaned.get(field) or "").strip():
                     self.add_error(field, "Ce champ est obligatoire pour ce type de moyen.")
 
-        if method_type == PayoutMethodType.BANK_TRANSFER:
-            require("bank_name", "account_holder_name", "account_number")
-        elif method_type == PayoutMethodType.MOBILE_MONEY:
-            require("mobile_operator", "mobile_number", "mobile_holder_name")
-        elif method_type == PayoutMethodType.OTHER:
-            require("other_label", "other_reference")
+        if method_type in self.FIELD_GROUPS:
+            require(*self.FIELD_GROUPS[method_type])
+
+        # Un formulaire par type : les champs des AUTRES types ne sont
+        # jamais persistes, meme si l'utilisateur les avait remplis avant
+        # de changer de type de moyen.
+        for group_type, fields in self.FIELD_GROUPS.items():
+            if group_type != method_type:
+                for field in fields:
+                    cleaned[field] = ""
         return cleaned

@@ -14,10 +14,11 @@ a l'import.
 """
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.roles import Capability
 from apps.disclosures.models import AdvisoryStatus
 from apps.reports.models import VulnerabilityReport
 from apps.reports.services import submit_report
@@ -120,6 +121,8 @@ def _resolve_cve(vulnerability):
 @transaction.atomic
 def import_csaf(document, actor, organization=None, program=None, request=None):
     """Cree un rapport + un case par vulnerabilite declaree dans le document."""
+    if not actor.has_capability(Capability.IMPORT_CSAF):
+        raise PermissionDenied("Capacite requise pour importer du CSAF.")
     validate_document(document)
     meta = document["document"]
     title_prefix = meta.get("title", "Import CSAF")[:150]
