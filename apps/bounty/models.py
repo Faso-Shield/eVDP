@@ -23,11 +23,20 @@ class BountyStatus(models.TextChoices):
     UNDER_REVIEW = "UNDER_REVIEW", "En revue"
     APPROVED = "APPROVED", "Approuvée"
     REJECTED = "REJECTED", "Rejetée"
+    PAYMENT_PENDING = "PAYMENT_PENDING", "Versement en attente de confirmation"
     PAID = "PAID", "Payée"
     CANCELLED = "CANCELLED", "Annulée"
 
 
 #: Transitions autorisees du cycle de vie d'une recompense.
+#
+# PAYMENT_PENDING est deliberement distinct de PAID : un versement enregistre
+# (bounty.services.record_payment) n'est qu'une intention, jamais confirmee
+# tant qu'aucune preuve n'a ete televersee (bounty.services.confirm_settlement).
+# Afficher "Payee" des l'enregistrement serait un statut positif non merite -
+# voir le retour utilisateur qui a motive cette distinction. Un versement en
+# echec (mark_payment_failed) fait revenir la recompense a APPROVED : un
+# nouveau versement peut alors etre enregistre.
 BOUNTY_TRANSITIONS = {
     BountyStatus.PENDING: [
         BountyStatus.UNDER_REVIEW,
@@ -40,7 +49,12 @@ BOUNTY_TRANSITIONS = {
         BountyStatus.REJECTED,
         BountyStatus.CANCELLED,
     ],
-    BountyStatus.APPROVED: [BountyStatus.PAID, BountyStatus.CANCELLED],
+    BountyStatus.APPROVED: [BountyStatus.PAYMENT_PENDING, BountyStatus.CANCELLED],
+    BountyStatus.PAYMENT_PENDING: [
+        BountyStatus.PAID,
+        BountyStatus.APPROVED,
+        BountyStatus.CANCELLED,
+    ],
     BountyStatus.REJECTED: [],
     BountyStatus.PAID: [],
     BountyStatus.CANCELLED: [],

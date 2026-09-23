@@ -221,10 +221,13 @@ def test_payment_records_trace_without_real_transfer(bounty_case, analyst, coord
     payment = record_payment(bounty, coordinator, reference="VIR-2026-001")
     bounty.refresh_from_db()
 
-    assert bounty.status == BountyStatus.PAID
+    # PAYMENT_PENDING, pas PAID : un simple enregistrement n'est jamais un
+    # statut positif tant qu'aucune preuve ne confirme le reglement (voir
+    # confirm_settlement, plus bas).
+    assert bounty.status == BountyStatus.PAYMENT_PENDING
     assert payment.status == PaymentStatus.RECORDED
     assert payment.settled_at is None  # aucun versement reel n'est execute
-    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAID).exists()
+    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_RECORDED).exists()
 
 
 def test_analyst_cannot_record_payment(bounty_case, analyst, coordinator):
@@ -234,10 +237,31 @@ def test_analyst_cannot_record_payment(bounty_case, analyst, coordinator):
         record_payment(bounty, analyst)
 
 
-def test_paid_bounty_updates_researcher_totals(bounty_case, analyst, coordinator):
+def test_payment_pending_does_not_update_researcher_totals(bounty_case, analyst, coordinator):
+    """Un versement seulement enregistre ne doit rien compter : voir
+    test_settled_bounty_updates_researcher_totals pour le cas confirme."""
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     approve_bounty(bounty, coordinator)
     record_payment(bounty, coordinator)
+
+    profile = bounty_case.reporter.researcher_profile
+    profile.refresh_from_db()
+    assert profile.total_rewards == Decimal("0.00")
+
+
+def test_settled_bounty_updates_researcher_totals(bounty_case, analyst, coordinator):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)
+    confirm_settlement(
+        payment,
+        coordinator,
+        proof_file=SimpleUploadedFile(
+            "recu.pdf", b"%PDF-1.4 recu", content_type="application/pdf"
+        ),
+    )
 
     profile = bounty_case.reporter.researcher_profile
     profile.refresh_from_db()
@@ -303,7 +327,7 @@ def test_payment_warns_without_any_payout_profile(bounty_case, analyst, coordina
     assert "aucun moyen" in payment.payout_warning
     warnings = [
         entry.metadata.get("warning", "")
-        for entry in AuditLog.objects.filter(action=AuditAction.BOUNTY_PAID)
+        for entry in AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_RECORDED)
     ]
     assert any("incomplet" in warning for warning in warnings)
 
@@ -386,6 +410,7 @@ def test_confirm_settlement_marks_the_payment_settled(bounty_case, analyst, coor
     assert payment.proof_original_filename == "recu.pdf"
     assert payment.proof_sha256
     assert payment.note == "Confirme par email"
+    assert payment.bounty.status == BountyStatus.PAID
     assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_SETTLED).exists()
 
 
@@ -417,7 +442,21 @@ def test_mark_payment_failed_marks_the_payment(bounty_case, analyst, coordinator
 
     assert payment.status == PaymentStatus.FAILED
     assert payment.failure_reason == "Compte beneficiaire errone"
+    # Retour a APPROVED : la recompense reste due, un nouveau versement peut
+    # etre enregistre - ce n'est pas un etat terminal.
+    assert payment.bounty.status == BountyStatus.APPROVED
     assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_FAILED).exists()
+
+
+def test_new_payment_can_be_recorded_after_a_failure(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    mark_payment_failed(payment, coordinator, reason="Mauvais compte")
+    payment.bounty.refresh_from_db()
+
+    second = record_payment(payment.bounty, coordinator, reference="VIR-CORRECTIF")
+    assert second.pk != payment.pk
+    payment.bounty.refresh_from_db()
+    assert payment.bounty.status == BountyStatus.PAYMENT_PENDING
 
 
 def test_settle_payment_via_get_is_rejected(client_for, bounty_case, analyst, coordinator):
@@ -622,7 +661,7 @@ def test_admin_payment_records_an_accounting_trace(rf, bounty_case, analyst, coo
     )
     bounty.refresh_from_db()
 
-    assert bounty.status == BountyStatus.PAID
+    assert bounty.status == BountyStatus.PAYMENT_PENDING
     assert bounty.payments.count() == 1
     assert bounty.payments.first().status == PaymentStatus.RECORDED
 

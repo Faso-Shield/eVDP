@@ -55,6 +55,10 @@ vue ne charge même pas les avis pour un bénéficiaire.
   {% elif bounty.status == "APPROVED" %}
     <strong>Récompense approuvée.</strong> Le montant est arrêté. Le versement est
     réalisé hors plateforme par le service financier, puis enregistré ici.
+  {% elif bounty.status == "PAYMENT_PENDING" %}
+    <strong>Versement en cours.</strong> Un versement a été enregistré et est en
+    attente de confirmation par la coordination nationale. Vous serez notifié
+    une fois le règlement confirmé.
   {% elif bounty.status == "PAID" %}
     <strong>Récompense versée.</strong> Le versement a été enregistré. En cas
     d'écart avec ce que vous avez reçu, répondez dans la messagerie du dossier.

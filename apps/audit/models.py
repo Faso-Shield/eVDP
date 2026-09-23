@@ -51,6 +51,7 @@ class AuditAction(models.TextChoices):
     BOUNTY_APPROVED = "BOUNTY_APPROVED", "Récompense approuvée"
     BOUNTY_REJECTED = "BOUNTY_REJECTED", "Récompense rejetée"
     BOUNTY_PAID = "BOUNTY_PAID", "Récompense payée"
+    BOUNTY_PAYMENT_RECORDED = "BOUNTY_PAYMENT_RECORDED", "Versement enregistré (non confirmé)"
     BOUNTY_PAYMENT_SETTLED = "BOUNTY_PAYMENT_SETTLED", "Versement confirmé réglé"
     BOUNTY_PAYMENT_FAILED = "BOUNTY_PAYMENT_FAILED", "Versement marqué en échec"
     BOUNTY_PROOF_DOWNLOADED = "BOUNTY_PROOF_DOWNLOADED", "Preuve de versement téléchargée"

@@ -451,7 +451,11 @@ class RewardPolicy(BaseModel):
 
         total = Bounty.objects.filter(
             program=self.program,
-            status__in=[BountyStatus.APPROVED, BountyStatus.PAID],
+            status__in=[
+                BountyStatus.APPROVED,
+                BountyStatus.PAYMENT_PENDING,
+                BountyStatus.PAID,
+            ],
         ).aggregate(total=models.Sum("approved_amount"))["total"]
         return total or Decimal("0")
 

@@ -57,7 +57,11 @@ def budget_status(bounty, amount=None):
         return None
 
     consumed = policy.budget_consumed()
-    if bounty.status in (BountyStatus.APPROVED, BountyStatus.PAID):
+    if bounty.status in (
+        BountyStatus.APPROVED,
+        BountyStatus.PAYMENT_PENDING,
+        BountyStatus.PAID,
+    ):
         consumed -= bounty.approved_amount or Decimal("0")
     if amount is None:
         amount = (
@@ -307,19 +311,24 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
         status=PaymentStatus.RECORDED,
         recorded_by=actor,
     )
-    bounty.status = BountyStatus.PAID
+    # PAYMENT_PENDING, pas PAID : un versement enregistre n'est qu'une
+    # intention tant qu'aucune preuve n'a confirme qu'il a reellement eu
+    # lieu (voir confirm_settlement). Le beneficiaire n'est notifie, et son
+    # total de recompenses n'est recalcule, qu'une fois cette confirmation
+    # obtenue - jamais sur une simple intention.
+    bounty.status = BountyStatus.PAYMENT_PENDING
     bounty.save(update_fields=["status", "updated_at"])
 
     if payout_warnings:
         log_action(
-            AuditAction.BOUNTY_PAID,
+            AuditAction.BOUNTY_PAYMENT_RECORDED,
             actor=actor,
             obj=bounty,
             request=request,
             warning="; ".join(payout_warnings),
         )
     log_action(
-        AuditAction.BOUNTY_PAID,
+        AuditAction.BOUNTY_PAYMENT_RECORDED,
         actor=actor,
         obj=bounty,
         request=request,
@@ -327,11 +336,6 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
         amount=str(payment.amount),
         reference=payment.reference,
     )
-    if bounty.researcher_id:
-        notify(bounty.researcher, NotificationKind.BOUNTY_PAID, case=bounty.case)
-        profile = getattr(bounty.researcher, "researcher_profile", None)
-        if profile:
-            profile.recompute()
     # Transitoire, non persiste : permet a la vue d'afficher l'avertissement
     # sans recalculer la meme logique.
     payment.payout_warning = "; ".join(payout_warnings)
@@ -371,16 +375,27 @@ def confirm_settlement(payment, actor, proof_file, note="", request=None):
     payment.proof_file.save(payment.proof_storage_name, proof_file, save=True)
     payment.mark_settled()
 
+    bounty = payment.bounty
+    bounty.status = BountyStatus.PAID
+    bounty.save(update_fields=["status", "updated_at"])
+
     log_action(
         AuditAction.BOUNTY_PAYMENT_SETTLED,
         actor=actor,
         obj=payment,
         request=request,
-        case=payment.bounty.case.case_id,
+        case=bounty.case.case_id,
         amount=str(payment.amount),
         sha256=digest,
         filename=payment.proof_original_filename,
     )
+    # La confirmation - pas le simple enregistrement - est ce qui doit
+    # notifier le beneficiaire et alimenter son total de recompenses.
+    if bounty.researcher_id:
+        notify(bounty.researcher, NotificationKind.BOUNTY_PAID, case=bounty.case)
+        profile = getattr(bounty.researcher, "researcher_profile", None)
+        if profile:
+            profile.recompute()
     return payment
 
 
@@ -396,12 +411,18 @@ def mark_payment_failed(payment, actor, reason, request=None):
 
     payment.mark_failed(reason.strip())
 
+    # Retour a APPROVED, pas un etat terminal : le versement rate, la
+    # recompense reste due, un nouveau versement peut etre enregistre.
+    bounty = payment.bounty
+    bounty.status = BountyStatus.APPROVED
+    bounty.save(update_fields=["status", "updated_at"])
+
     log_action(
         AuditAction.BOUNTY_PAYMENT_FAILED,
         actor=actor,
         obj=payment,
         request=request,
-        case=payment.bounty.case.case_id,
+        case=bounty.case.case_id,
         reason=reason.strip()[:200],
     )
     return payment
