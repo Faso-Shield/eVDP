@@ -270,6 +270,18 @@ def test_csaf_import_requires_capability(client_for, researcher_a):
     assert response.status_code == 403
 
 
+def test_import_csaf_service_refuses_without_capability(researcher_a):
+    """Le service est la seule autorite, pas seulement la vue DRF : un futur
+    appelant (commande de gestion, tache asynchrone...) doit heriter du
+    controle sans avoir a le reimplementer."""
+    from django.core.exceptions import PermissionDenied
+
+    from apps.csaf.services import import_csaf
+
+    with pytest.raises(PermissionDenied):
+        import_csaf(CSAF_DOCUMENT, researcher_a)
+
+
 def test_csaf_import_creates_case(client_for, analyst):
     client = client_for(analyst)
     response = client.post(
