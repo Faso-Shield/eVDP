@@ -255,6 +255,7 @@ def test_settled_bounty_updates_researcher_totals(bounty_case, analyst, coordina
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     approve_bounty(bounty, coordinator)
     payment = record_payment(bounty, coordinator)
+    _verify_the_fix(bounty_case, coordinator)
     confirm_settlement(
         payment,
         coordinator,
@@ -388,9 +389,42 @@ def _proof():
     )
 
 
+def _verify_the_fix(case, actor):
+    """Fait avancer le dossier jusqu'a FIX_VERIFIED (chemin nominal Bug Bounty).
+
+    Necessaire pour confirmer un reglement : voir SETTLEMENT_ELIGIBLE_CASE_
+    STATUSES, le paiement ne doit jamais etre effectue avant que tout le
+    processus de remediation soit lui-meme termine.
+    """
+    from apps.coordination.services import transition_case
+    from apps.coordination.workflow import CaseStatus
+
+    for target in (
+        CaseStatus.TRIAGE,
+        CaseStatus.VALIDATED,
+        CaseStatus.SEVERITY_ASSIGNED,
+        CaseStatus.BOUNTY_REVIEW,
+        CaseStatus.REWARD_APPROVED,
+        CaseStatus.REMEDIATION,
+        CaseStatus.FIX_AVAILABLE,
+        CaseStatus.VERIFICATION,
+        CaseStatus.FIX_VERIFIED,
+    ):
+        transition_case(case, target, actor)
+    case.refresh_from_db()
+    return case
+
+
 def _recorded_payment(bounty_case, analyst, coordinator, amount=Decimal("200000")):
+    """Versement pret a etre confirme : dossier deja verifie par defaut.
+
+    Les tests qui portent specifiquement sur l'etat du dossier (verification
+    pas encore faite) construisent leur propre scenario plutot que d'utiliser
+    ce raccourci - voir test_confirm_settlement_requires_a_verified_case.
+    """
     bounty = propose_bounty(bounty_case, analyst, amount=amount)
     approve_bounty(bounty, coordinator)
+    _verify_the_fix(bounty_case, coordinator)
     return record_payment(bounty, coordinator)
 
 
@@ -398,6 +432,66 @@ def test_confirm_settlement_requires_a_proof(bounty_case, analyst, coordinator):
     payment = _recorded_payment(bounty_case, analyst, coordinator)
     with pytest.raises(ValidationError):
         confirm_settlement(payment, coordinator, proof_file=None)
+
+
+def test_confirm_settlement_requires_a_verified_fix(bounty_case, analyst, coordinator):
+    """L'argent ne doit jamais sortir avant que tout le processus de
+    remediation soit lui-meme termine - pas seulement la decision de
+    recompense. Un dossier encore SUBMITTED, meme avec un versement
+    enregistre, ne peut pas etre confirme regle."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)  # dossier toujours SUBMITTED
+
+    with pytest.raises(ValidationError, match="correctif"):
+        confirm_settlement(payment, coordinator, proof_file=_proof())
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.RECORDED
+
+
+def test_confirm_settlement_succeeds_once_the_fix_is_verified(
+    bounty_case, analyst, coordinator
+):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)
+    _verify_the_fix(bounty_case, coordinator)
+
+    confirm_settlement(payment, coordinator, proof_file=_proof())
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.SETTLED
+
+
+def test_mark_payment_failed_does_not_require_a_verified_fix(
+    bounty_case, analyst, coordinator
+):
+    """Un versement peut echouer (mauvais compte, virement rejete...) pour
+    des raisons sans rapport avec l'avancement de la remediation : cette
+    action reste possible quel que soit le statut du dossier."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)  # dossier toujours SUBMITTED
+
+    mark_payment_failed(payment, coordinator, reason="Compte errone")
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.FAILED
+
+
+def test_settlement_eligible_flag_reflects_the_case_status(
+    client_for, bounty_case, analyst, coordinator
+):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    record_payment(bounty, coordinator)
+
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:detail", args=[bounty.pk]))
+    assert response.context["settlement_eligible"] is False
+    assert "pas encore vérifié" in response.content.decode()
+
+    _verify_the_fix(bounty_case, coordinator)
+    response = client.get(reverse("bounty:detail", args=[bounty.pk]))
+    assert response.context["settlement_eligible"] is True
 
 
 def test_confirm_settlement_marks_the_payment_settled(bounty_case, analyst, coordinator):

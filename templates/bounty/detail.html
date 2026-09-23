@@ -155,11 +155,20 @@ vue ne charge même pas les avis pour un bénéficiaire.
                     <details>
                       <summary class="btn btn-sm btn-outline">Confirmer / Échec</summary>
                       <div class="mt-1" style="min-width:240px">
+                        {% if settlement_eligible %}
                         <form method="post" action="{% url 'bounty:settle_payment' payment.id %}" enctype="multipart/form-data" class="mb-1">
                           {% csrf_token %}
                           {% for field in settlement_form %}{% include "partials/form_field.html" %}{% endfor %}
                           <button class="btn btn-sm btn-accent" type="submit">Confirmer réglé</button>
                         </form>
+                        {% else %}
+                        <div class="notice mb-1">
+                          <strong>Correctif pas encore vérifié.</strong> Le dossier est
+                          au statut « {{ bounty.case.get_status_display }} » : la
+                          confirmation de règlement n'est possible qu'une fois le
+                          correctif vérifié (ou une étape ultérieure).
+                        </div>
+                        {% endif %}
                         <form method="post" action="{% url 'bounty:fail_payment' payment.id %}">
                           {% csrf_token %}
                           {% for field in failure_form %}{% include "partials/form_field.html" %}{% endfor %}

@@ -13,6 +13,7 @@ from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination.constants import TimelineEventType
 from apps.coordination.services import add_timeline_event
+from apps.coordination.workflow import CaseStatus
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
 from apps.programs.models import ProgramType
@@ -24,6 +25,20 @@ from .models import (
     BountyStatus,
     PaymentStatus,
     ReviewDecision,
+)
+
+#: Le versement ne peut etre confirme regle que si le correctif du dossier
+#: source a ete verifie - jamais avant, quel que soit l'avancement de la
+#: recompense elle-meme. Le workflow Bug Bounty (apps.coordination.workflow)
+#: impose deja de passer par FIX_VERIFIED avant tout etat qui suit : verifier
+#: l'appartenance a cet ensemble suffit, pas besoin de rejouer le graphe.
+SETTLEMENT_ELIGIBLE_CASE_STATUSES = frozenset(
+    {
+        CaseStatus.FIX_VERIFIED,
+        CaseStatus.DISCLOSURE_SCHEDULED,
+        CaseStatus.PUBLISHED,
+        CaseStatus.CLOSED,
+    }
 )
 
 
@@ -357,6 +372,11 @@ def confirm_settlement(payment, actor, proof_file, note="", request=None):
         raise PermissionDenied("Capacite requise pour confirmer un versement.")
     if payment.status != PaymentStatus.RECORDED:
         raise ValidationError("Seul un versement enregistre peut etre confirme regle.")
+    if payment.bounty.case.status not in SETTLEMENT_ELIGIBLE_CASE_STATUSES:
+        raise ValidationError(
+            "Le correctif du dossier doit etre verifie avant de confirmer le versement "
+            f"(statut actuel : {payment.bounty.case.get_status_display()})."
+        )
     if not proof_file:
         raise ValidationError({"proof_file": "Une preuve de paiement est obligatoire."})
 

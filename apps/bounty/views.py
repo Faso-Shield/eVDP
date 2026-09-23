@@ -23,6 +23,7 @@ from .forms import (
 )
 from .models import Bounty, BountyPayment
 from .services import (
+    SETTLEMENT_ELIGIBLE_CASE_STATUSES,
     approve_bounty,
     authorize_proof_download,
     budget_status,
@@ -144,6 +145,9 @@ def bounty_detail(request, bounty_id):
         )
         contexte["settlement_form"] = SettlementForm()
         contexte["failure_form"] = PaymentFailureForm()
+        contexte["settlement_eligible"] = (
+            bounty.case.status in SETTLEMENT_ELIGIBLE_CASE_STATUSES
+        )
     return render(request, "bounty/detail.html", contexte)
 
 
