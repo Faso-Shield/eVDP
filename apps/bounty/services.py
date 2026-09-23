@@ -1,5 +1,6 @@
 """Cycle de vie des recompenses Bug Bounty."""
 
+import uuid
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -7,6 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.roles import Capability
+from apps.attachments.services import compute_digest, validate_upload
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination.constants import TimelineEventType
@@ -336,6 +338,89 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
     return payment
 
 
+@transaction.atomic
+def confirm_settlement(payment, actor, proof_file, note="", request=None):
+    """Confirme qu'un versement enregistre a reellement ete regle.
+
+    La comptabilite agit hors plateforme : elle notifie l'agent par email,
+    avec une preuve (recu, confirmation bancaire ou mobile money...). Cette
+    preuve est exigee ici - jamais une simple declaration - et televersee
+    avec les memes garanties que le justificatif d'identite du portefeuille
+    (nom de stockage opaque, jamais servie directement, voir
+    apps.bounty.views.payment_proof_download).
+    """
+    if not actor.has_capability(Capability.RECORD_PAYMENT):
+        raise PermissionDenied("Capacite requise pour confirmer un versement.")
+    if payment.status != PaymentStatus.RECORDED:
+        raise ValidationError("Seul un versement enregistre peut etre confirme regle.")
+    if not proof_file:
+        raise ValidationError({"proof_file": "Une preuve de paiement est obligatoire."})
+
+    metadata = validate_upload(proof_file)
+    digest = compute_digest(proof_file)
+
+    payment.proof_storage_name = f"{uuid.uuid4().hex}.{metadata['extension']}"
+    payment.proof_original_filename = proof_file.name[:255]
+    payment.proof_content_type = metadata["content_type"]
+    payment.proof_size = proof_file.size
+    payment.proof_sha256 = digest
+    payment.proof_uploaded_at = timezone.now()
+    if note.strip():
+        payment.note = note.strip()[:255]
+    payment.save()
+    payment.proof_file.save(payment.proof_storage_name, proof_file, save=True)
+    payment.mark_settled()
+
+    log_action(
+        AuditAction.BOUNTY_PAYMENT_SETTLED,
+        actor=actor,
+        obj=payment,
+        request=request,
+        case=payment.bounty.case.case_id,
+        amount=str(payment.amount),
+        sha256=digest,
+        filename=payment.proof_original_filename,
+    )
+    return payment
+
+
+@transaction.atomic
+def mark_payment_failed(payment, actor, reason, request=None):
+    """Signale qu'un versement enregistre n'a finalement pas abouti."""
+    if not actor.has_capability(Capability.RECORD_PAYMENT):
+        raise PermissionDenied("Capacite requise pour signaler un echec de versement.")
+    if payment.status != PaymentStatus.RECORDED:
+        raise ValidationError("Seul un versement enregistre peut etre marque en echec.")
+    if not reason.strip():
+        raise ValidationError({"reason": "Un motif est obligatoire."})
+
+    payment.mark_failed(reason.strip())
+
+    log_action(
+        AuditAction.BOUNTY_PAYMENT_FAILED,
+        actor=actor,
+        obj=payment,
+        request=request,
+        case=payment.bounty.case.case_id,
+        reason=reason.strip()[:200],
+    )
+    return payment
+
+
+def authorize_proof_download(payment, user, request=None):
+    """Autorise (ou refuse) le telechargement de la preuve, et journalise l'acces."""
+    if not user.has_capability(Capability.RECORD_PAYMENT):
+        return False
+    log_action(
+        AuditAction.BOUNTY_PROOF_DOWNLOADED,
+        actor=user,
+        obj=payment,
+        request=request,
+        case=payment.bounty.case.case_id,
+    )
+    return True
+
+
 __all__ = [
     "budget_status",
     "propose_bounty",
@@ -343,6 +428,9 @@ __all__ = [
     "approve_bounty",
     "reject_bounty",
     "record_payment",
+    "confirm_settlement",
+    "mark_payment_failed",
+    "authorize_proof_download",
     "suggested_amount",
     "ReviewDecision",
 ]

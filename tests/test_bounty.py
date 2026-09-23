@@ -12,6 +12,8 @@ from apps.bounty.models import Bounty, BountyStatus, PaymentStatus, ReviewDecisi
 from apps.bounty.services import (
     approve_bounty,
     budget_status,
+    confirm_settlement,
+    mark_payment_failed,
     propose_bounty,
     record_payment,
     reject_bounty,
@@ -347,6 +349,139 @@ def test_payment_view_flashes_the_payout_warning(
     )
     content = response.content.decode()
     assert "portefeuille" in content.lower()
+
+
+# ------------------------------------------------------------- reglement
+# La comptabilite agit hors plateforme et notifie l'agent par email avec une
+# preuve (recu, confirmation bancaire...) : cette preuve doit etre televersee
+# ici pour confirmer qu'un versement enregistre a reellement ete regle -
+# jamais sur une simple declaration.
+def _proof():
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    return SimpleUploadedFile(
+        "recu.pdf", b"%PDF-1.4 recu de virement", content_type="application/pdf"
+    )
+
+
+def _recorded_payment(bounty_case, analyst, coordinator, amount=Decimal("200000")):
+    bounty = propose_bounty(bounty_case, analyst, amount=amount)
+    approve_bounty(bounty, coordinator)
+    return record_payment(bounty, coordinator)
+
+
+def test_confirm_settlement_requires_a_proof(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    with pytest.raises(ValidationError):
+        confirm_settlement(payment, coordinator, proof_file=None)
+
+
+def test_confirm_settlement_marks_the_payment_settled(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    confirm_settlement(payment, coordinator, proof_file=_proof(), note="Confirme par email")
+    payment.refresh_from_db()
+
+    assert payment.status == PaymentStatus.SETTLED
+    assert payment.settled_at is not None
+    assert payment.proof_original_filename == "recu.pdf"
+    assert payment.proof_sha256
+    assert payment.note == "Confirme par email"
+    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_SETTLED).exists()
+
+
+def test_confirm_settlement_requires_capability(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    with pytest.raises(PermissionDenied):
+        confirm_settlement(payment, analyst, proof_file=_proof())
+
+
+def test_confirm_settlement_refuses_an_already_settled_payment(
+    bounty_case, analyst, coordinator
+):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    confirm_settlement(payment, coordinator, proof_file=_proof())
+    with pytest.raises(ValidationError):
+        confirm_settlement(payment, coordinator, proof_file=_proof())
+
+
+def test_mark_payment_failed_requires_a_reason(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    with pytest.raises(ValidationError):
+        mark_payment_failed(payment, coordinator, reason="  ")
+
+
+def test_mark_payment_failed_marks_the_payment(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    mark_payment_failed(payment, coordinator, reason="Compte beneficiaire errone")
+    payment.refresh_from_db()
+
+    assert payment.status == PaymentStatus.FAILED
+    assert payment.failure_reason == "Compte beneficiaire errone"
+    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_FAILED).exists()
+
+
+def test_settle_payment_via_get_is_rejected(client_for, bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:settle_payment", args=[payment.pk]))
+    assert response.status_code == 405
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.RECORDED
+
+
+def test_settle_payment_view_uploads_the_proof(client_for, bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    client = client_for(coordinator)
+    response = client.post(
+        reverse("bounty:settle_payment", args=[payment.pk]),
+        {"proof_file": _proof(), "note": ""},
+    )
+    assert response.status_code == 302
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.SETTLED
+    assert payment.proof_file.name
+
+
+def test_fail_payment_view(client_for, bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    client = client_for(coordinator)
+    response = client.post(
+        reverse("bounty:fail_payment", args=[payment.pk]),
+        {"reason": "Virement rejete par la banque"},
+    )
+    assert response.status_code == 302
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.FAILED
+
+
+def test_payment_proof_download_requires_capability(
+    client_for, bounty_case, analyst, coordinator
+):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    confirm_settlement(payment, coordinator, proof_file=_proof())
+
+    client = client_for(analyst)
+    response = client.get(reverse("bounty:payment_proof", args=[payment.pk]))
+    assert response.status_code == 403
+
+
+def test_payment_proof_download_works_for_recorder(
+    client_for, bounty_case, analyst, coordinator
+):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    confirm_settlement(payment, coordinator, proof_file=_proof())
+
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:payment_proof", args=[payment.pk]))
+    assert response.status_code == 200
+    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PROOF_DOWNLOADED).exists()
+
+
+def test_payment_without_proof_download_is_404(client_for, bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:payment_proof", args=[payment.pk]))
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------- isolation

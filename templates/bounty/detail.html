@@ -128,8 +128,9 @@ vue ne charge même pas les avis pour un bénéficiaire.
         <div class="table-wrap">
           <table class="table">
             <thead><tr>
-              <th>Montant</th><th>Moyen</th><th>Référence</th><th>Portefeuille</th><th>Statut</th>
+              <th>Montant</th><th>Moyen</th><th>Référence</th><th>Portefeuille</th><th>Statut</th><th>Preuve</th>
               {% if peut_instruire %}<th>Enregistré par</th>{% endif %}<th>Date</th>
+              {% if can_pay %}<th>Confirmation</th>{% endif %}
             </tr></thead>
             <tbody>
             {% for payment in payments %}
@@ -139,11 +140,39 @@ vue ne charge même pas les avis pour un bénéficiaire.
                 <td class="small">{{ payment.reference|default:"—" }}</td>
                 <td class="small mono">{{ payment.payout_snapshot|default:"—" }}</td>
                 <td><span class="status">{{ payment.get_status_display }}</span></td>
+                <td class="small">
+                  {% if payment.proof_file %}<a href="{% url 'bounty:payment_proof' payment.id %}">Télécharger</a>{% else %}—{% endif %}
+                </td>
                 {% if peut_instruire %}<td class="small">{{ payment.recorded_by.display_name|default:"—" }}</td>{% endif %}
                 <td class="small">{{ payment.created_at|date:"d/m/Y" }}</td>
+                {% if can_pay %}
+                <td class="small nowrap">
+                  {% if payment.status == "RECORDED" %}
+                    <details>
+                      <summary class="btn btn-sm btn-outline">Confirmer / Échec</summary>
+                      <div class="mt-1" style="min-width:240px">
+                        <form method="post" action="{% url 'bounty:settle_payment' payment.id %}" enctype="multipart/form-data" class="mb-1">
+                          {% csrf_token %}
+                          {% for field in settlement_form %}{% include "partials/form_field.html" %}{% endfor %}
+                          <button class="btn btn-sm btn-accent" type="submit">Confirmer réglé</button>
+                        </form>
+                        <form method="post" action="{% url 'bounty:fail_payment' payment.id %}">
+                          {% csrf_token %}
+                          {% for field in failure_form %}{% include "partials/form_field.html" %}{% endfor %}
+                          <button class="btn btn-sm btn-danger" type="submit">Marquer en échec</button>
+                        </form>
+                      </div>
+                    </details>
+                  {% elif payment.status == "SETTLED" %}
+                    <span class="small muted">Réglé le {{ payment.settled_at|date:"d/m/Y" }}</span>
+                  {% elif payment.status == "FAILED" %}
+                    <span class="small muted">{{ payment.failure_reason|default:"Échec" }}</span>
+                  {% endif %}
+                </td>
+                {% endif %}
               </tr>
             {% empty %}
-              <tr><td colspan="{% if peut_instruire %}7{% else %}6{% endif %}" class="muted">Aucun versement enregistré.</td></tr>
+              <tr><td colspan="{% if peut_instruire and can_pay %}9{% elif peut_instruire or can_pay %}8{% else %}7{% endif %}" class="muted">Aucun versement enregistré.</td></tr>
             {% endfor %}
             </tbody>
           </table>
