@@ -229,6 +229,7 @@ def test_super_admin_sees_the_payout_reference_in_clear(
     ).content.decode()
 
     assert "BF1234567890123456" in content
+    assert "Awa Traore" in content  # nom legal du declarant, pas seulement le moyen
     assert AuditLog.objects.filter(
         action=AuditAction.PAYOUT_REFERENCE_VIEWED, actor=super_admin
     ).exists()

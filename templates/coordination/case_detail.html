@@ -339,9 +339,12 @@
         <span class="pill">Super-admin</span>
       </div>
       <div class="card-body">
-        <p class="payout-value mono">{{ payout_method.full_summary }}</p>
+        <p class="mb-0" style="font-weight:600;color:var(--evdp-navy)">
+          {{ payout_profile.legal_full_name|default:case.reporter.display_name }}
+        </p>
+        <p class="payout-value mono mb-0">{{ payout_method.full_summary }}</p>
         <p class="small muted mb-0">
-          Moyen principal du déclarant, en clair. Consultation journalisée.
+          Titulaire et moyen principal du déclarant, en clair. Consultation journalisée.
         </p>
       </div>
     </div>

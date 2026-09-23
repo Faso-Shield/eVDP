@@ -123,6 +123,7 @@ def case_detail(request, case_id):
     # consultation est journalisee au meme titre qu'un telechargement de
     # justificatif d'identite.
     payout_method = None
+    payout_profile = None
     if request.user.is_superuser and case.reporter_id:
         payout_profile = getattr(case.reporter, "payout_profile", None)
         payout_method = (
@@ -190,6 +191,7 @@ def case_detail(request, case_id):
         "bounty": getattr(case, "bounty", None),
         "advisories": case.advisories.all(),
         "payout_method": payout_method,
+        "payout_profile": payout_profile,
         # Le case original d'un doublon n'est jamais expose au declarant.
         "show_duplicate_origin": case.duplicate_of_id is not None and request.user.is_national,
     }
