@@ -21,19 +21,28 @@ def _clamav_scan(data):
     port = int(getattr(settings, "CLAMAV_PORT", 3310))
     if not host:
         return ScanStatus.SKIPPED, "Service ClamAV non configure."
+
     try:
         with socket.create_connection((host, port), timeout=10) as sock:
             sock.sendall(b"zINSTREAM\0")
+
             for offset in range(0, len(data), 8192):
                 chunk = data[offset : offset + 8192]
                 sock.sendall(len(chunk).to_bytes(4, "big") + chunk)
+
             sock.sendall((0).to_bytes(4, "big"))
+
             response = sock.recv(4096).decode("utf-8", errors="ignore")
+            response = response.replace("\x00", "").strip()[:255]
+
         if "OK" in response and "FOUND" not in response:
-            return ScanStatus.CLEAN, response.strip()[:255]
+            return ScanStatus.CLEAN, response
+
         if "FOUND" in response:
-            return ScanStatus.INFECTED, response.strip()[:255]
-        return ScanStatus.ERROR, response.strip()[:255]
+            return ScanStatus.INFECTED, response
+
+        return ScanStatus.ERROR, response
+
     except OSError as exc:
         return ScanStatus.ERROR, f"ClamAV injoignable: {exc}"[:255]
 
