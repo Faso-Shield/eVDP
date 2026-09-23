@@ -16,6 +16,24 @@ class ProgramRuleInline(admin.TabularInline):
 class RewardTierInline(admin.TabularInline):
     model = RewardTier
     extra = 0
+    fields = ("scope", "severity", "min_amount", "max_amount", "description")
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """N'offre que les actifs du programme de la politique editee.
+
+        Sans ce filtrage, l'administration proposerait le perimetre de tous
+        les programmes et la validation du modele rejetterait la saisie.
+        """
+        if db_field.name == "scope":
+            policy_id = (request.resolver_match.kwargs or {}).get("object_id")
+            kwargs["queryset"] = (
+                ProgramScope.objects.filter(
+                    program__reward_policy=policy_id, in_scope=True, is_active=True
+                )
+                if policy_id
+                else ProgramScope.objects.none()
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 @admin.register(Program)

@@ -2,6 +2,8 @@
 
 from django.conf import settings
 
+from .navigation import sidebar_sections
+
 
 def evdp_context(request):
     user = getattr(request, "user", None)
@@ -16,4 +18,5 @@ def evdp_context(request):
         "PLATFORM_TAGLINE": settings.EVDP["PLATFORM_TAGLINE"],
         "PROJECT_CODE": settings.EVDP["PROJECT_CODE"],
         "unread_notifications": unread,
+        "sidebar_sections": sidebar_sections(user),
     }

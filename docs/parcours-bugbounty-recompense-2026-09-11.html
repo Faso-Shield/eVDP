@@ -1,0 +1,428 @@
+<title>Parcours Bug Bounty avec récompense</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #101a22; --ink-soft: #45545f; --paper: #eef2f1; --surface: #ffffff;
+    --surface-2: #e4e9e7; --line: #c7d0cd; --accent: #0e6f5c; --accent-soft: #d7ebe4;
+    --ok: #1a7a4c; --ok-soft: #dcf0e3; --warn: #93630a; --warn-soft: #f5e8cc;
+    --gap: #a5341f; --gap-soft: #f5ddd6;
+    --shadow: 0 1px 2px rgba(16,26,34,.06), 0 8px 24px -12px rgba(16,26,34,.18);
+    --evdp-navy: #0d2a49; --evdp-navy-light: #143a63; --evdp-accent-btn: #17966f;
+    --sev-high-bg: #fdefe3; --sev-high-ink: #c1400f;
+    --org: #8a5a12; --org-soft: #f6e9d3;
+    --money: #0e6f5c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e7ede9; --ink-soft: #a9b6ac; --paper: #0c1310; --surface: #121b17;
+      --surface-2: #182320; --line: #263531; --accent: #3cbf9e; --accent-soft: #17322a;
+      --ok: #4bc788; --ok-soft: #103524; --warn: #e0ab4c; --warn-soft: #3a2c0f;
+      --gap: #e8785f; --gap-soft: #3a1c15;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+      --sev-high-bg: #3a2510; --sev-high-ink: #e0954c;
+      --org: #d69a4a; --org-soft: #3a2c12; --money: #3cbf9e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e7ede9; --ink-soft: #a9b6ac; --paper: #0c1310; --surface: #121b17;
+    --surface-2: #182320; --line: #263531; --accent: #3cbf9e; --accent-soft: #17322a;
+    --ok: #4bc788; --ok-soft: #103524; --warn: #e0ab4c; --warn-soft: #3a2c0f;
+    --gap: #e8785f; --gap-soft: #3a1c15;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
+    --sev-high-bg: #3a2510; --sev-high-ink: #e0954c;
+    --org: #d69a4a; --org-soft: #3a2c12; --money: #3cbf9e;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Public Sans", "Segoe UI", system-ui, sans-serif; font-size: 16px; line-height: 1.55; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+  h1, h2, h3 { font-family: "Public Sans", sans-serif; text-wrap: balance; color: var(--ink); margin: 0; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  header.masthead { display: flex; flex-direction: column; gap: .9rem; padding-bottom: 1.75rem; margin-bottom: 2rem; border-bottom: 3px solid var(--ink); }
+  .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: .72rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: .55rem; }
+  .eyebrow::before { content: ""; width: 22px; height: 2px; background: var(--accent); display: inline-block; }
+  h1.title { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -.01em; }
+  .subtitle { color: var(--ink-soft); font-size: 1.02rem; max-width: 70ch; }
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .5rem; }
+  .legend-item { display: flex; align-items: center; gap: .5rem; font-size: .82rem; color: var(--ink-soft); }
+  .legend-dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  .case-banner { background: var(--evdp-navy); color: #fff; border-radius: 12px; padding: 1.2rem 1.4rem; margin-bottom: 2.5rem; display: flex; flex-wrap: wrap; gap: 1.2rem; align-items: center; justify-content: space-between; }
+  .case-banner .id { font-family: "IBM Plex Mono", monospace; font-size: .78rem; color: #9fc3e0; }
+  .case-banner .title2 { font-size: 1.05rem; font-weight: 700; margin-top: .2rem; max-width: 52ch; }
+  .case-banner .stats { display: flex; gap: 1.6rem; }
+  .case-banner .stat { text-align: center; }
+  .case-banner .stat .v { font-size: 1.3rem; font-weight: 800; }
+  .case-banner .stat .l { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #9fc3e0; }
+
+  .step { display: grid; grid-template-columns: 42px 1fr; gap: 1.1rem; margin-bottom: 2.2rem; position: relative; }
+  .step::before { content: ""; position: absolute; left: 20px; top: 46px; bottom: -2.2rem; width: 2px; background: var(--line); }
+  .step:last-of-type::before { display: none; }
+  .step-num { width: 42px; height: 42px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-family: "IBM Plex Mono", monospace; font-weight: 700; font-size: 1.05rem; flex-shrink: 0; z-index: 1; }
+  .step-num.chercheur { background: var(--accent); }
+  .step-num.triage { background: var(--evdp-navy-light); }
+  .step-num.analyste { background: var(--evdp-navy); }
+  .step-num.coord { background: #4a2a7a; }
+  .step-body { min-width: 0; }
+  .step-tag { font-family: "IBM Plex Mono", monospace; font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; padding: .22rem .55rem; border-radius: 5px; display: inline-block; margin-bottom: .5rem; }
+  .step-tag.chercheur { background: var(--accent-soft); color: var(--accent); }
+  .step-tag.triage { background: #dde6ef; color: var(--evdp-navy-light); }
+  .step-tag.analyste { background: #dde6ef; color: var(--evdp-navy); }
+  .step-tag.coord { background: #ece3f7; color: #4a2a7a; }
+  .step h3 { font-size: 1.12rem; font-weight: 700; margin-bottom: .4rem; }
+  .step p.narration { color: var(--ink-soft); font-size: .92rem; max-width: 66ch; margin: 0 0 1rem; }
+  .step p.narration b { color: var(--ink); font-weight: 600; }
+
+  .mockup-frame { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: var(--surface); max-width: 660px; }
+  .mockup-chrome { background: var(--surface-2); padding: .5rem .7rem; display: flex; align-items: center; gap: .5rem; border-bottom: 1px solid var(--line); }
+  .mockup-dots { display: flex; gap: 4px; }
+  .mockup-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--line); display: inline-block; }
+  .mockup-url { font-family: "IBM Plex Mono", monospace; font-size: .68rem; color: var(--ink-soft); background: var(--surface); border-radius: 5px; padding: .2rem .6rem; flex: 1; }
+  .mockup-body { background: #f4f6f9; }
+  .evdp-nav { background: var(--evdp-navy); color: #fff; padding: .55rem .9rem; display: flex; align-items: center; gap: .5rem; font-size: .72rem; }
+  .evdp-nav .brand { font-weight: 700; font-size: .82rem; }
+  .evdp-notice { background: var(--ok-soft); border-bottom: 1px solid var(--ok); color: var(--ok); font-size: .72rem; padding: .5rem .9rem; font-weight: 600; }
+  .evdp-content { padding: .9rem; }
+  .mock-h1 { font-size: 1rem; font-weight: 800; color: var(--evdp-navy); margin: 0 0 .3rem; }
+  .mock-muted { font-size: .74rem; color: var(--ink-soft); margin: 0 0 .7rem; }
+  .mock-field { margin-bottom: .5rem; }
+  .mock-label { font-size: .66rem; font-weight: 600; color: var(--evdp-navy); margin-bottom: .18rem; display: block; }
+  .mock-input { border: 1px solid var(--line); border-radius: 6px; padding: .38rem .55rem; font-size: .73rem; background: #fff; color: var(--ink); font-weight: 500; }
+  .mock-input.mono2 { font-family: "IBM Plex Mono", monospace; font-size: .68rem; }
+  .mock-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .mock-btn { display: inline-block; background: var(--evdp-accent-btn); color: #fff; font-size: .74rem; font-weight: 700; padding: .4rem .8rem; border-radius: 6px; }
+  .mock-dl { font-size: .72rem; }
+  .mock-dl-row { display: flex; justify-content: space-between; padding: .3rem 0; border-bottom: 1px dashed var(--line); gap: 1rem; }
+  .mock-dl-row .k { color: var(--ink-soft); flex-shrink: 0; }
+  .mock-dl-row .v { font-weight: 600; color: var(--ink); text-align: right; }
+  .mock-dl-row .v.money { color: var(--money); font-family: "IBM Plex Mono", monospace; }
+
+  .badge-pill { font-size: .64rem; font-weight: 700; padding: .18rem .5rem; border-radius: 5px; display: inline-block; margin-right: .3rem; text-transform: uppercase; letter-spacing: .02em; }
+  .badge-high { background: var(--sev-high-bg); color: var(--sev-high-ink); }
+  .badge-status { background: #e4e9ef; color: var(--evdp-navy); }
+  .badge-done { background: var(--ok-soft); color: var(--ok); }
+  .badge-money { background: var(--accent-soft); color: var(--money); }
+
+  .money-box { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; padding: .7rem .9rem; margin: .5rem 0; }
+  .money-box .amount { font-family: "IBM Plex Mono", monospace; font-size: 1.15rem; font-weight: 800; color: var(--money); }
+  .money-box .label { font-size: .66rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; }
+
+  .callout { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: .8rem 1rem; margin-top: .8rem; font-size: .86rem; color: var(--ink-soft); }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout b { color: var(--ink); }
+
+  .section-head { margin: 3rem 0 1.5rem; }
+  .section-head h2 { font-size: 1.3rem; font-weight: 800; }
+  .section-head p { color: var(--ink-soft); font-size: .9rem; margin-top: .3rem; }
+
+  .mock-timeline-full { font-size: .78rem; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.1rem 1.3rem; box-shadow: var(--shadow); }
+  .tl-item { display: flex; gap: .8rem; padding: .45rem 0; border-bottom: 1px solid var(--surface-2); }
+  .tl-item:last-child { border-bottom: none; }
+  .tl-item .date { font-family: "IBM Plex Mono", monospace; font-size: .68rem; color: var(--ink-soft); min-width: 108px; flex-shrink: 0; }
+  .tl-item .label { font-weight: 600; }
+  .tl-item .actor { color: var(--ink-soft); font-size: .74rem; }
+
+  .recap { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.3rem 1.5rem; box-shadow: var(--shadow); }
+  .recap ul { margin: .6rem 0 0; padding-left: 1.2rem; font-size: .88rem; color: var(--ink-soft); }
+  .recap li { margin-bottom: .4rem; }
+  .recap li b { color: var(--ink); }
+
+  footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line); font-size: .8rem; color: var(--ink-soft); }
+
+  @media (max-width: 560px) {
+    .case-banner { flex-direction: column; align-items: flex-start; }
+    .mock-grid2 { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Rapport 2 / 3 · CYBER-DEF 2 / FASO SHIELD</div>
+    <h1 class="title">Un signalement Bug Bounty, de la découverte au versement de la récompense</h1>
+    <p class="subtitle">
+      Reconstitution fidèle, étape par étape, d'un cycle complet réellement exécuté le 11 septembre
+      2026 sur le programme créé dans le rapport précédent : soumission authentifiée, réception,
+      qualification technique, proposition et approbation de la récompense, versement, remédiation,
+      divulgation coordonnée et publication de l'advisory. Chaque donnée ci-dessous (montants,
+      horodatages, identifiants) est celle réellement enregistrée en base.
+    </p>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span> Chercheur (zata_sec)</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--evdp-navy-light)"></span> Agent de triage</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--evdp-navy)"></span> Analyste CSIRT</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#4a2a7a"></span> Coordinateur national</span>
+    </div>
+  </header>
+
+  <div class="case-banner">
+    <div>
+      <div class="id">EVDP-2026-000009 · Bug Bounty - Plateforme e-Santé MSHP</div>
+      <div class="title2">IDOR sur l'API dossier patient permettant de consulter les dossiers d'autres usagers</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v">Élevée</div><div class="l">Sévérité</div></div>
+      <div class="stat"><div class="v">6,5</div><div class="l">CVSS</div></div>
+      <div class="stat"><div class="v" style="color:#7fd8ae">650k</div><div class="l">XOF versés</div></div>
+      <div class="stat"><div class="v">Clos</div><div class="l">Statut final</div></div>
+    </div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-num chercheur">1</div>
+    <div class="step-body">
+      <span class="step-tag chercheur">Chercheur — zata_sec</span>
+      <h3>Soumission authentifiée, avec compte vérifié et MFA actif</h3>
+      <p class="narration">Contrairement au canal VDP, un Bug Bounty exige un compte, un email vérifié et
+      la double authentification activée — vérifié structurellement dans cette même session. Le chercheur
+      <b>zata_sec</b> (identité publique en pseudonyme) cible directement le programme e-Santé MSHP.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/report/?program=bug-bounty-plateforme-e-sante-mshp</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span><span style="margin-left:auto;color:#9fc3e0">zata_sec</span></div>
+          <div class="evdp-content">
+            <div class="mock-h1">Signaler une vulnérabilité</div>
+            <div class="mock-field"><span class="mock-label">Titre *</span><div class="mock-input">IDOR sur l'API dossier patient permettant de consulter les dossiers d'autres usagers</div></div>
+            <div class="mock-grid2">
+              <div class="mock-field"><span class="mock-label">Type de vulnérabilité</span><div class="mock-input">Référence directe non sécurisée (IDOR)</div></div>
+              <div class="mock-field"><span class="mock-label">Sévérité estimée</span><div class="mock-input">Élevée</div></div>
+            </div>
+            <div class="mock-field"><span class="mock-label">Preuve de concept</span><div class="mock-input mono2">GET /v1/patients/4822/dossier — 200 OK</div></div>
+            <span class="mock-btn">Envoyer le signalement</span>
+          </div>
+        </div>
+      </div>
+      <div class="callout"><b>Résultat observé :</b> dossier <span class="mono">EVDP-2026-000009</span> créé,
+      redirection immédiate vers son détail (le chercheur connecté n'a pas besoin de code de suivi).
+      CVSS calculé automatiquement à <b>6,5</b> à partir du vecteur fourni ; la sévérité du dossier reste
+      à <b>Moyenne</b> par défaut tant que le CSIRT n'a pas confirmé — l'estimation du chercheur n'est
+      jamais prise pour argent comptant.</div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-num triage">2</div>
+    <div class="step-body">
+      <span class="step-tag triage">Agent de triage</span>
+      <h3>Réception et prise en charge</h3>
+      <p class="narration">Connexion avec double authentification obligatoire (rôle à privilège). Le dossier
+      apparaît dans la file <b>Soumis</b>, puis passe successivement à <b>Reçu</b> et <b>En triage</b>.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/cases/EVDP-2026-000009/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-notice">Statut mis à jour : En triage.</div>
+          <div class="evdp-content">
+            <span class="badge-pill badge-status">En triage</span>
+            <div class="mock-dl" style="margin-top:.5rem">
+              <div class="mock-dl-row"><span class="k">Déclarant</span><span class="v">zata_sec</span></div>
+              <div class="mock-dl-row"><span class="k">Organisation</span><span class="v">Ministère de la Santé et de l'Hygiène Publique</span></div>
+              <div class="mock-dl-row"><span class="k">Accusé de réception</span><span class="v">Respecté — échéance 14/09</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-num analyste">3</div>
+    <div class="step-body">
+      <span class="step-tag analyste">Analyste CSIRT</span>
+      <h3>Qualification technique et validation</h3>
+      <p class="narration">Sévérité confirmée <b>Élevée</b> (et non Moyenne comme par défaut), CWE-639
+      (IDOR) attribué, vecteur CVSS ré-affirmé. La priorité interne du dossier passe automatiquement de
+      <b>35 à 60</b> suite à cette qualification.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/cases/EVDP-2026-000009/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-notice">Qualification enregistrée.</div>
+          <div class="evdp-content">
+            <span class="badge-pill badge-high">Élevée</span><span class="badge-pill badge-status">CVSS 6,5</span><span class="badge-pill badge-status">CWE-639</span>
+            <div class="mock-muted" style="margin-top:.5rem">Priorité 60 (était 35)</div>
+          </div>
+        </div>
+      </div>
+      <div class="callout">Deux transitions suivent immédiatement : <b>Validé</b> (la vulnérabilité est
+      confirmée réelle par reproduction manuelle), puis <b>Sévérité attribuée</b> — le dossier est prêt
+      pour la proposition de récompense.</div>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step">
+    <div class="step-num analyste">4</div>
+    <div class="step-body">
+      <span class="step-tag analyste">Analyste CSIRT</span>
+      <h3>Proposition de récompense</h3>
+      <p class="narration">La matrice du programme suggère automatiquement <b>900 000 XOF</b> (borne haute
+      du palier « Élevée »). L'analyste propose un montant réfléchi de <b>650 000 XOF</b>, avec
+      justification écrite — la suggestion n'est qu'indicative, jamais imposée.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/bounties/case/EVDP-2026-000009/propose/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-content">
+            <div class="mock-h1">Proposer une récompense</div>
+            <div class="mock-muted">Montant suggéré par la matrice pour une sévérité Élevée : 900 000 XOF.</div>
+            <div class="mock-field"><span class="mock-label">Montant proposé *</span><div class="mock-input">650 000</div></div>
+            <div class="mock-field"><span class="mock-label">Justification</span><div class="mock-input" style="height:2rem">Impact confirmé sur des données de santé sensibles, exploitation triviale, périmètre limité à l'API dossier patient.</div></div>
+            <span class="mock-btn">Proposer</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step">
+    <div class="step-num coord">5</div>
+    <div class="step-body">
+      <span class="step-tag coord">Coordinateur national</span>
+      <h3>Revue, approbation et versement — séparation des rôles</h3>
+      <p class="narration">Celui qui propose n'est jamais celui qui approuve : le coordinateur national
+      (compte distinct) laisse un avis <b>Favorable</b>, approuve le montant de 650 000 XOF, puis
+      enregistre le versement. eVDP ne déclenche <b>aucun flux financier réel</b> — c'est une trace
+      comptable uniquement.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/bounties/15d2e061.../</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-notice">Versement enregistré. Aucun flux financier réel n'est déclenché par la plateforme.</div>
+          <div class="evdp-content">
+            <span class="badge-pill badge-done">Payée</span>
+            <div class="money-box">
+              <div class="label">Récompense</div>
+              <div class="amount">650 000 XOF</div>
+            </div>
+            <div class="mock-dl">
+              <div class="mock-dl-row"><span class="k">Proposé par</span><span class="v">Analyste CSIRT</span></div>
+              <div class="mock-dl-row"><span class="k">Décidé par</span><span class="v">Coordinateur national</span></div>
+              <div class="mock-dl-row"><span class="k">Moyen</span><span class="v">Mobile money</span></div>
+              <div class="mock-dl-row"><span class="k">Référence</span><span class="v mono2">OM-2026-0911-4471</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 6 -->
+  <div class="step">
+    <div class="step-num coord">6</div>
+    <div class="step-body">
+      <span class="step-tag coord">Coordinateur national</span>
+      <h3>Remédiation, vérification, divulgation coordonnée</h3>
+      <p class="narration">Le dossier progresse ensuite exactement comme un VDP à partir de ce point :
+      <b>Remédiation → Correctif disponible → Vérification → Correctif vérifié</b>. Une date de
+      divulgation est planifiée au <b>10 décembre 2026</b>, conformément au délai de 90 jours du programme.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/cases/EVDP-2026-000009/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-content">
+            <span class="badge-pill badge-status">Divulgation planifiée</span>
+            <div class="mock-muted" style="margin-top:.5rem">Correctif : ajout d'un contrôle d'autorisation au niveau ressource sur l'API dossier patient. Re-testé : accès désormais refusé (403).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 7 -->
+  <div class="step">
+    <div class="step-num coord">7</div>
+    <div class="step-body">
+      <span class="step-tag coord">Coordinateur national</span>
+      <h3>Rédaction et publication de l'advisory public</h3>
+      <p class="narration">Un brouillon <span class="mono">EVDP-ADV-2026-000003</span> est généré
+      automatiquement à partir du dossier. Le résumé, l'impact et la solution sont rédigés sous forme
+      <b>assainie</b> (sans preuve de concept ni étape de reproduction exploitable), puis l'advisory suit
+      son propre cycle : Brouillon → En relecture → Approuvé → <b>Publié</b>, avec le crédit rendu au
+      pseudonyme du chercheur.</p>
+      <div class="mockup-frame">
+        <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/advisories/EVDP-ADV-2026-000003/</div></div>
+        <div class="mockup-body">
+          <div class="evdp-nav"><span class="brand">eVDP</span></div>
+          <div class="evdp-notice">Advisory EVDP-ADV-2026-000003 publié.</div>
+          <div class="evdp-content">
+            <span class="badge-pill badge-done">Publié</span>
+            <div class="mock-h1" style="margin-top:.4rem">IDOR sur l'API dossier patient</div>
+            <div class="mock-muted">Crédit : zata_sec</div>
+          </div>
+        </div>
+      </div>
+      <div class="callout">Le dossier passe alors à <b>Publié</b> puis <b>Clos</b> — cycle de traitement
+      complet, de la découverte à la clôture officielle.</div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <h2>Ce que voit le chercheur, en toute confidentialité</h2>
+    <p>Vue de zata_sec sur sa propre récompense — comparée à ce que voyait le CSIRT à l'étape 5.</p>
+  </div>
+
+  <div class="mockup-frame" style="max-width:660px">
+    <div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">evdp.bf/bounties/15d2e061.../ — vue zata_sec</div></div>
+    <div class="mockup-body">
+      <div class="evdp-nav"><span class="brand">eVDP</span><span style="margin-left:auto;color:#9fc3e0">zata_sec</span></div>
+      <div class="evdp-content">
+        <span class="badge-pill badge-done">Payée</span>
+        <div class="money-box"><div class="label">Récompense</div><div class="amount">650 000 XOF</div></div>
+        <div class="mock-dl">
+          <div class="mock-dl-row"><span class="k">Dossier</span><span class="v">EVDP-2026-000009</span></div>
+          <div class="mock-dl-row"><span class="k">Moyen</span><span class="v">Mobile money</span></div>
+          <div class="mock-dl-row"><span class="k">Statut versement</span><span class="v">Enregistré</span></div>
+        </div>
+        <div class="mock-muted" style="margin-top:.6rem">Aucune mention de « Proposé par », « Décidé par », des revues internes,
+        ni de la référence comptable exacte — strictement réservées à l'équipe CSIRT.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <h2>Chronologie complète du dossier</h2>
+    <p>15 événements, horodatés réellement, du dépôt à la clôture (11/09/2026, 13:52 → 14:07 — 15 minutes de traitement en environnement de démonstration).</p>
+  </div>
+
+  <div class="mock-timeline-full">
+    <div class="tl-item"><div class="date">13:52</div><div><div class="label">Rapport reçu</div><div class="actor">zata_sec (Security Researcher BF)</div></div></div>
+    <div class="tl-item"><div class="date">13:55</div><div><div class="label">Reçu</div><div class="actor">Agent de triage</div></div></div>
+    <div class="tl-item"><div class="date">13:55</div><div><div class="label">En triage</div><div class="actor">Agent de triage</div></div></div>
+    <div class="tl-item"><div class="date">13:57</div><div><div class="label">Sévérité retenue : Élevée</div><div class="actor">Analyste CSIRT</div></div></div>
+    <div class="tl-item"><div class="date">13:57</div><div><div class="label">Validé</div><div class="actor">Analyste CSIRT</div></div></div>
+    <div class="tl-item"><div class="date">13:57</div><div><div class="label">Sévérité attribuée</div><div class="actor">Analyste CSIRT</div></div></div>
+    <div class="tl-item"><div class="date">14:00</div><div><div class="label">Récompense approuvée : 650 000 XOF</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:01</div><div><div class="label">Revue de récompense</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:01</div><div><div class="label">Récompense approuvée</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:01</div><div><div class="label">Remédiation en cours</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:01</div><div><div class="label">Correctif disponible</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:01</div><div><div class="label">Vérification du correctif</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:02</div><div><div class="label">Correctif vérifié</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:02</div><div><div class="label">Divulgation planifiée (10/12/2026)</div><div class="actor">Coordinateur national</div></div></div>
+    <div class="tl-item"><div class="date">14:07</div><div><div class="label">Advisory publié · Publié · Clos</div><div class="actor">Coordinateur national</div></div></div>
+  </div>
+
+  <div class="recap" style="margin-top:2.5rem">
+    <h2 style="font-size:1.1rem">Ce que cette session démontre</h2>
+    <ul>
+      <li><b>Séparation des rôles réelle</b> : celui qui propose (Analyste) n'est jamais celui qui approuve (Coordinateur) — vérifié en changeant physiquement de compte, pas seulement en théorie.</li>
+      <li><b>La confidentialité tient</b> : le chercheur voit sa récompense payée, jamais les délibérations internes qui y ont mené.</li>
+      <li><b>Aucun flux financier réel</b> : le module trace une décision et un versement comptable, jamais un paiement effectif — le message d'avertissement s'affiche à chaque versement enregistré.</li>
+      <li><b>Le crédit respecte le choix d'identité</b> : zata_sec (pseudonyme) apparaît dans l'advisory public, alors que le CSIRT voit en interne « Security Researcher BF », son nom d'affichage réel.</li>
+    </ul>
+  </div>
+
+  <footer>
+    Rapport 2/3 — généré le 11 septembre 2026 à partir d'une session de test réelle sur l'instance de démonstration eVDP.
+    Voir aussi : <span class="mono">administration-structures-2026-09-11.html</span> et
+    <span class="mono">parcours-vdp-anonyme-complet-2026-09-11.html</span>.
+  </footer>
+
+</div>

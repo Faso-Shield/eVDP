@@ -6,6 +6,7 @@ import pytest
 from django.test import Client
 from django.utils import timezone
 
+from apps.accounts.middleware import SESSION_KEY as MFA_SESSION_KEY
 from apps.accounts.models import User
 from apps.accounts.roles import Role
 from apps.coordination.models import SLAPolicy
@@ -24,6 +25,7 @@ from apps.programs.models import (
     ProgramType,
     RewardPolicy,
     RewardTier,
+    ScopePriority,
     ScopeTargetType,
 )
 from apps.reports.models import VulnerabilityReport
@@ -193,6 +195,7 @@ def bounty_program(db, organization, sla_policy):
         confidentiality=ConfidentialityLevel.PUBLIC,
         sla_policy=sla_policy,
         starts_on=timezone.localdate(),
+        allows_anonymous_reports=False,
     )
     policy = RewardPolicy.objects.create(program=program, currency="XOF")
     for severity, minimum, maximum in [
@@ -207,6 +210,18 @@ def bounty_program(db, organization, sla_policy):
             min_amount=Decimal(minimum),
             max_amount=Decimal(maximum),
         )
+    ProgramScope.objects.create(
+        program=program,
+        identifier="api.exemple.bf",
+        target_type=ScopeTargetType.API,
+        priority=ScopePriority.P1,
+    )
+    ProgramScope.objects.create(
+        program=program,
+        identifier="vitrine.exemple.bf",
+        target_type=ScopeTargetType.DOMAIN,
+        priority=ScopePriority.P4,
+    )
     return program
 
 
@@ -259,10 +274,24 @@ def bounty_case(db, bounty_researcher, organization, bounty_program, sla_policy)
 # ---------------------------------------------------------------------- client
 @pytest.fixture
 def client_for(db):
-    def _client(user=None):
+    """Client connecte, session elevee comme apres un second facteur valide.
+
+    Un compte non signaleur n'accede a rien tant que sa session n'a pas ete
+    elevee par un code TOTP (voir apps.accounts.middleware). `force_login`
+    ne fait que la moitie du chemin : sans cette elevation, chaque test de
+    RBAC ou d'API mesurerait le refus du second facteur au lieu de ce qu'il
+    veut verifier. Passer `mfa=False` rend le client non eleve, pour les
+    tests qui visent precisement ce refus.
+    """
+
+    def _client(user=None, mfa=True):
         client = Client()
         if user is not None:
             client.force_login(user)
+            if mfa:
+                session = client.session
+                session[MFA_SESSION_KEY] = True
+                session.save()
         return client
 
     return _client

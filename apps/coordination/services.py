@@ -4,6 +4,7 @@ Aucune vue n'ecrit directement dans les modeles : tout passe par ces services,
 qui garantissent la coherence workflow + audit + notifications + SLA.
 """
 
+import secrets
 from datetime import datetime, time, timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -13,6 +14,7 @@ from django.utils import timezone
 from apps.accounts.roles import Capability
 from apps.audit.models import AuditAction, AuditResult
 from apps.audit.services import log_action
+from apps.core.utils import hash_text
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify, notify_case_team, notify_external
 from apps.vulnerabilities.constants import Severity
@@ -31,10 +33,19 @@ from .models import (
     CaseParticipant,
     CaseStatusHistory,
     CaseTimelineEvent,
+    CaseTrackingToken,
     SLAEvent,
     SLAPolicy,
 )
-from .workflow import CaseStatus, TransitionNotAllowed, check_transition
+from .workflow import (
+    CaseStatus,
+    TransitionNotAllowed,
+    check_transition,
+    public_status_bucket,
+)
+
+#: Duree de validite d'un lien de suivi remis a un declarant sans compte.
+TRACKING_TOKEN_VALIDITY = timedelta(days=180)
 
 #: Statut -> evenement de chronologie correspondant.
 STATUS_TIMELINE_EVENTS = {
@@ -331,7 +342,7 @@ def _apply_reputation(case, status, actor):
 @transaction.atomic
 def assign_case(case, assignee, actor, note="", request=None):
     if not actor.has_capability(Capability.ASSIGN_CASE):
-        raise PermissionDenied("Vous n'etes pas autorise a assigner un case.")
+        raise PermissionDenied("Vous n'êtes pas autorisé à assigner un case.")
     case.assignments.filter(is_active=True).update(is_active=False)
     case.assignee = assignee
     case.save(update_fields=["assignee", "updated_at"])
@@ -370,15 +381,15 @@ def post_message(
     """Publie un message dans le fil securise du case."""
     if not is_system:
         if not case.is_visible_to(author):
-            raise PermissionDenied("Vous n'avez pas acces a ce dossier.")
+            raise PermissionDenied("Vous n'avez pas accès à ce dossier.")
         if confidentiality != Confidentiality.PARTICIPANTS and not author.has_capability(
             Capability.POST_INTERNAL_MESSAGE
         ):
-            raise PermissionDenied("Vous n'etes pas autorise a publier un message interne.")
+            raise PermissionDenied("Vous n'êtes pas autorisé à publier un message interne.")
         if getattr(author, "is_read_only", False):
-            raise PermissionDenied("Role en lecture seule.")
+            raise PermissionDenied("Rôle en lecture seule.")
     if not (body or "").strip():
-        raise ValidationError("Le message ne peut pas etre vide.")
+        raise ValidationError("Le message ne peut pas être vide.")
 
     message = CaseMessage.objects.create(
         case=case,
@@ -423,11 +434,11 @@ def mark_duplicate(case, original, actor, comment="", request=None):
     le case original (identifiant, organisation, contenu).
     """
     if not actor.has_capability(Capability.TRIAGE_CASE):
-        raise PermissionDenied("Capacite de triage requise.")
+        raise PermissionDenied("Capacité de triage requise.")
     if original.pk == case.pk:
-        raise ValidationError("Un case ne peut pas etre le doublon de lui-meme.")
+        raise ValidationError("Un case ne peut pas être le doublon de lui-même.")
     if original.duplicate_of_id == case.pk:
-        raise ValidationError("Reference circulaire de doublon.")
+        raise ValidationError("Référence circulaire de doublon.")
 
     case.duplicate_of = original
     case.save(update_fields=["duplicate_of", "updated_at"])
@@ -449,7 +460,7 @@ def mark_duplicate(case, original, actor, comment="", request=None):
 def set_severity(case, actor, severity=None, cvss_vector="", request=None):
     """Definit la severite retenue, eventuellement calculee depuis un CVSS."""
     if not actor.has_capability(Capability.SET_SEVERITY):
-        raise PermissionDenied("Capacite requise pour definir la severite.")
+        raise PermissionDenied("Capacité requise pour définir la sévérité.")
     from apps.vulnerabilities.cvss import CVSSError, evaluate
 
     updates = ["severity", "updated_at"]
@@ -485,7 +496,7 @@ def set_severity(case, actor, severity=None, cvss_vector="", request=None):
 @transaction.atomic
 def schedule_disclosure(case, actor, disclosure_date, request=None):
     if not actor.has_capability(Capability.CHANGE_CASE_STATUS):
-        raise PermissionDenied("Capacite requise.")
+        raise PermissionDenied("Capacité requise.")
     case.disclosure_date = disclosure_date
     case.save(update_fields=["disclosure_date", "updated_at"])
     schedule_sla(case, SLAKind.DISCLOSURE, _start_of_day(disclosure_date))
@@ -517,6 +528,58 @@ def default_severity_for(report):
     return report.reported_severity or Severity.MEDIUM
 
 
+def generate_tracking_token(case):
+    """Cree (ou renouvelle) le jeton de suivi public d'un case sans compte.
+
+    La valeur en clair n'est jamais persistee : seul son hash est stocke,
+    au meme titre que les cles d'API. Elle est renvoyee a l'appelant pour
+    etre transmise une seule fois (email ou affichage a l'ecran), puis
+    perdue cote serveur.
+    """
+    raw = secrets.token_urlsafe(32)
+    CaseTrackingToken.objects.update_or_create(
+        case=case,
+        defaults={
+            "token_hash": hash_text(raw),
+            "expires_at": timezone.now() + TRACKING_TOKEN_VALIDITY,
+        },
+    )
+    return raw
+
+
+def resolve_tracking_token(raw_token):
+    """Retrouve le case associe a un jeton de suivi valide, ou None.
+
+    Ne distingue jamais "jeton inconnu" de "jeton expire" dans la reponse
+    appelante : les deux doivent produire le meme message generique cote vue,
+    pour ne rien laisser deviner sur l'existence d'un jeton proche.
+    """
+    if not raw_token or not raw_token.strip():
+        return None
+    token = (
+        CaseTrackingToken.objects.select_related("case")
+        .filter(token_hash=hash_text(raw_token.strip()))
+        .first()
+    )
+    if token is None or not token.is_valid:
+        return None
+    token.record_access()
+    return token.case
+
+
+def public_status_for(case):
+    """(cle, libelle, resultat) simplifies pour la page de suivi publique."""
+    key, label = public_status_bucket(case.status)
+    return {
+        "key": key,
+        "label": label,
+        "case_id": case.case_id,
+        "submitted_at": case.created_at,
+        "is_dismissed": key == "DISMISSED",
+        "is_resolved": key == "RESOLVED",
+    }
+
+
 __all__ = [
     "transition_case",
     "assign_case",
@@ -529,5 +592,8 @@ __all__ = [
     "ensure_default_participants",
     "add_timeline_event",
     "schedule_initial_sla",
+    "generate_tracking_token",
+    "resolve_tracking_token",
+    "public_status_for",
     "WorkflowType",
 ]

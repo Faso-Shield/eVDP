@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("researchers", "0004_payoutmethod_crypto_currency_and_more"),
+        ("researchers", "0005_payoutmethod_crypto_currency_and_more"),
     ]
 
     operations = [

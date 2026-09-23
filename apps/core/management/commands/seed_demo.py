@@ -74,20 +74,20 @@ CWE_SEED = [
 
 REWARD_MATRIX = [
     (Severity.CRITICAL, 750000, 2000000, "Impact national, compromission majeure"),
-    (Severity.HIGH, 300000, 750000, "Compromission de donnees ou de comptes"),
+    (Severity.HIGH, 300000, 750000, "Compromission de données ou de comptes"),
     (Severity.MEDIUM, 100000, 300000, "Impact limite ou exploitation conditionnee"),
     (Severity.LOW, 0, 100000, "Impact faible, defense en profondeur"),
 ]
 
 
 class Command(BaseCommand):
-    help = "Charge un jeu de donnees de demonstration eVDP."
+    help = "Charge un jeu de données de démonstration eVDP."
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--reset",
             action="store_true",
-            help="Supprime les donnees de demonstration avant rechargement.",
+            help="Supprime les données de démonstration avant rechargement.",
         )
 
     @transaction.atomic
@@ -109,8 +109,8 @@ class Command(BaseCommand):
         self._bounty(cases, users)
         self._advisory(cases, users)
 
-        self.stdout.write(self.style.SUCCESS("\nJeu de demonstration charge."))
-        self.stdout.write("\nComptes de demonstration (mot de passe commun) :")
+        self.stdout.write(self.style.SUCCESS("\nJeu de démonstration chargé."))
+        self.stdout.write("\nComptes de démonstration (mot de passe commun) :")
         self.stdout.write(f"  mot de passe : {DEMO_PASSWORD}")
         for label, email in [
             ("Administrateur", "admin@evdp.bf"),
@@ -124,7 +124,7 @@ class Command(BaseCommand):
             self.stdout.write(f"  {label:24s} {email}")
         self.stdout.write(
             self.style.WARNING(
-                "\nCes identifiants sont destines a la demonstration uniquement."
+                "\nCes identifiants sont destinés à la démonstration uniquement."
             )
         )
 
@@ -133,7 +133,7 @@ class Command(BaseCommand):
         from apps.coordination.models import Case
         from apps.disclosures.models import Advisory
 
-        self.stdout.write(self.style.WARNING("Suppression des donnees de demo…"))
+        self.stdout.write(self.style.WARNING("Suppression des données de démo…"))
         Advisory.objects.all().delete()
         Case.objects.all().delete()
         VulnerabilityReport.objects.all().delete()
@@ -156,26 +156,26 @@ class Command(BaseCommand):
                 "label": "A propos de eVDP",
                 "value": (
                     "## eVDP\n\n"
-                    "eVDP est la plateforme nationale de divulgation coordonnee de "
-                    "vulnerabilites et de gestion des programmes Bug Bounty du "
+                    "eVDP est la plateforme nationale de divulgation coordonnée de "
+                    "vulnérabilités et de gestion des programmes Bug Bounty du "
                     "Burkina Faso (projet CYBER-DEF 2).\n\n"
                     "Elle offre aux chercheurs, aux citoyens et aux professionnels "
-                    "un canal officiel, securise et juridiquement encadre pour "
-                    "signaler une vulnerabilite affectant un service public ou une "
-                    "infrastructure numerique nationale.\n\n"
+                    "un canal officiel, securise et juridiquement encadré pour "
+                    "signaler une vulnérabilité affectant un service public ou une "
+                    "infrastructure numérique nationale.\n\n"
                     "### Missions\n\n"
-                    "- Recevoir et qualifier les signalements de vulnerabilites.\n"
-                    "- Coordonner la remediation avec les organisations affectees.\n"
+                    "- Recevoir et qualifier les signalements de vulnérabilités.\n"
+                    "- Coordonner la remédiation avec les organisations affectees.\n"
                     "- Piloter des programmes VDP et Bug Bounty nationaux.\n"
-                    "- Publier des advisories assainis apres coordination.\n"
-                    "- Produire la posture nationale de vulnerabilites.\n"
+                    "- Publier des advisories assainis après coordination.\n"
+                    "- Produire la posture nationale de vulnérabilités.\n"
                 ),
             },
         )
 
     def _sla_policy(self):
         policy, _ = SLAPolicy.objects.get_or_create(
-            name="SLA national par defaut",
+            name="SLA national par défaut",
             defaults={
                 "is_default": True,
                 "acknowledgement_hours": 72,
@@ -194,7 +194,7 @@ class Command(BaseCommand):
     def _organizations(self):
         specs = [
             {
-                "name": "Agence Nationale de Securite des Systemes d'Information",
+                "name": "Agence Nationale de Sécurité des Systèmes d'Information",
                 "acronym": "ANSSI-BF",
                 "organization_type": OrganizationType.PUBLIC_INSTITUTION,
                 "sector": Sector.GOVERNMENT,
@@ -211,27 +211,27 @@ class Command(BaseCommand):
                 "domain": "csirt.bf",
                 "official_email": "cert@csirt.bf",
                 "region": "Centre",
-                "description": "Equipe nationale de reponse aux incidents de securite.",
+                "description": "Équipe nationale de réponse aux incidents de sécurité.",
             },
             {
-                "name": "Ministere de demonstration",
+                "name": "Ministère de démonstration",
                 "acronym": "MINDEMO",
                 "organization_type": OrganizationType.MINISTRY,
                 "sector": Sector.HEALTH,
                 "domain": "sante.gov.bf",
                 "official_email": "dsi@sante.gov.bf",
                 "region": "Centre",
-                "description": "Ministere fictif utilise pour la demonstration.",
+                "description": "Ministère fictif utilise pour la démonstration.",
             },
             {
-                "name": "Administration de demonstration",
+                "name": "Administration de démonstration",
                 "acronym": "ADMDEMO",
                 "organization_type": OrganizationType.PUBLIC_ADMIN,
                 "sector": Sector.EDUCATION,
                 "domain": "education.gov.bf",
                 "official_email": "contact@education.gov.bf",
                 "region": "Hauts-Bassins",
-                "description": "Administration fictive utilisee pour la demonstration.",
+                "description": "Administration fictive utilisée pour la démonstration.",
             },
         ]
         organizations = {}
@@ -245,7 +245,7 @@ class Command(BaseCommand):
             organization=organizations["MINDEMO"],
             email="securite@sante.gov.bf",
             defaults={
-                "name": "Cellule securite MINDEMO",
+                "name": "Cellule sécurité MINDEMO",
                 "role": "Contact securite",
                 "is_primary": True,
             },
@@ -325,7 +325,7 @@ class Command(BaseCommand):
             is_public_profile=True,
             country="Burkina Faso",
             affiliation="Universite Joseph Ki-Zerbo",
-            biography="Chasseur de bugs, specialise API et cloud.",
+            biography="Chasseur de bugs, spécialisé API et cloud.",
         )
         return users
 
@@ -338,33 +338,33 @@ class Command(BaseCommand):
                 "organization": organizations["ANSSI-BF"],
                 "status": ProgramStatus.ACTIVE,
                 "confidentiality": ConfidentialityLevel.PUBLIC,
-                "summary": "Canal officiel de signalement des vulnerabilites des services publics.",
+                "summary": "Canal officiel de signalement des vulnérabilités des services publics.",
                 "description": (
-                    "Le Programme National VDP permet a toute personne de signaler "
-                    "une vulnerabilite affectant un service numerique de "
+                    "Le Programme National VDP permet à toute personne de signaler "
+                    "une vulnérabilité affectant un service numérique de "
                     "l'administration burkinabe.\n\n"
-                    "Aucune recompense financiere n'est associee a ce programme : "
+                    "Aucune récompense financière n'est associée à ce programme : "
                     "son objectif est de faciliter la divulgation responsable et de "
                     "proteger les usagers des services publics."
                 ),
                 "rules": (
-                    "- Limitez vos tests au strict necessaire pour demontrer la faille.\n"
-                    "- N'alterez, ne supprimez et n'exfiltrez aucune donnee.\n"
-                    "- N'utilisez jamais d'outil de test de charge ou de deni de service.\n"
-                    "- Signalez sans delai et conservez la confidentialite."
+                    "- Limitez vos tests au strict nécessaire pour démontrer la faille.\n"
+                    "- N'altérez, ne supprimez et n'exfiltrez aucune donnée.\n"
+                    "- N'utilisez jamais d'outil de test de charge ou de déni de service.\n"
+                    "- Signalez sans délai et conservez la confidentialité."
                 ),
                 "out_of_scope_notes": (
-                    "Sont exclus : l'ingenierie sociale, le hameconnage, le deni de "
-                    "service, les attaques physiques, le spam, ainsi que toute donnee "
+                    "Sont exclus : l'ingénierie sociale, le hameçonnage, le déni de "
+                    "service, les attaques physiques, le spam, ainsi que toute donnée "
                     "personnelle obtenue illegalement."
                 ),
                 "safe_harbor": (
-                    "Toute recherche conduite de bonne foi et conforme a la presente "
-                    "politique est consideree comme autorisee. Aucune poursuite ne "
-                    "sera engagee a l'encontre d'un chercheur respectant ces regles."
+                    "Toute recherche conduite de bonne foi et conforme à la présente "
+                    "politique est consideree comme autorisée. Aucune poursuite ne "
+                    "sera engagée à l'encontre d'un chercheur respectant ces règles."
                 ),
                 "disclosure_policy": (
-                    "La divulgation coordonnee intervient au plus tard 90 jours apres "
+                    "La divulgation coordonnée intervient au plus tard 90 jours après "
                     "la validation du signalement, sauf accord contraire."
                 ),
                 "contact_email": "vdp@anssi.bf",
@@ -379,7 +379,7 @@ class Command(BaseCommand):
             for identifier, description in [
                 ("*.gov.bf", "Ensemble des domaines gouvernementaux."),
                 ("*.gouv.bf", "Domaines gouvernementaux alternatifs."),
-                ("Applications gouvernementales", "Applications metiers de l'administration."),
+                ("Applications gouvernementales", "Applications métiers de l'administration."),
                 ("APIs publiques", "Interfaces exposees par les administrations."),
             ]:
                 ProgramScope.objects.create(
@@ -393,7 +393,7 @@ class Command(BaseCommand):
                 )
             for identifier, description in [
                 ("Ingenierie sociale", "Toute manipulation d'agents publics."),
-                ("Deni de service (DDoS)", "Tests de charge et saturation interdits."),
+                ("Déni de service (DDoS)", "Tests de charge et saturation interdits."),
                 ("Infrastructures tierces", "Prestataires non couverts par le programme."),
             ]:
                 ProgramScope.objects.create(
@@ -406,8 +406,8 @@ class Command(BaseCommand):
             ProgramRule.objects.create(
                 program=vdp,
                 kind=RuleKind.PROHIBITED,
-                title="Aucune exfiltration de donnees",
-                body="La demonstration doit s'arreter des que la faille est prouvee.",
+                title="Aucune exfiltration de données",
+                body="La démonstration doit s'arrêter des que la faille est prouvée.",
             )
 
         bounty, created = Program.objects.get_or_create(
@@ -417,26 +417,26 @@ class Command(BaseCommand):
                 "organization": organizations["CSIRT-BF"],
                 "status": ProgramStatus.ACTIVE,
                 "confidentiality": ConfidentialityLevel.PUBLIC,
-                "summary": "Programme remunere sur les services publics critiques.",
+                "summary": "Programme rémunéré sur les services publics critiques.",
                 "description": (
-                    "Ce programme recompense la decouverte de vulnerabilites sur un "
-                    "perimetre restreint de services publics critiques.\n\n"
-                    "Les montants sont fixes par la matrice de recompenses ci-contre "
-                    "et arretes apres validation technique."
+                    "Ce programme récompense la découverte de vulnérabilités sur un "
+                    "périmètre restreint de services publics critiques.\n\n"
+                    "Les montants sont fixes par la matrice de récompenses ci-contre "
+                    "et arretes après validation technique."
                 ),
                 "rules": (
-                    "- Un seul rapport par vulnerabilite.\n"
-                    "- Les doublons ne donnent pas lieu a recompense.\n"
+                    "- Un seul rapport par vulnérabilité.\n"
+                    "- Les doublons ne donnent pas lieu à récompense.\n"
                     "- Les rapports automatises sans impact demontre sont ecartes."
                 ),
                 "eligibility": (
-                    "- Etre inscrit sur eVDP avec une adresse email verifiee.\n"
-                    "- Ne pas etre agent de l'organisation concernee.\n"
-                    "- Respecter integralement les regles de test."
+                    "- Être inscrit sur eVDP avec une adresse email vérifiée.\n"
+                    "- Ne pas être agent de l'organisation concernée.\n"
+                    "- Respecter intégralement les règles de test."
                 ),
                 "safe_harbor": (
-                    "Le Safe Harbor du Programme National VDP s'applique integralement "
-                    "a ce programme."
+                    "Le Safe Harbor du Programme National VDP s'applique intégralement "
+                    "à ce programme."
                 ),
                 "contact_email": "bugbounty@csirt.bf",
                 "sla_policy": sla,
@@ -466,7 +466,7 @@ class Command(BaseCommand):
                 in_scope=False,
                 target_type=ScopeTargetType.DOMAIN,
                 identifier="test.services.gov.bf",
-                description="Environnement de test, hors perimetre.",
+                description="Environnement de test, hors périmètre.",
             )
             policy = RewardPolicy.objects.create(
                 program=bounty, currency="XOF", total_budget=Decimal("25000000")
@@ -478,6 +478,19 @@ class Command(BaseCommand):
                     min_amount=Decimal(minimum),
                     max_amount=Decimal(maximum),
                     description=description,
+                )
+            # Grille propre a un actif : l'API porte les donnees d'etat civil,
+            # une faille critique y vaut trois fois le tarif general. Les
+            # autres cibles restent sur la grille par defaut.
+            api = bounty.scopes.filter(identifier="api.services.gov.bf").first()
+            if api is not None:
+                RewardTier.objects.create(
+                    policy=policy,
+                    scope=api,
+                    severity=Severity.CRITICAL,
+                    min_amount=Decimal("2500000"),
+                    max_amount=Decimal("6000000"),
+                    description="Actif de production critique.",
                 )
 
         return {"vdp": vdp, "bounty": bounty}
@@ -501,25 +514,25 @@ class Command(BaseCommand):
                 "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
                 "target_url": "https://demo.sante.gov.bf/etat-civil/recherche",
                 "description": (
-                    "Le parametre `numero` de la recherche d'acte de naissance n'est "
+                    "Le paramètre `numero` de la recherche d'acte de naissance n'est "
                     "pas filtre. Une injection SQL booleenne permet d'extraire le "
                     "contenu de la base applicative.\n\n"
-                    "L'exploitation a ete arretee des la confirmation de la faille, "
-                    "conformement a la politique de divulgation."
+                    "L'exploitation a été arretee dès la confirmation de la faille, "
+                    "conformement à la politique de divulgation."
                 ),
                 "steps_to_reproduce": (
                     "1. Ouvrir la page de recherche d'acte de naissance.\n"
-                    "2. Soumettre la valeur `1' AND 1=1--` dans le champ numero.\n"
-                    "3. Comparer avec `1' AND 1=2--` : la reponse differe.\n"
+                    "2. Soumettre la valeur `1' AND 1=1--` dans le champ numéro.\n"
+                    "3. Comparer avec `1' AND 1=2--` : la réponse diffère.\n"
                     "4. La difference confirme l'injection booleenne."
                 ),
                 "impact": (
-                    "Un attaquant non authentifie peut extraire les donnees d'etat "
-                    "civil des usagers, incluant des donnees a caractere personnel."
+                    "Un attaquant non authentifié peut extraire les données d'état "
+                    "civil des usagers, incluant des données à caractère personnel."
                 ),
                 "recommendations": (
-                    "Utiliser des requetes parametrees, appliquer une validation "
-                    "stricte du parametre et deployer un WAF en defense en profondeur."
+                    "Utiliser des requêtes paramétrées, appliquer une validation "
+                    "stricte du paramètre et deployer un WAF en défense en profondeur."
                 ),
                 "requests_cve": True,
             },
@@ -534,27 +547,27 @@ class Command(BaseCommand):
                 "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
                 "target_url": "https://api.services.gov.bf/v1/dossiers/{id}",
                 "description": (
-                    "L'endpoint de consultation d'un dossier ne verifie pas que le "
-                    "dossier appartient bien a l'utilisateur authentifie. En "
+                    "L'endpoint de consultation d'un dossier ne vérifie pas que le "
+                    "dossier appartient bien à l'utilisateur authentifié. En "
                     "incrementant l'identifiant, un usager accede aux dossiers "
                     "d'autres citoyens."
                 ),
                 "steps_to_reproduce": (
                     "1. S'authentifier avec un compte usager standard.\n"
-                    "2. Appeler GET /v1/dossiers/1042 (dossier appartenant a un tiers).\n"
+                    "2. Appeler GET /v1/dossiers/1042 (dossier appartenant à un tiers).\n"
                     "3. Le contenu complet du dossier est retourne."
                 ),
                 "impact": (
-                    "Acces non autorise aux donnees administratives de l'ensemble "
+                    "Accès non autorisé aux données administratives de l'ensemble "
                     "des usagers de la plateforme."
                 ),
                 "recommendations": (
-                    "Verifier la propriete de la ressource cote serveur et utiliser "
+                    "Vérifier la propriété de la ressource côté serveur et utiliser "
                     "des identifiants non enumerables (UUID)."
                 ),
             },
             {
-                "title": "En-tetes de securite absents sur le portail education",
+                "title": "En-têtes de sécurité absents sur le portail education",
                 "product": "Portail education",
                 "organization": organizations["ADMDEMO"],
                 "program": programs["vdp"],
@@ -566,9 +579,9 @@ class Command(BaseCommand):
                 "description": (
                     "Le portail ne renvoie ni Content-Security-Policy, ni HSTS, ni "
                     "X-Content-Type-Options. Cette absence facilite l'exploitation "
-                    "d'autres vulnerabilites cote client."
+                    "d'autres vulnérabilités côté client."
                 ),
-                "impact": "Defense en profondeur affaiblie, risque accru de XSS exploitable.",
+                "impact": "Défense en profondeur affaiblie, risque accru de XSS exploitable.",
                 "recommendations": (
                     "Deployer CSP, HSTS, X-Content-Type-Options, Referrer-Policy et "
                     "Permissions-Policy au niveau du reverse proxy."
@@ -622,7 +635,7 @@ class Command(BaseCommand):
             CaseStatus.FIX_VERIFIED,
         ]:
             if case.status != target:
-                transition_case(case, target, coordinator, comment="Etape de demonstration")
+                transition_case(case, target, coordinator, comment="Étape de démonstration")
 
         # Case 2 : parcours Bug Bounty jusqu'a la revue de recompense.
         if len(cases) > 1:
@@ -645,7 +658,7 @@ class Command(BaseCommand):
                         case,
                         target,
                         analyst,
-                        comment="Merci de preciser le navigateur utilise.",
+                        comment="Merci de préciser le navigateur utilisé.",
                     )
 
     # ------------------------------------------------------------------ bounty
@@ -659,8 +672,8 @@ class Command(BaseCommand):
             case,
             users["analyste@csirt.bf"],
             justification=(
-                "Vulnerabilite IDOR permettant l'acces aux dossiers de tous les "
-                "usagers. Impact eleve sur la confidentialite."
+                "Vulnérabilité IDOR permettant l'accès aux dossiers de tous les "
+                "usagers. Impact élevé sur la confidentialité."
             ),
         )
         approve_bounty(
@@ -681,20 +694,20 @@ class Command(BaseCommand):
             case,
             coordinator,
             summary=(
-                "Une vulnerabilite d'injection SQL affectait le portail e-Etat civil "
-                "du ministere de demonstration. Elle permettait a un attaquant non "
-                "authentifie d'acceder a des donnees d'etat civil. Un correctif a "
-                "ete deploye et verifie."
+                "Une vulnérabilité d'injection SQL affectait le portail e-État civil "
+                "du ministère de démonstration. Elle permettait à un attaquant non "
+                "authentifié d'accéder à des données d'état civil. Un correctif à "
+                "été deploye et verifie."
             ),
             description=(
-                "Le parametre de recherche du portail n'etait pas correctement "
+                "Le paramètre de recherche du portail n'était pas correctement "
                 "neutralise, autorisant l'injection de commandes SQL.\n\n"
-                "Aucune exploitation malveillante n'a ete constatee."
+                "Aucune exploitation malveillante n'a été constatee."
             ),
-            impact=("Acces non autorise en lecture aux donnees d'etat civil des usagers."),
+            impact=("Accès non autorisé en lecture aux données d'état civil des usagers."),
             solution=(
-                "Appliquer la mise a jour du portail fournie par l'editeur. Le "
-                "correctif introduit des requetes parametrees et une validation "
+                "Appliquer la mise à jour du portail fournie par l'éditeur. Le "
+                "correctif introduit des requêtes paramétrées et une validation "
                 "stricte des entrees."
             ),
             affected_versions="Portail e-Etat civil < 2.4.1",

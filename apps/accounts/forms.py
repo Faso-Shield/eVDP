@@ -5,7 +5,6 @@ from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
-from apps.core.pgp import PGPError, validate_public_key
 from apps.researchers.models import IdentityMode
 
 from .models import User
@@ -21,8 +20,31 @@ class EmailAuthenticationForm(AuthenticationForm):
     error_messages = {
         **AuthenticationForm.error_messages,
         "invalid_login": "Adresse email ou mot de passe incorrect.",
-        "inactive": "Ce compte est desactive.",
+        "inactive": "Ce compte est désactivé.",
     }
+
+
+class TotpCodeForm(forms.Form):
+    """Saisie du code a six chiffres de l'authentificateur."""
+
+    code = forms.CharField(
+        label="Code de votre authentificateur",
+        max_length=16,
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "one-time-code",
+                "inputmode": "numeric",
+                "autofocus": True,
+                "placeholder": "123456",
+            }
+        ),
+        help_text="Six chiffres, renouvelés toutes les 30 secondes.",
+    )
+
+    def clean_code(self):
+        # Les authentificateurs affichent le code en deux groupes de trois :
+        # l'espace recopie ne doit pas faire echouer une saisie correcte.
+        return (self.cleaned_data["code"] or "").replace(" ", "").strip()
 
 
 class RegistrationForm(forms.ModelForm):
@@ -31,7 +53,7 @@ class RegistrationForm(forms.ModelForm):
     password1 = forms.CharField(
         label="Mot de passe",
         widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
-        help_text="12 caracteres minimum, non trivial.",
+        help_text="12 caractères minimum, non trivial.",
     )
     password2 = forms.CharField(
         label="Confirmation du mot de passe",
@@ -41,15 +63,15 @@ class RegistrationForm(forms.ModelForm):
         label="Pseudonyme",
         max_length=60,
         required=False,
-        help_text="Nom affiche si vous choisissez de rester pseudonyme.",
+        help_text="Nom affiché si vous choisissez de rester pseudonyme.",
     )
     identity_mode = forms.ChoiceField(
-        label="Visibilite de votre identite",
+        label="Visibilité de votre identité",
         choices=IdentityMode.choices,
         initial=IdentityMode.PSEUDONYM,
     )
     accept_policy = forms.BooleanField(
-        label="J'accepte la politique de divulgation et les regles de test.",
+        label="J'accepte la politique de divulgation et les règles de test.",
         required=True,
     )
 
@@ -75,15 +97,15 @@ class RegistrationForm(forms.ModelForm):
         if User.objects.filter(email=email).exists():
             # Message neutre : ne pas confirmer l'existence d'un compte.
             raise ValidationError(
-                "Impossible de creer ce compte. Si vous possedez deja un compte, "
-                "utilisez la procedure de reinitialisation du mot de passe."
+                "Impossible de créer ce compte. Si vous possédez déjà un compte, "
+                "utilisez la procédure de réinitialisation du mot de passe."
             )
         return email
 
     def clean_role(self):
         role = self.cleaned_data.get("role")
         if role not in SELF_SERVICE_ROLES:
-            raise ValidationError("Type de compte non autorise a l'inscription.")
+            raise ValidationError("Type de compte non autorisé à l'inscription.")
         return role
 
     def clean(self):
@@ -111,23 +133,12 @@ class ProfileForm(forms.ModelForm):
 
     class Meta:
         model = User
-        fields = ["full_name", "display_name", "phone", "pgp_public_key"]
+        fields = ["full_name", "display_name", "phone"]
         labels = {
             "full_name": "Nom complet",
-            "display_name": "Nom affiche",
-            "phone": "Telephone",
-            "pgp_public_key": "Cle publique PGP",
+            "display_name": "Nom affiché",
+            "phone": "Téléphone",
         }
-        widgets = {"pgp_public_key": forms.Textarea(attrs={"rows": 6})}
-
-    def clean_pgp_public_key(self):
-        value = self.cleaned_data.get("pgp_public_key", "")
-        if not value:
-            return ""
-        try:
-            return validate_public_key(value)
-        except PGPError as exc:
-            raise ValidationError(str(exc)) from exc
 
 
 class ResearcherProfileForm(forms.ModelForm):
@@ -150,8 +161,8 @@ class ResearcherProfileForm(forms.ModelForm):
             "affiliation": "Rattachement",
             "website": "Site web",
             "biography": "Biographie",
-            "identity_mode": "Visibilite de l'identite",
-            "is_public_profile": "Apparaitre dans l'annuaire public",
+            "identity_mode": "Visibilité de l'identité",
+            "is_public_profile": "Apparaître dans l'annuaire public",
         }
         widgets = {"biography": forms.Textarea(attrs={"rows": 5})}
 

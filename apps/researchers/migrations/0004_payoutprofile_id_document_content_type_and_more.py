@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("researchers", "0002_payoutprofile_payoutmethod"),
+        ("researchers", "0003_payoutprofile_payoutmethod"),
     ]
 
     operations = [

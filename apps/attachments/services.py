@@ -52,19 +52,19 @@ def validate_upload(uploaded_file):
     if extension not in config["ATTACHMENT_ALLOWED_EXTENSIONS"]:
         allowed = ", ".join(sorted(config["ATTACHMENT_ALLOWED_EXTENSIONS"]))
         raise ValidationError(
-            f"Extension non autorisee : .{extension}. Extensions acceptees : {allowed}."
+            f"Extension non autorisée : .{extension}. Extensions acceptees : {allowed}."
         )
 
     declared = (getattr(uploaded_file, "content_type", "") or "").lower()
     guessed, _ = mimetypes.guess_type(name)
     if declared in ("application/x-msdownload", "application/x-executable"):
-        raise ValidationError("Type de contenu executable refuse.")
+        raise ValidationError("Type de contenu exécutable refusé.")
 
     head = uploaded_file.read(8)
     uploaded_file.seek(0)
     for magic in DANGEROUS_MAGIC:
         if head.startswith(magic):
-            raise ValidationError("Le contenu du fichier correspond a un executable : refus.")
+            raise ValidationError("Le contenu du fichier correspond à un exécutable : refus.")
 
     return {
         "extension": extension,
@@ -94,20 +94,33 @@ def store_attachment(
 
     if target_case is not None and uploader is not None and uploader.is_authenticated:
         if not target_case.is_visible_to(uploader):
-            raise PermissionDenied("Vous n'avez pas acces a ce dossier.")
+            raise PermissionDenied("Vous n'avez pas accès à ce dossier.")
         limit = settings.EVDP["MAX_ATTACHMENTS_PER_CASE"]
         if target_case.attachments.count() >= limit:
             raise ValidationError(
-                f"Nombre maximum de pieces jointes atteint pour ce dossier ({limit})."
+                f"Nombre maximum de pièces jointes atteint pour ce dossier ({limit})."
             )
 
     metadata = validate_upload(uploaded_file)
     digest = compute_digest(uploaded_file)
 
-    head = uploaded_file.read(200)
+    # Un bloc PGP armure porte son en-tete au tout debut du fichier mais son
+    # pied de page (et le checksum qui le precede) seulement a la toute fin :
+    # les deux doivent etre verifies pour ne pas rater un fichier legitimement
+    # chiffre (voir apps/core/pgp.is_encrypted_blob). On lit un echantillon
+    # borne a chaque extremite plutot que le fichier entier, pour rester
+    # efficace meme sur une piece jointe volumineuse.
+    sample_size = 4096
+    uploaded_file.seek(0)
+    head = uploaded_file.read(sample_size)
+    tail = b""
+    if uploaded_file.size > sample_size:
+        uploaded_file.seek(max(uploaded_file.size - sample_size, 0))
+        tail = uploaded_file.read(sample_size)
     uploaded_file.seek(0)
     try:
-        encrypted = is_encrypted_blob(head.decode("utf-8", errors="ignore"))
+        sample_text = (head + tail).decode("utf-8", errors="ignore")
+        encrypted = is_encrypted_blob(sample_text)
     except Exception:  # pragma: no cover
         encrypted = False
 
@@ -154,10 +167,10 @@ def authorize_download(attachment, user, request=None):
             result="DENIED",
             request=request,
         )
-        raise PermissionDenied("Vous n'avez pas acces a cette piece jointe.")
+        raise PermissionDenied("Vous n'avez pas accès à cette pièce jointe.")
     if not attachment.is_downloadable:
         raise PermissionDenied(
-            "Ce fichier est bloque : une analyse antivirus l'a signale comme infecte."
+            "Ce fichier est bloqué : une analyse antivirus l'a signalé comme infecté."
         )
     Attachment.objects.filter(pk=attachment.pk).update(
         download_count=attachment.download_count + 1

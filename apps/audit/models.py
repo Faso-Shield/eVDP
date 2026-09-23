@@ -13,43 +13,47 @@ from django.db import models
 
 class AuditAction(models.TextChoices):
     LOGIN = "LOGIN", "Connexion"
-    LOGIN_FAILED = "LOGIN_FAILED", "Echec de connexion"
-    LOGOUT = "LOGOUT", "Deconnexion"
-    PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED", "Reinitialisation demandee"
-    PASSWORD_CHANGED = "PASSWORD_CHANGED", "Mot de passe modifie"
-    EMAIL_VERIFIED = "EMAIL_VERIFIED", "Email verifie"
-    USER_CREATED = "USER_CREATED", "Utilisateur cree"
-    USER_UPDATED = "USER_UPDATED", "Utilisateur modifie"
-    ROLE_CHANGED = "ROLE_CHANGED", "Role modifie"
-    ORGANIZATION_CREATED = "ORGANIZATION_CREATED", "Organisation creee"
-    ORGANIZATION_UPDATED = "ORGANIZATION_UPDATED", "Organisation modifiee"
-    MEMBERSHIP_CHANGED = "MEMBERSHIP_CHANGED", "Appartenance modifiee"
-    PROGRAM_CREATED = "PROGRAM_CREATED", "Programme cree"
-    PROGRAM_UPDATED = "PROGRAM_UPDATED", "Programme modifie"
+    LOGIN_FAILED = "LOGIN_FAILED", "Échec de connexion"
+    LOGOUT = "LOGOUT", "Déconnexion"
+    PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED", "Réinitialisation demandee"
+    PASSWORD_CHANGED = "PASSWORD_CHANGED", "Mot de passe modifié"
+    EMAIL_VERIFIED = "EMAIL_VERIFIED", "Email vérifié"
+    MFA_ENROLLED = "MFA_ENROLLED", "Double authentification activée"
+    MFA_VERIFIED = "MFA_VERIFIED", "Second facteur validé"
+    MFA_FAILED = "MFA_FAILED", "Second facteur refusé"
+    MFA_RESET = "MFA_RESET", "Double authentification réinitialisée"
+    USER_CREATED = "USER_CREATED", "Utilisateur créé"
+    USER_UPDATED = "USER_UPDATED", "Utilisateur modifié"
+    ROLE_CHANGED = "ROLE_CHANGED", "Rôle modifié"
+    ORGANIZATION_CREATED = "ORGANIZATION_CREATED", "Organisation créée"
+    ORGANIZATION_UPDATED = "ORGANIZATION_UPDATED", "Organisation modifiée"
+    MEMBERSHIP_CHANGED = "MEMBERSHIP_CHANGED", "Appartenance modifiée"
+    PROGRAM_CREATED = "PROGRAM_CREATED", "Programme créé"
+    PROGRAM_UPDATED = "PROGRAM_UPDATED", "Programme modifié"
     REPORT_SUBMITTED = "REPORT_SUBMITTED", "Rapport soumis"
-    CASE_CREATED = "CASE_CREATED", "Case cree"
+    CASE_CREATED = "CASE_CREATED", "Case créé"
     CASE_VIEWED = "CASE_VIEWED", "Case consulte"
-    CASE_UPDATED = "CASE_UPDATED", "Case modifie"
-    CASE_ASSIGNED = "CASE_ASSIGNED", "Case assigne"
-    STATUS_CHANGED = "STATUS_CHANGED", "Statut modifie"
-    MESSAGE_SENT = "MESSAGE_SENT", "Message envoye"
-    ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED", "Piece jointe televersee"
-    ATTACHMENT_DOWNLOADED = "ATTACHMENT_DOWNLOADED", "Piece jointe telechargee"
-    ATTACHMENT_DELETED = "ATTACHMENT_DELETED", "Piece jointe supprimee"
-    REPORT_VALIDATED = "REPORT_VALIDATED", "Rapport valide"
-    REPORT_REJECTED = "REPORT_REJECTED", "Rapport rejete"
-    REPORT_DUPLICATED = "REPORT_DUPLICATED", "Rapport marque doublon"
-    ADVISORY_CREATED = "ADVISORY_CREATED", "Advisory cree"
-    ADVISORY_UPDATED = "ADVISORY_UPDATED", "Advisory modifie"
-    ADVISORY_PUBLISHED = "ADVISORY_PUBLISHED", "Advisory publie"
-    ADVISORY_RETRACTED = "ADVISORY_RETRACTED", "Advisory retire"
-    BOUNTY_PROPOSED = "BOUNTY_PROPOSED", "Recompense proposee"
-    BOUNTY_APPROVED = "BOUNTY_APPROVED", "Recompense approuvee"
-    BOUNTY_REJECTED = "BOUNTY_REJECTED", "Recompense rejetee"
-    BOUNTY_PAID = "BOUNTY_PAID", "Recompense payee"
-    EXPORT_GENERATED = "EXPORT_GENERATED", "Export genere"
-    PERMISSION_DENIED = "PERMISSION_DENIED", "Acces refuse"
-    SLA_BREACHED = "SLA_BREACHED", "SLA depasse"
+    CASE_UPDATED = "CASE_UPDATED", "Case modifié"
+    CASE_ASSIGNED = "CASE_ASSIGNED", "Case assigné"
+    STATUS_CHANGED = "STATUS_CHANGED", "Statut modifié"
+    MESSAGE_SENT = "MESSAGE_SENT", "Message envoyé"
+    ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED", "Pièce jointe téléversée"
+    ATTACHMENT_DOWNLOADED = "ATTACHMENT_DOWNLOADED", "Pièce jointe téléchargée"
+    ATTACHMENT_DELETED = "ATTACHMENT_DELETED", "Pièce jointe supprimée"
+    REPORT_VALIDATED = "REPORT_VALIDATED", "Rapport validé"
+    REPORT_REJECTED = "REPORT_REJECTED", "Rapport rejeté"
+    REPORT_DUPLICATED = "REPORT_DUPLICATED", "Rapport marqué doublon"
+    ADVISORY_CREATED = "ADVISORY_CREATED", "Advisory créé"
+    ADVISORY_UPDATED = "ADVISORY_UPDATED", "Advisory modifié"
+    ADVISORY_PUBLISHED = "ADVISORY_PUBLISHED", "Advisory publié"
+    ADVISORY_RETRACTED = "ADVISORY_RETRACTED", "Advisory retiré"
+    BOUNTY_PROPOSED = "BOUNTY_PROPOSED", "Récompense proposée"
+    BOUNTY_APPROVED = "BOUNTY_APPROVED", "Récompense approuvée"
+    BOUNTY_REJECTED = "BOUNTY_REJECTED", "Récompense rejetée"
+    BOUNTY_PAID = "BOUNTY_PAID", "Récompense payée"
+    EXPORT_GENERATED = "EXPORT_GENERATED", "Export généré"
+    PERMISSION_DENIED = "PERMISSION_DENIED", "Accès refusé"
+    SLA_BREACHED = "SLA_BREACHED", "SLA dépassé"
     CSAF_IMPORTED = "CSAF_IMPORTED", "Import CSAF"
     PAYOUT_PROFILE_UPDATED = "PAYOUT_PROFILE_UPDATED", "Profil de versement modifie"
     PAYOUT_METHOD_ADDED = "PAYOUT_METHOD_ADDED", "Moyen de paiement ajoute"
@@ -60,9 +64,9 @@ class AuditAction(models.TextChoices):
 
 
 class AuditResult(models.TextChoices):
-    SUCCESS = "SUCCESS", "Succes"
-    FAILURE = "FAILURE", "Echec"
-    DENIED = "DENIED", "Refuse"
+    SUCCESS = "SUCCESS", "Succès"
+    FAILURE = "FAILURE", "Échec"
+    DENIED = "DENIED", "Refusé"
 
 
 class AuditLogQuerySet(models.QuerySet):
@@ -86,7 +90,7 @@ class AuditLog(models.Model):
     actor_label = models.CharField(
         max_length=254,
         blank=True,
-        help_text="Identite denormalisee, conservee si le compte est supprime.",
+        help_text="Identité dénormalisée, conservée si le compte est supprimé.",
     )
     action = models.CharField(max_length=48, choices=AuditAction.choices, db_index=True)
     object_type = models.CharField(max_length=64, blank=True, db_index=True)
@@ -117,9 +121,9 @@ class AuditLog(models.Model):
     def save(self, *args, **kwargs):
         if self.pk and AuditLog.objects.filter(pk=self.pk).exists():
             raise NotImplementedError(
-                "Une entree d'audit ne peut pas etre modifiee apres creation."
+                "Une entrée d'audit ne peut pas être modifiée après création."
             )
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):  # pragma: no cover - garde-fou
-        raise NotImplementedError("Une entree d'audit ne peut pas etre supprimee.")
+        raise NotImplementedError("Une entrée d'audit ne peut pas être supprimée.")

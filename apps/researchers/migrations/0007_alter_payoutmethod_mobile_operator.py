@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("researchers", "0005_payoutmethod_paypal_email_and_more"),
+        ("researchers", "0006_payoutmethod_paypal_email_and_more"),
     ]
 
     operations = [

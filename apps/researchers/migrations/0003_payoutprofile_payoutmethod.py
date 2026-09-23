@@ -9,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("researchers", "0001_initial"),
+        ("researchers", "0002_alter_reputationevent_reason_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

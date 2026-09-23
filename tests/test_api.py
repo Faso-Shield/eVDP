@@ -8,6 +8,7 @@ from apps.accounts.models import ApiKey
 from apps.api.authentication import generate_key
 from apps.coordination.models import Case
 from apps.coordination.workflow import CaseStatus
+from apps.programs.models import Program
 
 pytestmark = pytest.mark.django_db
 
@@ -319,3 +320,76 @@ def test_csaf_rejects_empty_vulnerabilities(client_for, analyst):
         content_type="application/json",
     )
     assert response.status_code == 400
+
+
+# ------------------------------------- validation du modele sur les ecritures
+# Un ModelSerializer ne declenche pas Model.clean() : sans relais explicite,
+# l'API ecrivait ce que le formulaire web refuse.
+def test_api_rejects_a_payload_passed_off_as_pgp(client_for, researcher_a):
+    """Sans ce controle, le dossier annonce un chiffrement qui n'existe pas."""
+    client = client_for(researcher_a)
+    response = client.post(
+        "/api/v1/reports/",
+        data=json.dumps({**REPORT_PAYLOAD, "pgp_payload": "ceci n'est pas du PGP"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert Case.objects.count() == 0
+
+
+def test_api_accepts_a_real_pgp_block(client_for, researcher_a):
+    """Le cas nominal reste ouvert : un vrai bloc chiffre passe."""
+    bloc = "-----BEGIN PGP MESSAGE-----\n\nhQIMA1234\n-----END PGP MESSAGE-----"
+    client = client_for(researcher_a)
+    response = client.post(
+        "/api/v1/reports/",
+        data=json.dumps({**REPORT_PAYLOAD, "pgp_payload": bloc}),
+        content_type="application/json",
+    )
+    assert response.status_code == 201
+    assert Case.objects.get().report.is_pgp_encrypted
+
+
+def test_api_rejects_a_program_with_inverted_dates(client_for, coordinator, organization):
+    client = client_for(coordinator)
+    response = client.post(
+        "/api/v1/programs/",
+        data=json.dumps(
+            {
+                "name": "Programme aux dates inversees",
+                "program_type": "VDP",
+                "organization": str(organization.pk),
+                "starts_on": "2026-06-01",
+                "ends_on": "2026-05-01",
+            }
+        ),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert "ends_on" in response.json()
+
+
+def test_api_rejects_a_bug_bounty_open_to_anonymous_reports(
+    client_for, coordinator, organization
+):
+    """L'invariant du Bug Bounty vaut aussi pour l'API, pas seulement le form."""
+    client = client_for(coordinator)
+    payload = {
+        "name": "Bug Bounty par API",
+        "program_type": "BUG_BOUNTY",
+        "organization": str(organization.pk),
+        "allows_anonymous_reports": True,
+    }
+    refus = client.post(
+        "/api/v1/programs/", data=json.dumps(payload), content_type="application/json"
+    )
+    assert refus.status_code == 400
+    assert "allows_anonymous_reports" in refus.json()
+
+    # Configure correctement, le meme programme passe.
+    payload["allows_anonymous_reports"] = False
+    response = client.post(
+        "/api/v1/programs/", data=json.dumps(payload), content_type="application/json"
+    )
+    assert response.status_code == 201
+    assert not Program.objects.get(name="Bug Bounty par API").accepts_anonymous_reports

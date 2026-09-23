@@ -84,6 +84,10 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.core.middleware.RequestContextMiddleware",
+    # Apres AuthenticationMiddleware : la session n'est elevee qu'une fois le
+    # second facteur valide. Place ici, la regle couvre toute la plateforme,
+    # y compris /admin/ qui a sa propre page de connexion.
+    "apps.accounts.middleware.MfaEnforcementMiddleware",
     "apps.core.middleware.SecurityHeadersMiddleware",
 ]
 
@@ -234,6 +238,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.accounts.tasks.purge_expired_tokens",
         "schedule": crontab(minute=0, hour=3),
     },
+    "evdp-relance-comptes-non-verifies": {
+        "task": "apps.accounts.tasks.remind_unverified_accounts",
+        "schedule": crontab(minute=30, hour=8),
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -361,6 +369,14 @@ EVDP = {
     "ADVISORY_PREFIX": "EVDP-ADV",
     "DEFAULT_CURRENCY": env("EVDP_DEFAULT_CURRENCY", default="XOF"),
     "DEFAULT_DISCLOSURE_DELAY_DAYS": env.int("EVDP_DISCLOSURE_DELAY_DAYS", default=90),
+    # Exigence d'adresse verifiee : date de bascule, sursis accorde aux seuls
+    # comptes anterieurs, et jalons de relance exprimes en jours restants.
+    # Voir apps/accounts/verification.py.
+    "VERIFICATION_ENFORCED_FROM": env("EVDP_VERIFICATION_ENFORCED_FROM", default=""),
+    "VERIFICATION_GRACE_DAYS": env.int("EVDP_VERIFICATION_GRACE_DAYS", default=30),
+    "VERIFICATION_REMINDER_DAYS": env.list(
+        "EVDP_VERIFICATION_REMINDER_DAYS", default=["14", "7", "1"]
+    ),
     "MAX_ATTACHMENT_SIZE": env.int("EVDP_MAX_ATTACHMENT_SIZE", default=25 * 1024 * 1024),
     "ATTACHMENT_ALLOWED_EXTENSIONS": env.list(
         "EVDP_ATTACHMENT_EXTENSIONS",
@@ -431,6 +447,14 @@ EVDP = {
         "register": env("EVDP_RL_REGISTER", default="5/1h"),
         "report": env("EVDP_RL_REPORT", default="10/1h"),
         "password_reset": env("EVDP_RL_PASSWORD_RESET", default="5/1h"),
+        # Second facteur : limite par compte, pas par IP. Un code a six
+        # chiffres se devine en 10^6 essais ; la limite les rend hors de
+        # portee sans bloquer le titulaire legitime qui se trompe.
+        "mfa": env("EVDP_RL_MFA", default="10/5m"),
+        # Jeton de suivi long et aleatoire (haute entropie) : la limite sert
+        # surtout a ralentir le crawl/scraping, pas a empecher un brute-force
+        # qui serait de toute facon impraticable vu l'espace de recherche.
+        "track_lookup": env("EVDP_RL_TRACK_LOOKUP", default="20/5m"),
     },
 }
 

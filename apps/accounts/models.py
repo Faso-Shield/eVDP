@@ -4,6 +4,7 @@ import uuid
 from datetime import timedelta
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -51,32 +52,55 @@ class UserManager(BaseUserManager):
 
 class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True, db_index=True)
-    full_name = models.CharField(max_length=150, blank=True)
+    email = models.EmailField(unique=True, db_index=True, verbose_name="Adresse email")
+    full_name = models.CharField(max_length=150, blank=True, verbose_name="Nom complet")
     display_name = models.CharField(
         max_length=80,
         blank=True,
-        help_text="Nom affiche dans l'interface (pseudonyme possible).",
+        verbose_name="Nom affiché",
+        help_text="Nom affiché dans l'interface (pseudonyme possible).",
     )
-    phone = models.CharField(max_length=32, blank=True)
+    phone = models.CharField(max_length=32, blank=True, verbose_name="Téléphone")
     role = models.CharField(
         max_length=32,
         choices=Role.choices,
         default=Role.PUBLIC_USER,
         db_index=True,
-        help_text="Role RBAC. Jamais modifiable par l'utilisateur lui-meme.",
+        verbose_name="Rôle",
+        help_text="Rôle RBAC. Jamais modifiable par l'utilisateur lui-même.",
     )
-    is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
-    email_verified = models.BooleanField(default=False)
-    pgp_public_key = models.TextField(blank=True)
-    pgp_fingerprint = models.CharField(max_length=64, blank=True)
+    is_active = models.BooleanField(default=True, verbose_name="Compte actif")
+    is_staff = models.BooleanField(default=False, verbose_name="Accès à l'administration")
+    email_verified = models.BooleanField(default=False, verbose_name="Adresse vérifiée")
+    verification_reminded_on = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Dernière relance de vérification",
+        help_text="Jour de la dernière relance de vérification, pour n'en "
+        "envoyer qu'une par jalon.",
+    )
     mfa_enabled = models.BooleanField(
-        default=False, help_text="Architecture prete ; activation par etape ulterieure."
+        default=False,
+        verbose_name="Authentificateur enregistré",
+        help_text="Enrôlement TOTP effectué. L'exigence, elle, découle du "
+        "rôle : voir apps.accounts.mfa.is_required.",
     )
     mfa_secret = models.CharField(max_length=64, blank=True, editable=False)
-    last_login_ip = models.CharField(max_length=45, blank=True)
-    accepted_policy_at = models.DateTimeField(null=True, blank=True)
+    mfa_confirmed_at = models.DateTimeField(
+        null=True, blank=True, editable=False, verbose_name="Enregistré le"
+    )
+    mfa_last_step = models.BigIntegerField(
+        null=True,
+        blank=True,
+        editable=False,
+        help_text="Dernier pas de temps TOTP consommé, pour refuser le rejeu.",
+    )
+    last_login_ip = models.CharField(
+        max_length=45, blank=True, verbose_name="Dernière IP de connexion"
+    )
+    accepted_policy_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Politique acceptée le"
+    )
 
     objects = UserManager()
 
@@ -92,11 +116,65 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     def __str__(self):
         return self.display_name or self.full_name or self.email
 
+    def clean(self):
+        if self.mfa_enabled and self.is_researcher:
+            raise ValidationError(
+                {
+                    "mfa_enabled": "Un compte signaleur n'est pas soumis à la "
+                    "double authentification."
+                }
+            )
+
     def save(self, *args, **kwargs):
         self.email = self.email.lower().strip()
         if not self.display_name:
             self.display_name = (self.full_name or self.email.split("@")[0])[:80]
+        # Une retrogradation vers un role de signaleur ne doit pas laisser un
+        # secret orphelin en base : il ne servirait plus jamais, la regle
+        # etant portee par le role. On le purge au lieu de le conserver.
+        if self.is_researcher and (self.mfa_enabled or self.mfa_secret):
+            self.mfa_enabled = False
+            self.mfa_secret = ""
+            self.mfa_confirmed_at = None
+            self.mfa_last_step = None
+            champs = kwargs.get("update_fields")
+            if champs is not None:
+                kwargs["update_fields"] = list(champs) + [
+                    "mfa_enabled",
+                    "mfa_secret",
+                    "mfa_confirmed_at",
+                    "mfa_last_step",
+                ]
         return super().save(*args, **kwargs)
+
+    # -- Double authentification --------------------------------------------
+    @property
+    def mfa_required(self):
+        """Le second facteur s'applique-t-il ? Decoule du role, jamais du client."""
+        from .mfa import is_required
+
+        return is_required(self)
+
+    @property
+    def mfa_pending_enrollment(self):
+        """Compte soumis au second facteur mais pas encore enrole."""
+        return self.mfa_required and not (self.mfa_enabled and self.mfa_secret)
+
+    def reset_mfa(self):
+        """Revoque l'enrolement : le compte devra en refaire un a la connexion."""
+        self.mfa_enabled = False
+        self.mfa_secret = ""
+        self.mfa_confirmed_at = None
+        self.mfa_last_step = None
+        self.save(
+            update_fields=[
+                "mfa_enabled",
+                "mfa_secret",
+                "mfa_confirmed_at",
+                "mfa_last_step",
+                "updated_at",
+            ]
+        )
 
     # -- RBAC ---------------------------------------------------------------
     @property
@@ -152,9 +230,45 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         return self.display_name or "Utilisateur eVDP"
 
 
+class BusinessAccount(User):
+    """Comptes metiers et administrateurs, vue d'administration dediee.
+
+    Deux populations qui n'ont ni le meme cycle de vie ni les memes
+    informations utiles : celle-ci est creee par un administrateur, porte un
+    role donnant acces aux dossiers d'autrui et un second facteur ; l'autre
+    s'inscrit seule et se juge a sa reputation. Les melanger dans une liste
+    unique obligeait a lire la colonne role pour savoir a qui on avait
+    affaire, et a filtrer avant toute action de masse.
+
+    Un proxy et non une table : c'est la meme entite `User`, vue sous deux
+    angles. Aucune donnee n'est dupliquee et l'authentification ignore la
+    distinction. Le partage des roles entre les deux vues se fait dans
+    l'administration, et non par un manager filtre par defaut, qui servirait
+    aussi de `_base_manager` et masquerait des lignes a l'ORM.
+    """
+
+    class Meta:
+        proxy = True
+        verbose_name = "Compte metier"
+        verbose_name_plural = "Comptes metiers et administrateurs"
+
+
+class ReporterAccount(User):
+    """Comptes signaleurs : chercheurs et utilisateurs publics.
+
+    Population d'inscription libre, jamais soumise au second facteur. Voir
+    `BusinessAccount` pour la raison de la separation.
+    """
+
+    class Meta:
+        proxy = True
+        verbose_name = "Compte signaleur"
+        verbose_name_plural = "Comptes signaleurs"
+
+
 class TokenPurpose(models.TextChoices):
-    EMAIL_VERIFICATION = "EMAIL_VERIFICATION", "Verification d'email"
-    PASSWORD_RESET = "PASSWORD_RESET", "Reinitialisation de mot de passe"
+    EMAIL_VERIFICATION = "EMAIL_VERIFICATION", "Vérification d'email"
+    PASSWORD_RESET = "PASSWORD_RESET", "Réinitialisation de mot de passe"
 
 
 class UserToken(TimeStampedModel):
@@ -224,4 +338,14 @@ class ApiKey(TimeStampedModel):
         return self.is_active and (self.expires_at is None or self.expires_at > timezone.now())
 
 
-__all__ = ["User", "UserManager", "UserToken", "TokenPurpose", "ApiKey", "Capability", "Role"]
+__all__ = [
+    "User",
+    "UserManager",
+    "BusinessAccount",
+    "ReporterAccount",
+    "UserToken",
+    "TokenPurpose",
+    "ApiKey",
+    "Capability",
+    "Role",
+]

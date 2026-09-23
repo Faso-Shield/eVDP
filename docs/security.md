@@ -34,8 +34,56 @@ compromis assumés.
 - Sessions : `HttpOnly`, `SameSite=Lax`, `Secure` en production, expiration à la fermeture du navigateur, durée 8 h.
 - Clés d'API : seul le **hachage SHA-256** est stocké ; la valeur en clair n'est affichée qu'une fois.
 
-**MFA :** les champs `mfa_enabled` / `mfa_secret` et la dépendance `pyotp`
-sont en place. Le parcours d'activation n'est **pas** implémenté (TODO).
+### Double authentification (TOTP)
+
+**Qui.** Le second facteur suit le **rôle**, jamais un réglage par compte :
+il s'applique à tout compte qui n'est pas un signaleur — administrateurs,
+coordination nationale, analystes, triage, DSI, responsables d'organisation,
+auditeurs. Ce sont précisément les comptes créés par un administrateur, et
+ceux qui voient les dossiers d'autrui.
+
+Un **compte signaleur en est exempt**, et ne peut pas l'activer : un VDP vaut
+par la facilité avec laquelle on peut y signaler, et un chercheur n'accède
+qu'à ses propres rapports. `User.clean()` refuse la combinaison, et une
+rétrogradation vers un rôle de signaleur purge le secret devenu inutile.
+
+**Comment.** TOTP uniquement (RFC 6238, 6 chiffres, 30 s). Ni SMS ni email :
+leur acheminement n'est pas maîtrisé par la plateforme et leur interception
+est un scénario documenté. Tolérance de dérive d'horloge d'un pas de part et
+d'autre ; le pas consommé est enregistré sur le compte, ce qui **refuse le
+rejeu** d'un code intercepté pendant sa fenêtre de validité.
+
+**Où.** `apps.accounts.middleware.MfaEnforcementMiddleware`. La session est
+authentifiée dès la connexion mais reste **non élevée** tant que le code n'a
+pas été validé ; dans cet état seules les vues d'enrôlement, de vérification
+et de déconnexion répondent. Le contrôle est un middleware et non un
+décorateur parce que `/admin/` a sa propre page de connexion : un décorateur
+posé sur la connexion eVDP y laisserait une porte ouverte. Une requête d'API
+authentifiée **par session** reçoit un 403 plutôt qu'une redirection HTML.
+
+**Enrôlement.** La page présente un code QR de l'URI `otpauth://`, rendu par
+`segno` (pure Python, sans dépendance) en SVG dans une URI `data:`. Une URI
+`data:` portée par un attribut `src` reste une valeur échappée par le
+gabarit, là où un SVG injecté dans la page demanderait de marquer du balisage
+comme sûr ; `img-src 'self' data:` étant déjà dans la CSP, cette page n'y
+ajoute aucune dispense. La clé reste affichée en clair sous le code, pour la
+saisie manuelle quand l'appareil ne peut pas scanner.
+
+**Clés d'API.** Elles ne passent pas par la session et ne sont donc pas
+soumises au second facteur — usage machine, non interactif. Ce n'est pas un
+contournement : aucun parcours ne permet à un utilisateur de s'en délivrer
+une, elles sont créées depuis l'administration, elle-même protégée.
+
+**Perte de l'appareil.** Un administrateur réinitialise l'enrôlement depuis
+l'administration (action « Réinitialiser la double authentification ») ; le
+compte en réenregistre un à la connexion suivante. Si plus personne ne peut
+se connecter à l'administration, la commande `manage.py reset_mfa <email>`
+prend le relais : elle exige un accès au serveur, garantie qui remplace le
+second facteur. La réinitialisation ne dispense jamais du dispositif.
+
+**Changement d'authentificateur.** Il exige d'abord de valider celui en
+place. Sinon le mot de passe seul suffirait à remplacer le second facteur, et
+il n'y aurait plus de second facteur.
 
 ---
 

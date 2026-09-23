@@ -8,7 +8,7 @@ from apps.core.models import BaseModel
 
 
 class IdentityMode(models.TextChoices):
-    PUBLIC = "PUBLIC", "Identite publique"
+    PUBLIC = "PUBLIC", "Identité publique"
     PSEUDONYM = "PSEUDONYM", "Pseudonyme"
     PRIVATE = "PRIVATE", "Anonyme"
 
@@ -22,16 +22,16 @@ class ResearcherProfile(BaseModel):
     pseudonym = models.CharField(max_length=60, blank=True, db_index=True)
     slug = models.SlugField(max_length=80, unique=True, blank=True)
     country = models.CharField(max_length=80, default="Burkina Faso")
-    biography = models.TextField(blank=True, help_text="Markdown autorise.")
+    biography = models.TextField(blank=True, help_text="Markdown autorisé.")
     affiliation = models.CharField(
-        max_length=180, blank=True, help_text="Organisation ou universite de rattachement."
+        max_length=180, blank=True, help_text="Organisation ou université de rattachement."
     )
     website = models.URLField(blank=True)
     identity_mode = models.CharField(
         max_length=16, choices=IdentityMode.choices, default=IdentityMode.PSEUDONYM
     )
     is_public_profile = models.BooleanField(
-        default=False, help_text="Apparait dans l'annuaire public des chercheurs."
+        default=False, help_text="Apparaît dans l'annuaire public des chercheurs."
     )
 
     # Compteurs denormalises, recalculables via recompute().
@@ -109,9 +109,9 @@ class ResearcherProfile(BaseModel):
 
 
 class ReputationReason(models.TextChoices):
-    VALIDATED = "VALIDATED", "Rapport valide"
-    HIGH = "HIGH", "Vulnerabilite High"
-    CRITICAL = "CRITICAL", "Vulnerabilite Critical"
+    VALIDATED = "VALIDATED", "Rapport validé"
+    HIGH = "HIGH", "Vulnérabilité High"
+    CRITICAL = "CRITICAL", "Vulnérabilité Critical"
     DUPLICATE = "DUPLICATE", "Rapport en doublon"
     ABUSIVE = "ABUSIVE", "Rapport abusif"
     MANUAL = "MANUAL", "Ajustement manuel"

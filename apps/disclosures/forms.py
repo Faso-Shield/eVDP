@@ -30,22 +30,22 @@ class AdvisoryForm(forms.ModelForm):
         ]
         labels = {
             "title": "Titre",
-            "summary": "Resume public",
+            "summary": "Résumé public",
             "organization": "Organisation",
             "product": "Produit",
-            "affected_versions": "Versions affectees",
-            "fixed_versions": "Versions corrigees",
+            "affected_versions": "Versions affectées",
+            "fixed_versions": "Versions corrigées",
             "description": "Description",
             "impact": "Impact",
             "solution": "Solution",
             "workaround": "Contournement",
-            "severity": "Severite",
+            "severity": "Sévérité",
             "cvss_score": "Score CVSS",
             "cvss_vector": "Vecteur CVSS",
             "cwe": "CWE",
             "cve": "CVE",
-            "credit": "Credit chercheur",
-            "scheduled_for": "Publication planifiee",
+            "credit": "Crédit chercheur",
+            "scheduled_for": "Publication planifiée",
         }
         widgets = {
             "summary": forms.Textarea(attrs={"rows": 3}),

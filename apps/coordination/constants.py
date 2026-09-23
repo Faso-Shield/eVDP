@@ -4,7 +4,7 @@ from django.db import models
 
 
 class WorkflowType(models.TextChoices):
-    VDP = "VDP", "Divulgation coordonnee (CVD)"
+    VDP = "VDP", "Divulgation coordonnée (CVD)"
     BUG_BOUNTY = "BUG_BOUNTY", "Bug Bounty"
 
 
@@ -17,21 +17,21 @@ class Confidentiality(models.TextChoices):
 
 
 class TimelineEventType(models.TextChoices):
-    REPORT_RECEIVED = "REPORT_RECEIVED", "Rapport recu"
-    ACKNOWLEDGED = "ACKNOWLEDGED", "Accuse de reception"
-    TRIAGE_STARTED = "TRIAGE_STARTED", "Triage engage"
-    INFORMATION_REQUESTED = "INFORMATION_REQUESTED", "Informations demandees"
-    VALIDATED = "VALIDATED", "Vulnerabilite validee"
-    SEVERITY_SET = "SEVERITY_SET", "Severite attribuee"
-    ORGANIZATION_CONTACTED = "ORGANIZATION_CONTACTED", "Organisation contactee"
-    ORGANIZATION_ACKNOWLEDGED = "ORGANIZATION_ACKNOWLEDGED", "Organisation a repondu"
+    REPORT_RECEIVED = "REPORT_RECEIVED", "Rapport reçu"
+    ACKNOWLEDGED = "ACKNOWLEDGED", "Accusé de réception"
+    TRIAGE_STARTED = "TRIAGE_STARTED", "Triage engagé"
+    INFORMATION_REQUESTED = "INFORMATION_REQUESTED", "Informations demandées"
+    VALIDATED = "VALIDATED", "Vulnérabilité validée"
+    SEVERITY_SET = "SEVERITY_SET", "Sévérité attribuée"
+    ORGANIZATION_CONTACTED = "ORGANIZATION_CONTACTED", "Organisation contactée"
+    ORGANIZATION_ACKNOWLEDGED = "ORGANIZATION_ACKNOWLEDGED", "Organisation a répondu"
     FIX_PROVIDED = "FIX_PROVIDED", "Correctif fourni"
-    FIX_VERIFIED = "FIX_VERIFIED", "Correctif verifie"
-    DISCLOSURE_SCHEDULED = "DISCLOSURE_SCHEDULED", "Divulgation planifiee"
-    ADVISORY_PUBLISHED = "ADVISORY_PUBLISHED", "Advisory publie"
-    REWARD_APPROVED = "REWARD_APPROVED", "Recompense approuvee"
-    DUPLICATE_MARKED = "DUPLICATE_MARKED", "Doublon identifie"
-    REJECTED = "REJECTED", "Rapport rejete"
+    FIX_VERIFIED = "FIX_VERIFIED", "Correctif vérifié"
+    DISCLOSURE_SCHEDULED = "DISCLOSURE_SCHEDULED", "Divulgation planifiée"
+    ADVISORY_PUBLISHED = "ADVISORY_PUBLISHED", "Advisory publié"
+    REWARD_APPROVED = "REWARD_APPROVED", "Récompense approuvée"
+    DUPLICATE_MARKED = "DUPLICATE_MARKED", "Doublon identifié"
+    REJECTED = "REJECTED", "Rapport rejeté"
     CLOSED = "CLOSED", "Case clos"
     STATUS_CHANGED = "STATUS_CHANGED", "Changement de statut"
     ASSIGNED = "ASSIGNED", "Assignation"
@@ -39,25 +39,25 @@ class TimelineEventType(models.TextChoices):
 
 
 class SLAKind(models.TextChoices):
-    ACKNOWLEDGEMENT = "ACKNOWLEDGEMENT", "Accuse de reception"
+    ACKNOWLEDGEMENT = "ACKNOWLEDGEMENT", "Accusé de réception"
     TRIAGE = "TRIAGE", "Premier triage"
-    VENDOR_RESPONSE = "VENDOR_RESPONSE", "Reponse de l'organisation"
-    REMEDIATION = "REMEDIATION", "Remediation"
+    VENDOR_RESPONSE = "VENDOR_RESPONSE", "Réponse de l'organisation"
+    REMEDIATION = "REMEDIATION", "Remédiation"
     DISCLOSURE = "DISCLOSURE", "Divulgation"
 
 
 class SLAState(models.TextChoices):
     PENDING = "PENDING", "En cours"
-    APPROACHING = "APPROACHING", "Echeance proche"
+    APPROACHING = "APPROACHING", "Échéance proche"
     MET = "MET", "Respecte"
-    BREACHED = "BREACHED", "Depasse"
-    CANCELLED = "CANCELLED", "Annule"
+    BREACHED = "BREACHED", "Dépassé"
+    CANCELLED = "CANCELLED", "Annulé"
 
 
 class ParticipantRole(models.TextChoices):
-    REPORTER = "REPORTER", "Declarant"
+    REPORTER = "REPORTER", "Déclarant"
     ANALYST = "ANALYST", "Analyste CSIRT"
     COORDINATOR = "COORDINATOR", "Coordinateur"
-    ORGANIZATION = "ORGANIZATION", "Organisation affectee"
+    ORGANIZATION = "ORGANIZATION", "Organisation affectée"
     DSI = "DSI", "DSI"
     OBSERVER = "OBSERVER", "Observateur"

@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("researchers", "0003_payoutprofile_id_document_content_type_and_more"),
+        ("researchers", "0004_payoutprofile_id_document_content_type_and_more"),
     ]
 
     operations = [

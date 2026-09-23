@@ -98,46 +98,82 @@ def test_retraction_requires_reason(case_alpha, coordinator):
 
 
 # --------------------------------------------------------- mutations en GET
-# Regression : publish/retract/transition n'exigeaient aucune methode HTTP
-# particuliere. publish_advisory ne verifiait meme pas request.method - un
-# advisory deja APPROVED avec un resume rempli pouvait etre publie par un
-# simple GET (donc hors protection CSRF, qui ne couvre que les methodes non
-# sures). Meme classe de probleme que celle deja corrigee sur bounty et le
-# portefeuille, mais avec un impact plus grave : une divulgation publique.
-def test_publish_via_get_is_rejected(client_for, case_alpha, coordinator):
+# Regression : publish/retract/transition vivaient dans des vues separees qui
+# n'exigeaient aucune methode HTTP particuliere ; publish_advisory ne
+# verifiait meme pas request.method - un advisory deja APPROVED avec un
+# resume rempli pouvait etre publie par un simple GET (donc hors protection
+# CSRF, qui ne couvre que les methodes non sures). Ces vues ont depuis ete
+# fusionnees dans advisory_manage (_appliquer_action) : l'action de cycle de
+# vie ne peut plus etre declenchee que depuis la branche POST de cette vue,
+# ce qui rend la classe de probleme structurellement impossible. On le
+# verifie : un GET sur la page de gestion ne change jamais le statut.
+def test_manage_via_get_never_changes_status(client_for, case_alpha, coordinator):
     advisory = build_advisory(case_alpha, coordinator)
     advisory.status = AdvisoryStatus.APPROVED
     advisory.save(update_fields=["status"])
 
     client = client_for(coordinator)
-    response = client.get(reverse("disclosures:publish", args=[advisory.advisory_id]))
-    assert response.status_code == 405
+    response = client.get(reverse("disclosures:manage", args=[advisory.advisory_id]))
+    assert response.status_code == 200
     advisory.refresh_from_db()
     assert advisory.status == AdvisoryStatus.APPROVED
     assert advisory.is_published is False
 
 
-def test_retract_via_get_is_rejected(client_for, case_alpha, coordinator):
+def _manage_request(rf, user, action, **extra):
+    from django.contrib.messages.storage.fallback import FallbackStorage
+
+    request = rf.post("/advisories/manage/", {"action": action, **extra})
+    request.user = user
+    request.session = {}
+    request._messages = FallbackStorage(request)
+    return request
+
+
+def test_appliquer_action_publishes(rf, case_alpha, coordinator):
+    from apps.disclosures.views import _appliquer_action
+
+    advisory = build_advisory(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+
+    _appliquer_action(_manage_request(rf, coordinator, "publish"), advisory)
+    advisory.refresh_from_db()
+
+    assert advisory.status == AdvisoryStatus.PUBLISHED
+    assert advisory.is_published is True
+
+
+def test_appliquer_action_publish_refuses_missing_capability(
+    rf, case_alpha, coordinator, analyst
+):
+    from apps.disclosures.views import _appliquer_action
+
+    advisory = build_advisory(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+
+    _appliquer_action(_manage_request(rf, analyst, "publish"), advisory)
+    advisory.refresh_from_db()
+
+    assert advisory.status == AdvisoryStatus.APPROVED  # inchange
+    assert advisory.is_published is False
+
+
+def test_appliquer_action_retracts(rf, case_alpha, coordinator):
+    from apps.disclosures.views import _appliquer_action
+
     advisory = build_advisory(case_alpha, coordinator)
     advisory.status = AdvisoryStatus.APPROVED
     advisory.save(update_fields=["status"])
     publish_advisory(advisory, coordinator)
 
-    client = client_for(coordinator)
-    response = client.get(reverse("disclosures:retract", args=[advisory.advisory_id]))
-    assert response.status_code == 405
+    _appliquer_action(
+        _manage_request(rf, coordinator, "retract", reason="Information erronee."), advisory
+    )
     advisory.refresh_from_db()
-    assert advisory.status == AdvisoryStatus.PUBLISHED
 
-
-def test_transition_via_get_is_rejected(client_for, case_alpha, coordinator):
-    advisory = build_advisory(case_alpha, coordinator)
-
-    client = client_for(coordinator)
-    response = client.get(reverse("disclosures:transition", args=[advisory.advisory_id]))
-    assert response.status_code == 405
-    advisory.refresh_from_db()
-    assert advisory.status == AdvisoryStatus.DRAFT
+    assert advisory.status == AdvisoryStatus.RETRACTED
 
 
 # -------------------------------------------------------------- administration
@@ -298,3 +334,105 @@ def test_editorial_update_is_audited(case_alpha, coordinator):
     assert AuditLog.objects.filter(
         action=AuditAction.ADVISORY_UPDATED, object_id=str(advisory.pk)
     ).exists()
+
+
+# ------------------------------------------------- redaction depuis l'ecran
+def _formulaire(advisory, action, resume, statut=None):
+    """Ce que le navigateur envoie depuis la page de redaction."""
+    entrees = list(advisory.timeline.all())
+    donnees = {
+        "title": advisory.title,
+        "summary": resume,
+        "organization": advisory.organization_id or "",
+        "product": advisory.product,
+        "affected_versions": "",
+        "fixed_versions": "",
+        "description": "Description publique.",
+        "impact": "",
+        "solution": "",
+        "workaround": "",
+        "severity": advisory.severity,
+        "cvss_score": advisory.cvss_score or "",
+        "cvss_vector": advisory.cvss_vector,
+        "cwe": advisory.cwe_id or "",
+        "cve": advisory.cve_id or "",
+        "credit": advisory.credit,
+        "scheduled_for": "",
+        "action": action,
+        "timeline-TOTAL_FORMS": str(len(entrees) + 1),
+        "timeline-INITIAL_FORMS": str(len(entrees)),
+        "timeline-MIN_NUM_FORMS": "0",
+        "timeline-MAX_NUM_FORMS": "1000",
+    }
+    if statut:
+        donnees["target_status"] = statut
+    for index, entree in enumerate(entrees):
+        donnees[f"timeline-{index}-id"] = str(entree.pk)
+        donnees[f"timeline-{index}-happened_on"] = entree.happened_on.isoformat()
+        donnees[f"timeline-{index}-label"] = entree.label
+        donnees[f"timeline-{index}-position"] = str(entree.position)
+    vide = len(entrees)
+    donnees[f"timeline-{vide}-id"] = ""
+    donnees[f"timeline-{vide}-happened_on"] = ""
+    donnees[f"timeline-{vide}-label"] = ""
+    donnees[f"timeline-{vide}-position"] = "0"
+    return donnees
+
+
+def test_summary_typed_on_screen_reaches_the_publication(client_for, case_alpha, coordinator):
+    """Le resume saisi part avec la demande de publication.
+
+    Contenu et cycle de vie etaient deux formulaires : la publication ne
+    voyait que la base, et refusait un resume pourtant saisi a l'ecran.
+    """
+    advisory = create_advisory_from_case(case_alpha, coordinator)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+    client = client_for(coordinator)
+
+    reponse = client.post(
+        f"/advisories/manage/{advisory.advisory_id}/",
+        _formulaire(advisory, "publish", "Un resume public saisi a l'instant."),
+        follow=True,
+    )
+
+    advisory.refresh_from_db()
+    assert advisory.summary == "Un resume public saisi a l'instant."
+    assert advisory.status == AdvisoryStatus.PUBLISHED
+    assert not [m for m in reponse.context["messages"] if m.level_tag == "error"]
+
+
+def test_content_survives_a_refused_transition(client_for, case_alpha, coordinator):
+    """Une transition refusee ne doit pas emporter la saisie avec elle."""
+    advisory = create_advisory_from_case(case_alpha, coordinator)
+    client = client_for(coordinator)
+
+    reponse = client.post(
+        f"/advisories/manage/{advisory.advisory_id}/",
+        _formulaire(advisory, "publish", "Resume conserve malgre le refus."),
+        follow=True,
+    )
+
+    advisory.refresh_from_db()
+    assert advisory.summary == "Resume conserve malgre le refus."
+    assert advisory.status == AdvisoryStatus.DRAFT
+    # Le refus porte sur l'etat du document, pas sur un resume qui manquerait.
+    erreurs = [str(m) for m in reponse.context["messages"] if m.level_tag == "error"]
+    assert erreurs and "publication" in " ".join(erreurs).lower()
+
+
+def test_analyst_cannot_publish_from_the_screen(client_for, case_alpha, analyst):
+    """Le bouton absent n'est pas la seule garde : la vue refuse aussi."""
+    advisory = create_advisory_from_case(case_alpha, analyst)
+    advisory.status = AdvisoryStatus.APPROVED
+    advisory.save(update_fields=["status"])
+
+    client_for(analyst).post(
+        f"/advisories/manage/{advisory.advisory_id}/",
+        _formulaire(advisory, "publish", "Resume public."),
+        follow=True,
+    )
+
+    advisory.refresh_from_db()
+    assert advisory.summary == "Resume public."
+    assert advisory.status == AdvisoryStatus.APPROVED

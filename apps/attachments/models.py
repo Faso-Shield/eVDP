@@ -27,7 +27,7 @@ def attachment_upload_path(instance, filename):
 class ScanStatus(models.TextChoices):
     PENDING = "PENDING", "Analyse en attente"
     CLEAN = "CLEAN", "Sain"
-    INFECTED = "INFECTED", "Infecte"
+    INFECTED = "INFECTED", "Infecté"
     SKIPPED = "SKIPPED", "Analyse non disponible"
     ERROR = "ERROR", "Erreur d'analyse"
 

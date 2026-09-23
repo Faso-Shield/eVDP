@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("bounty", "0002_initial"),
+        ("bounty", "0003_alter_bounty_justification_alter_bounty_severity_and_more"),
     ]
 
     operations = [
