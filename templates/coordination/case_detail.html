@@ -328,6 +328,19 @@
         {% empty %}<p class="muted">Aucun changement enregistré.</p>{% endfor %}
       </div>
     </div>
+
+    {% if payout_method %}
+    <div class="card">
+      <div class="card-header"><h3>Référence de paiement</h3></div>
+      <div class="card-body small">
+        <p class="mono" style="word-break:break-all">{{ payout_method.full_summary }}</p>
+        <p class="small muted mb-0">
+          Moyen principal du déclarant, en clair — réservé au super-administrateur.
+          Consultation journalisée.
+        </p>
+      </div>
+    </div>
+    {% endif %}
   </aside>
 </div>
 {% endblock %}

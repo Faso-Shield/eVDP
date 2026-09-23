@@ -61,6 +61,10 @@ class AuditAction(models.TextChoices):
     PAYOUT_METHOD_REMOVED = "PAYOUT_METHOD_REMOVED", "Moyen de paiement retire"
     PAYOUT_DOCUMENT_UPLOADED = "PAYOUT_DOCUMENT_UPLOADED", "Piece d'identite televersee"
     PAYOUT_DOCUMENT_DOWNLOADED = "PAYOUT_DOCUMENT_DOWNLOADED", "Piece d'identite telechargee"
+    PAYOUT_REFERENCE_VIEWED = (
+        "PAYOUT_REFERENCE_VIEWED",
+        "Reference de paiement consultee en clair",
+    )
 
 
 class AuditResult(models.TextChoices):

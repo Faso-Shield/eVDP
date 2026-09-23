@@ -117,6 +117,28 @@ def case_detail(request, case_id):
     can_manage = request.user.has_capability(Capability.CHANGE_CASE_STATUS)
     can_draft_advisory = request.user.has_capability(Capability.DRAFT_ADVISORY)
 
+    # Reference de paiement en clair : reservee au super-administrateur (seul
+    # role ayant deja cet acces via l'administration Django - voir
+    # apps.researchers.admin), jamais au coordinateur ni a l'analyste. Chaque
+    # consultation est journalisee au meme titre qu'un telechargement de
+    # justificatif d'identite.
+    payout_method = None
+    if request.user.is_superuser and case.reporter_id:
+        payout_profile = getattr(case.reporter, "payout_profile", None)
+        payout_method = (
+            payout_profile.methods.filter(is_primary=True, is_active=True).first()
+            if payout_profile
+            else None
+        )
+        if payout_method:
+            log_action(
+                AuditAction.PAYOUT_REFERENCE_VIEWED,
+                actor=request.user,
+                obj=payout_method,
+                request=request,
+                case=case.case_id,
+            )
+
     context = {
         "case": case,
         "report": case.report,
@@ -167,6 +189,7 @@ def case_detail(request, case_id):
         "can_draft_advisory": can_draft_advisory,
         "bounty": getattr(case, "bounty", None),
         "advisories": case.advisories.all(),
+        "payout_method": payout_method,
         # Le case original d'un doublon n'est jamais expose au declarant.
         "show_duplicate_origin": case.duplicate_of_id is not None and request.user.is_national,
     }
