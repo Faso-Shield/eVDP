@@ -55,6 +55,23 @@ def next_sequence(model, field, prefix, year=None, width=6):
         except IntegrityError:
             pass
         counter = SequenceCounter.objects.select_for_update().get(key=counter_key)
+        # Le compteur peut etre en retard sur les donnees : base restauree
+        # depuis une sauvegarde, enregistrements anterieurs au compteur, ligne
+        # de compteur supprimee. Sans recalage, il reproposerait un numero
+        # deja pris -- et, la creation echouant, l'annulation de la
+        # transaction annulerait aussi l'increment : blocage definitif. On se
+        # recale donc, sous le meme verrou, sur le plus grand numero existant
+        # (largeur fixe : l'ordre alphabetique est l'ordre numerique).
+        highest = (
+            model.objects.filter(**{f"{field}__startswith": pattern})
+            .order_by(f"-{field}")
+            .values_list(field, flat=True)
+            .first()
+        )
+        if highest:
+            suffix = highest[len(pattern) :]
+            if suffix.isdigit():
+                counter.last_value = max(counter.last_value, int(suffix))
         counter.last_value += 1
         counter.save(update_fields=["last_value"])
         return f"{pattern}{counter.last_value:0{width}d}"

@@ -668,3 +668,44 @@ def test_seed_demo_is_replayable_and_resettable():
     # Base v1 migree : le dossier 3 est deja en complements demandes.
     call_command("seed_demo", "--reset", stdout=StringIO())
     assert Case.objects.count() == 3
+
+
+# ------------------------------------------------ references de dossier
+def test_case_reference_recovers_from_a_lagging_counter(case_alpha, researcher_b, sla_policy):
+    """Base restauree / compteur remis a zero : la reference suivante ne doit
+    jamais reprendre un numero existant (sinon IntegrityError -> erreur 500
+    sur chaque signalement, le compteur restant bloque par le rollback)."""
+    from apps.core.models import SequenceCounter
+
+    from .conftest import build_report, submit
+
+    SequenceCounter.objects.all().delete()  # compteur perdu ou en retard
+    other = submit(
+        build_report(researcher_b, title="Apres restauration"), reporter=researcher_b
+    )
+    assert other.case_id != case_alpha.case_id
+    assert (
+        int(other.case_id.rsplit("-", 1)[1]) == int(case_alpha.case_id.rsplit("-", 1)[1]) + 1
+    )
+
+
+def test_submission_works_after_counter_reset_via_the_form(client, case_alpha):
+    from apps.coordination.models import Case
+    from apps.core.models import SequenceCounter
+
+    from .conftest import evidence
+
+    SequenceCounter.objects.update(last_value=0)
+    response = client.post(
+        "/report/",
+        {
+            "title": "Signalement apres restauration",
+            "affected_organization_name": "Ministere Alpha",
+            "description": "Une description assez longue pour passer la validation.",
+            "accept_policy": "on",
+            "contact_email": "x@exemple.bf",
+            "attachments": evidence(),
+        },
+    )
+    assert response.status_code == 200
+    assert Case.objects.count() == 2
