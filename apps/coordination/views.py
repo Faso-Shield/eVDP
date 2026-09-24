@@ -31,6 +31,7 @@ from .models import Case
 from .services import (
     QUALIFICATION_EDITABLE_STATES,
     claim_case,
+    my_claims,
     perform_action,
     post_message,
     schedule_disclosure,
@@ -42,6 +43,7 @@ from .services import (
 from .visibility import case_view, has_content_access
 from .workflow import (
     ADMISSIBILITY_CHECKLIST,
+    CLAIM_REQUIRED_MESSAGE,
     MAIN_PATH,
     PUBLIC_STATUS_STEPS,
     SECONDARY,
@@ -51,6 +53,7 @@ from .workflow import (
     available_actions,
     bounty_action,
     get_action,
+    must_claim,
     primary_action,
     reporter_can_reply,
     step_number,
@@ -101,6 +104,8 @@ def action_panel(case, action, user):
         owner and action.four_eyes and author_of(case, action) == user.pk
     )
     missing = action.missing(case) if owner else []
+    if owner and not action.reporter_only and must_claim(case, user):
+        missing = [CLAIM_REQUIRED_MESSAGE, *missing]
     return {
         "action": action,
         "owner": owner,
@@ -171,22 +176,35 @@ def _advisory_button(case, user):
 
 def _claim_panel(case, user):
     """Prise en charge : bouton, titulaire, ou formulaire de transfert."""
-    from .workflow import claim_action, claim_holder, step_owners
+    from .workflow import can_claim, claim_holder, claim_pools, has_claim, user_pools
 
-    action = claim_action(case)
-    if action is None:
+    pools = claim_pools(case)
+    if not pools:
         return None
-    holder = claim_holder(case)
-    pool = step_owners(case, action, ignore_claim=True)
-    in_pool = user.pk in {member.pk for member in pool}
+    mine = user_pools(case, user)
+    holders = [claim_holder(case, action) for action, _pool in (mine or pools)]
+    holder = next((h for h in holders if h is not None), None)
     candidates = transfer_candidates(case, user)
+    colleagues = {m.pk for _a, pool in mine for m in pool} - {user.pk}
     return {
         "holder": holder,
-        "can_claim": holder is None and in_pool and not user.is_read_only,
-        "is_mine": holder is not None and holder.pk == user.pk,
+        "can_claim": can_claim(case, user),
+        "is_mine": has_claim(case, user),
         "transfer_form": TransferForm(candidates=candidates) if candidates else None,
-        "colleagues": len(pool) - 1,
+        "colleagues": len(colleagues),
     }
+
+
+@login_required
+def my_claimed_cases(request):
+    """Dossiers pris en charge qui attendent encore mon action.
+
+    Aide-memoire : ceux restes sans modification depuis la prise en charge
+    sont signales en tete, pour qu'aucun dossier pris ne soit oublie.
+    """
+    entries = my_claims(request.user)
+    entries.sort(key=lambda entry: (not entry["idle"], entry["claimed_at"]))
+    return render(request, "coordination/my_claims.html", {"entries": entries})
 
 
 def _public_steps(current_key):
@@ -254,10 +272,12 @@ def case_detail(request, case_id):
         except CVSSError:
             cvss_breakdown = []
 
+    claimed = not must_claim(case, user)
     editable = (
         case.status in QUALIFICATION_EDITABLE_STATES
         and not user.is_read_only
         and view["content"]
+        and claimed
     )
     triage_initial = {
         "severity": case.severity,
@@ -302,7 +322,9 @@ def case_detail(request, case_id):
             CaseMessageForm(user=user, case=case) if view["writable_channels"] else None
         ),
         "upload_form": (
-            AttachmentUploadForm() if view["content"] and not user.is_read_only else None
+            AttachmentUploadForm()
+            if view["content"] and claimed and not user.is_read_only
+            else None
         ),
         "primary_panel": action_panel(case, primary, user),
         "bounty_panel": action_panel(case, bounty_step, user),
@@ -315,12 +337,14 @@ def case_detail(request, case_id):
         "claim": _claim_panel(case, user),
         "disclosure_form": (
             DisclosureScheduleForm(initial={"disclosure_date": case.disclosure_date})
-            if (can_arbitrate or can_coordinate) and not user.is_read_only
+            if (can_arbitrate or can_coordinate) and claimed and not user.is_read_only
             else None
         ),
         "cve_form": (
             CveLinkForm()
-            if user.has_capability(Capability.DRAFT_ADVISORY) and not user.is_read_only
+            if user.has_capability(Capability.DRAFT_ADVISORY)
+            and claimed
+            and not user.is_read_only
             else None
         ),
         "cvss_breakdown": cvss_breakdown,
@@ -376,6 +400,9 @@ def triage(request, case_id):
     case = _get_case(request, case_id)
     if not has_content_access(case, request.user):
         deny(request, "Réservé au responsable de l'étape en cours.", obj=case)
+    if must_claim(case, request.user):
+        messages.error(request, "Prenez d'abord le dossier en charge.")
+        return redirect("coordination:case_detail", case_id=case.case_id)
     if case.status not in QUALIFICATION_EDITABLE_STATES:
         messages.error(request, "La qualification n'est plus modifiable à cette étape.")
         return redirect("coordination:case_detail", case_id=case.case_id)
@@ -497,6 +524,9 @@ def transfer(request, case_id):
 @require_capability(Capability.ARBITRATE_CASE, Capability.COORDINATE_VENDOR)
 def set_disclosure_date(request, case_id):
     case = _get_case(request, case_id)
+    if must_claim(case, request.user):
+        messages.error(request, "Prenez d'abord le dossier en charge.")
+        return redirect("coordination:case_detail", case_id=case.case_id)
     form = DisclosureScheduleForm(request.POST)
     if form.is_valid():
         schedule_disclosure(
@@ -514,6 +544,9 @@ def set_disclosure_date(request, case_id):
 @require_capability(Capability.DRAFT_ADVISORY)
 def link_cve(request, case_id):
     case = _get_case(request, case_id)
+    if must_claim(case, request.user):
+        messages.error(request, "Prenez d'abord le dossier en charge.")
+        return redirect("coordination:case_detail", case_id=case.case_id)
     form = CveLinkForm(request.POST)
     if form.is_valid():
         case.cve = form.cleaned_data["cve_id"]
@@ -538,6 +571,9 @@ def upload_attachment(request, case_id):
     case = _get_case(request, case_id)
     if not has_content_access(case, request.user):
         deny(request, "Réservé au responsable de l'étape en cours.", obj=case)
+    if must_claim(case, request.user):
+        messages.error(request, "Prenez d'abord le dossier en charge.")
+        return redirect("coordination:case_detail", case_id=case.case_id)
     form = AttachmentUploadForm(request.POST, request.FILES)
     if form.is_valid():
         try:

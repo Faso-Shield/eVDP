@@ -7,6 +7,7 @@ app_name = "coordination"
 urlpatterns = [
     path("", views.case_list, name="case_list"),
     path("kanban/", views.kanban, name="kanban"),
+    path("mine/", views.my_claimed_cases, name="my_claims"),
     path("<str:case_id>/", views.case_detail, name="case_detail"),
     path("<str:case_id>/messages/", views.post_case_message, name="post_message"),
     path(

@@ -24,7 +24,6 @@ from apps.coordination.selectors import sla_color
 from apps.coordination.services import (
     escalate_case,
     mark_duplicate,
-    perform_action,
     set_severity,
     transition_case,
 )
@@ -47,7 +46,7 @@ from apps.coordination.workflow import (
 from apps.disclosures.services import create_advisory_from_case
 from apps.vulnerabilities.constants import Severity
 
-from .conftest import PASSWORD, advance, make_user, workflow_actor
+from .conftest import PASSWORD, act, advance, claim, make_user, workflow_actor
 
 pytestmark = pytest.mark.django_db
 
@@ -63,6 +62,7 @@ def opened(case, user):
 
 def qualify(case, analyst, cwe, vector=HIGH_VECTOR):
     """Saisit CVSS et CWE comme l'analyste avant de soumettre (etape 3)."""
+    claim(case, analyst)
     set_severity(case, analyst, cvss_vector=vector)
     case.cwe = cwe
     case.save(update_fields=["cwe", "updated_at"])
@@ -124,7 +124,7 @@ def test_cannot_transition_to_same_state(case_alpha, triager):
 
 def test_unknown_action_is_refused(case_alpha, triager):
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "tout_publier", triager)
+        act(case_alpha, "tout_publier", triager)
 
 
 # --------------------------------------------------------------- cote service
@@ -144,7 +144,7 @@ def test_case_id_is_sequential(case_alpha, case_beta):
 
 def test_action_records_history_and_audit(case_alpha, triager):
     opened(case_alpha, triager)
-    perform_action(case_alpha, "acknowledge", triager, data={"comment": "Recu"})
+    act(case_alpha, "acknowledge", triager, data={"comment": "Recu"})
     case_alpha.refresh_from_db()
 
     assert case_alpha.status == CaseStatus.ACKNOWLEDGED
@@ -159,7 +159,7 @@ def test_action_records_history_and_audit(case_alpha, triager):
 
 def test_denied_action_is_audited_and_changes_nothing(case_alpha, researcher_a):
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "acknowledge", researcher_a)
+        act(case_alpha, "acknowledge", researcher_a)
     case_alpha.refresh_from_db()
     assert case_alpha.status == CaseStatus.SUBMITTED
     assert AuditLog.objects.filter(
@@ -206,8 +206,8 @@ def test_critical_severity_grants_bonus(case_alpha, researcher_a):
 def test_step1_acknowledge_owned_by_triager(case_alpha, triager, analyst):
     opened(case_alpha, triager)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "acknowledge", analyst)
-    perform_action(case_alpha, "acknowledge", triager)
+        act(case_alpha, "acknowledge", analyst)
+    act(case_alpha, "acknowledge", triager)
     assert case_alpha.status == CaseStatus.ACKNOWLEDGED
 
 
@@ -219,8 +219,8 @@ def test_step2_admissibility_owned_by_triager(case_alpha, triager, analyst):
         "attachment_readable": True,
     }
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "declare_admissible", analyst, data=checklist)
-    perform_action(case_alpha, "declare_admissible", triager, data=checklist)
+        act(case_alpha, "declare_admissible", analyst, data=checklist)
+    act(case_alpha, "declare_admissible", triager, data=checklist)
     assert case_alpha.status == CaseStatus.IN_ANALYSIS
     assert case_alpha.admissibility_checklist == checklist
 
@@ -229,8 +229,8 @@ def test_step3_qualification_owned_by_analyst(case_alpha, triager, analyst, cwe)
     advance(case_alpha, CaseStatus.IN_ANALYSIS)
     qualify(case_alpha, analyst, cwe)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "submit_qualification", triager)
-    perform_action(case_alpha, "submit_qualification", analyst)
+        act(case_alpha, "submit_qualification", triager)
+    act(case_alpha, "submit_qualification", analyst)
     assert case_alpha.status == CaseStatus.VALIDATION_PENDING
 
 
@@ -239,18 +239,18 @@ def test_step4_validation_owned_by_coordinator(case_alpha, analyst, dsi_alpha, c
     data = {"comment": "Relu"}
     # La DSI ne voit meme pas le dossier avant l'etape 5.
     with pytest.raises(OutOfScope):
-        perform_action(case_alpha, "validate_qualification", dsi_alpha, data=data)
+        act(case_alpha, "validate_qualification", dsi_alpha, data=data)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "validate_qualification", analyst, data=data)
-    perform_action(case_alpha, "validate_qualification", coordinator, data=data)
+        act(case_alpha, "validate_qualification", analyst, data=data)
+    act(case_alpha, "validate_qualification", coordinator, data=data)
     assert case_alpha.status == CaseStatus.VALIDATED
 
 
 def test_step5_vendor_notification_owned_by_analyst(case_alpha, analyst, coordinator):
     advance(case_alpha, CaseStatus.VALIDATED)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "notify_vendor", coordinator)
-    perform_action(case_alpha, "notify_vendor", analyst)
+        act(case_alpha, "notify_vendor", coordinator)
+    act(case_alpha, "notify_vendor", analyst)
     assert case_alpha.status == CaseStatus.VENDOR_NOTIFIED
     assert case_alpha.vendor_notified_at is not None
 
@@ -258,8 +258,8 @@ def test_step5_vendor_notification_owned_by_analyst(case_alpha, analyst, coordin
 def test_step6_remediation_plan_owned_by_dsi(case_alpha, analyst, dsi_alpha):
     advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "submit_remediation_plan", analyst, data=plan_data())
-    perform_action(case_alpha, "submit_remediation_plan", dsi_alpha, data=plan_data())
+        act(case_alpha, "submit_remediation_plan", analyst, data=plan_data())
+    act(case_alpha, "submit_remediation_plan", dsi_alpha, data=plan_data())
     assert case_alpha.status == CaseStatus.REMEDIATION_IN_PROGRESS
     assert case_alpha.remediation_target_date == plan_data()["remediation_target_date"]
 
@@ -268,8 +268,8 @@ def test_step7_fix_owned_by_dsi(case_alpha, analyst, dsi_alpha):
     advance(case_alpha, CaseStatus.REMEDIATION_IN_PROGRESS)
     data = {"fix_description": "Requetes parametrees.", "fix_version": "2.0.1"}
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "declare_fix", analyst, data=data)
-    perform_action(case_alpha, "declare_fix", dsi_alpha, data=data)
+        act(case_alpha, "declare_fix", analyst, data=data)
+    act(case_alpha, "declare_fix", dsi_alpha, data=data)
     assert case_alpha.status == CaseStatus.FIX_AVAILABLE
     assert case_alpha.remediated_at is not None
 
@@ -278,8 +278,8 @@ def test_step8_fix_confirmation_owned_by_analyst(case_alpha, analyst, dsi_alpha)
     advance(case_alpha, CaseStatus.FIX_AVAILABLE)
     data = {"verification_report": "Non reproductible."}
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "confirm_fix", dsi_alpha, data=data)
-    perform_action(case_alpha, "confirm_fix", analyst, data=data)
+        act(case_alpha, "confirm_fix", dsi_alpha, data=data)
+    act(case_alpha, "confirm_fix", analyst, data=data)
     assert case_alpha.status == CaseStatus.FIX_VERIFIED
 
 
@@ -287,8 +287,8 @@ def test_step9_advisory_owned_by_analyst(case_alpha, analyst, coordinator):
     advance(case_alpha, CaseStatus.FIX_VERIFIED)
     draft_advisory(case_alpha, analyst)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "submit_advisory", coordinator)
-    perform_action(case_alpha, "submit_advisory", analyst)
+        act(case_alpha, "submit_advisory", coordinator)
+    act(case_alpha, "submit_advisory", analyst)
     assert case_alpha.status == CaseStatus.ADVISORY_REVIEW
     assert case_alpha.advisories.get().status == "IN_REVIEW"
 
@@ -297,8 +297,8 @@ def test_step10_publication_owned_by_coordinator(case_alpha, analyst, coordinato
     advance(case_alpha, CaseStatus.ADVISORY_REVIEW)
     data = {"comment": "Relu", "review_done": True}
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "publish_and_close", analyst, data=data)
-    perform_action(case_alpha, "publish_and_close", coordinator, data=data)
+        act(case_alpha, "publish_and_close", analyst, data=data)
+    act(case_alpha, "publish_and_close", coordinator, data=data)
     assert case_alpha.status == CaseStatus.CLOSED
     assert case_alpha.is_published
     assert case_alpha.closed_at is not None
@@ -314,18 +314,18 @@ def test_super_admin_has_no_button_and_does_not_see_case(case_alpha):
         assert not admin.has_capability(get_action(action).capability)
     opened(case_alpha, admin)
     with pytest.raises(OutOfScope):
-        perform_action(case_alpha, "acknowledge", admin)
+        act(case_alpha, "acknowledge", admin)
 
 
 # --------------------------------------------------------- pre-requis bloquants
 def test_acknowledge_requires_case_opened(case_alpha, triager):
-    missing = missing_of(lambda: perform_action(case_alpha, "acknowledge", triager))
+    missing = missing_of(lambda: act(case_alpha, "acknowledge", triager))
     assert missing == ["Dossier jamais ouvert"]
 
 
 def test_admissibility_requires_checklist(case_alpha, triager):
     advance(case_alpha, CaseStatus.ACKNOWLEDGED)
-    missing = missing_of(lambda: perform_action(case_alpha, "declare_admissible", triager))
+    missing = missing_of(lambda: act(case_alpha, "declare_admissible", triager))
     assert len([item for item in missing if item.startswith("Checklist")]) == 3
 
 
@@ -333,15 +333,13 @@ def test_admissibility_requires_readable_attachment(case_alpha, triager):
     advance(case_alpha, CaseStatus.ACKNOWLEDGED)
     case_alpha.attachments.update(scan_status="INFECTED")
     data = {"in_scope": True, "organization_identified": True, "attachment_readable": True}
-    missing = missing_of(
-        lambda: perform_action(case_alpha, "declare_admissible", triager, data=data)
-    )
+    missing = missing_of(lambda: act(case_alpha, "declare_admissible", triager, data=data))
     assert "Aucune pièce jointe lisible" in missing
 
 
 def test_qualification_requires_cvss_and_cwe(case_alpha, analyst):
     advance(case_alpha, CaseStatus.IN_ANALYSIS)
-    missing = missing_of(lambda: perform_action(case_alpha, "submit_qualification", analyst))
+    missing = missing_of(lambda: act(case_alpha, "submit_qualification", analyst))
     assert "Vecteur CVSS manquant" in missing
     assert "CWE manquant" in missing
 
@@ -350,7 +348,7 @@ def test_remediation_plan_requires_target_date(case_alpha, dsi_alpha):
     advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     data = {"remediation_plan": "Corriger."}
     missing = missing_of(
-        lambda: perform_action(case_alpha, "submit_remediation_plan", dsi_alpha, data=data)
+        lambda: act(case_alpha, "submit_remediation_plan", dsi_alpha, data=data)
     )
     assert missing == ["Date cible manquante"]
 
@@ -359,9 +357,7 @@ def test_remediation_target_date_capped_by_severity(case_alpha, dsi_alpha):
     advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     assert case_alpha.severity == Severity.CRITICAL
     missing = missing_of(
-        lambda: perform_action(
-            case_alpha, "submit_remediation_plan", dsi_alpha, data=plan_data(days=45)
-        )
+        lambda: act(case_alpha, "submit_remediation_plan", dsi_alpha, data=plan_data(days=45))
     )
     assert any("délai de la sévérité" in item for item in missing)
 
@@ -381,24 +377,22 @@ def test_remediation_limit_follows_severity(case_alpha):
 def test_fix_requires_version_or_date(case_alpha, dsi_alpha):
     advance(case_alpha, CaseStatus.REMEDIATION_IN_PROGRESS)
     data = {"fix_description": "Corrige."}
-    missing = missing_of(
-        lambda: perform_action(case_alpha, "declare_fix", dsi_alpha, data=data)
-    )
+    missing = missing_of(lambda: act(case_alpha, "declare_fix", dsi_alpha, data=data))
     assert missing == ["Version ou date de déploiement du correctif manquante"]
     data["fix_deployed_on"] = timezone.localdate()
-    perform_action(case_alpha, "declare_fix", dsi_alpha, data=data)
+    act(case_alpha, "declare_fix", dsi_alpha, data=data)
     assert case_alpha.status == CaseStatus.FIX_AVAILABLE
 
 
 def test_fix_confirmation_requires_report(case_alpha, analyst):
     advance(case_alpha, CaseStatus.FIX_AVAILABLE)
-    missing = missing_of(lambda: perform_action(case_alpha, "confirm_fix", analyst))
+    missing = missing_of(lambda: act(case_alpha, "confirm_fix", analyst))
     assert missing == ["Compte rendu de contre-vérification manquant"]
 
 
 def test_advisory_submission_requires_a_draft(case_alpha, analyst):
     advance(case_alpha, CaseStatus.FIX_VERIFIED)
-    missing = missing_of(lambda: perform_action(case_alpha, "submit_advisory", analyst))
+    missing = missing_of(lambda: act(case_alpha, "submit_advisory", analyst))
     assert missing == ["Aucun brouillon d'advisory"]
 
 
@@ -413,16 +407,14 @@ def test_advisory_submission_requires_a_draft(case_alpha, analyst):
 def test_advisory_must_be_sanitized(case_alpha, analyst, description, expected):
     advance(case_alpha, CaseStatus.FIX_VERIFIED)
     draft_advisory(case_alpha, analyst, description=description)
-    missing = missing_of(lambda: perform_action(case_alpha, "submit_advisory", analyst))
+    missing = missing_of(lambda: act(case_alpha, "submit_advisory", analyst))
     assert any(expected in item for item in missing), missing
 
 
 def test_publication_requires_review_confirmation(case_alpha, coordinator):
     advance(case_alpha, CaseStatus.ADVISORY_REVIEW)
     missing = missing_of(
-        lambda: perform_action(
-            case_alpha, "publish_and_close", coordinator, data={"comment": "Relu"}
-        )
+        lambda: act(case_alpha, "publish_and_close", coordinator, data={"comment": "Relu"})
     )
     assert missing == ["Relecture non confirmée"]
 
@@ -431,9 +423,7 @@ def test_publication_requires_credit_matching_researcher_choice(case_alpha, coor
     advance(case_alpha, CaseStatus.ADVISORY_REVIEW)
     case_alpha.advisories.update(credit="Quelqu'un d'autre")
     data = {"comment": "Relu", "review_done": True}
-    missing = missing_of(
-        lambda: perform_action(case_alpha, "publish_and_close", coordinator, data=data)
-    )
+    missing = missing_of(lambda: act(case_alpha, "publish_and_close", coordinator, data=data))
     assert "Crédit non conforme au choix du chercheur" in missing
 
 
@@ -441,9 +431,7 @@ def test_publication_requires_finished_bounty_branch(bounty_case, coordinator):
     advance(bounty_case, CaseStatus.ADVISORY_REVIEW)
     assert bounty_case.bounty_stage == BountyStage.ELIGIBLE
     data = {"comment": "Relu", "review_done": True}
-    missing = missing_of(
-        lambda: perform_action(bounty_case, "publish_and_close", coordinator, data=data)
-    )
+    missing = missing_of(lambda: act(bounty_case, "publish_and_close", coordinator, data=data))
     assert "Branche prime non terminée" in missing
 
 
@@ -455,13 +443,13 @@ def test_senior_analyst_cannot_validate_own_qualification(case_alpha, cwe):
 
     advance(case_alpha, CaseStatus.IN_ANALYSIS)
     qualify(case_alpha, senior, cwe)
-    perform_action(case_alpha, "submit_qualification", senior)
+    act(case_alpha, "submit_qualification", senior)
 
     # Auteur de la qualification, il n'est pas responsable de l'etape 4 : le
     # dossier sort meme de son perimetre (refus « introuvable »).
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "validate_qualification", senior, data={"comment": "Ok"})
-    perform_action(case_alpha, "validate_qualification", other, data={"comment": "Ok"})
+        act(case_alpha, "validate_qualification", senior, data={"comment": "Ok"})
+    act(case_alpha, "validate_qualification", other, data={"comment": "Ok"})
     assert case_alpha.status == CaseStatus.VALIDATED
 
 
@@ -482,12 +470,12 @@ def test_advisory_author_cannot_publish(case_alpha, monkeypatch):
     )
     data = {"comment": "Relu", "review_done": True}
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "publish_and_close", author, data=data)
+        act(case_alpha, "publish_and_close", author, data=data)
 
 
 def test_rejection_proposer_cannot_confirm(case_alpha, triager, monkeypatch):
     advance(case_alpha, CaseStatus.ACKNOWLEDGED)
-    perform_action(case_alpha, "propose_rejection", triager, data={"comment": "Hors sujet"})
+    act(case_alpha, "propose_rejection", triager, data={"comment": "Hors sujet"})
     assert author_of(case_alpha, get_action("confirm_rejection")) == triager.pk
     monkeypatch.setitem(
         ROLE_CAPABILITIES,
@@ -495,18 +483,18 @@ def test_rejection_proposer_cannot_confirm(case_alpha, triager, monkeypatch):
         ROLE_CAPABILITIES[Role.TRIAGER] | {Capability.ARBITRATE_CASE},
     )
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "confirm_rejection", triager, data={"comment": "Ok"})
+        act(case_alpha, "confirm_rejection", triager, data={"comment": "Ok"})
 
 
 def test_bounty_proposer_cannot_approve(bounty_case, analyst, monkeypatch):
-    perform_action(bounty_case, "propose_bounty", analyst)
+    act(bounty_case, "propose_bounty", analyst)
     monkeypatch.setitem(
         ROLE_CAPABILITIES,
         Role.CSIRT_ANALYST,
         ROLE_CAPABILITIES[Role.CSIRT_ANALYST] | {Capability.APPROVE_BOUNTY},
     )
     with pytest.raises(TransitionNotAllowed, match="quatre yeux"):
-        perform_action(bounty_case, "approve_bounty", analyst, data={"comment": "Ok"})
+        act(bounty_case, "approve_bounty", analyst, data={"comment": "Ok"})
     bounty_case.refresh_from_db()
     assert bounty_case.bounty_stage == BountyStage.PROPOSED
 
@@ -524,9 +512,7 @@ def test_bounty_proposer_cannot_approve(bounty_case, analyst, monkeypatch):
 def test_comment_is_mandatory(case_alpha, status, action, role):
     advance(case_alpha, status)
     data = {"review_done": True}
-    missing = missing_of(
-        lambda: perform_action(case_alpha, action, workflow_actor(role), data=data)
-    )
+    missing = missing_of(lambda: act(case_alpha, action, workflow_actor(role), data=data))
     assert missing == ["Commentaire manquant"]
 
 
@@ -539,7 +525,7 @@ def test_comment_is_mandatory_for_deadline_disclosure(case_alpha):
     case_alpha.refresh_from_db()
     escalate_case(case_alpha, None, "SLA depasse")
     missing = missing_of(
-        lambda: perform_action(
+        lambda: act(
             case_alpha, "decide_deadline_disclosure", workflow_actor("coordinator"), data={}
         )
     )
@@ -547,8 +533,8 @@ def test_comment_is_mandatory_for_deadline_disclosure(case_alpha):
 
 
 def test_comment_is_mandatory_for_bounty_approval(bounty_case, analyst, coordinator):
-    perform_action(bounty_case, "propose_bounty", analyst)
-    missing = missing_of(lambda: perform_action(bounty_case, "approve_bounty", coordinator))
+    act(bounty_case, "propose_bounty", analyst)
+    missing = missing_of(lambda: act(bounty_case, "approve_bounty", coordinator))
     assert missing == ["Commentaire manquant"]
 
 
@@ -557,9 +543,7 @@ def test_information_request_suspends_and_resumes_sla(case_alpha, triager, resea
     advance(case_alpha, CaseStatus.ACKNOWLEDGED)
     triage_due = case_alpha.sla_events.get(kind=SLAKind.TRIAGE).due_at
 
-    perform_action(
-        case_alpha, "request_information", triager, data={"comment": "Quel navigateur ?"}
-    )
+    act(case_alpha, "request_information", triager, data={"comment": "Quel navigateur ?"})
     assert case_alpha.status == CaseStatus.NEEDS_INFORMATION
     assert case_alpha.return_status == CaseStatus.ACKNOWLEDGED
     assert case_alpha.sla_paused_at is not None
@@ -572,7 +556,7 @@ def test_information_request_suspends_and_resumes_sla(case_alpha, triager, resea
         sla_paused_at=timezone.now() - timedelta(days=2)
     )
     case_alpha.refresh_from_db()
-    perform_action(case_alpha, "send_information", researcher_a, data={"comment": "Firefox"})
+    act(case_alpha, "send_information", researcher_a, data={"comment": "Firefox"})
     case_alpha.refresh_from_db()
 
     assert case_alpha.status == CaseStatus.ACKNOWLEDGED
@@ -584,18 +568,18 @@ def test_information_request_suspends_and_resumes_sla(case_alpha, triager, resea
 
 def test_only_reporter_sends_information(case_alpha, triager, researcher_b, analyst):
     advance(case_alpha, CaseStatus.ACKNOWLEDGED)
-    perform_action(case_alpha, "request_information", triager, data={"comment": "Precisez"})
+    act(case_alpha, "request_information", triager, data={"comment": "Precisez"})
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "send_information", analyst, data={"comment": "x"})
+        act(case_alpha, "send_information", analyst, data={"comment": "x"})
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "send_information", researcher_b, data={"comment": "x"})
+        act(case_alpha, "send_information", researcher_b, data={"comment": "x"})
 
 
 def test_no_answer_after_30_days_proposes_rejection(case_alpha, triager, coordinator):
     from apps.coordination.tasks import sweep_needs_information
 
     advance(case_alpha, CaseStatus.ACKNOWLEDGED)
-    perform_action(case_alpha, "request_information", triager, data={"comment": "Precisez"})
+    act(case_alpha, "request_information", triager, data={"comment": "Precisez"})
     type(case_alpha).objects.filter(pk=case_alpha.pk).update(
         sla_paused_at=timezone.now() - timedelta(days=31)
     )
@@ -605,7 +589,7 @@ def test_no_answer_after_30_days_proposes_rejection(case_alpha, triager, coordin
     assert case_alpha.status == CaseStatus.REJECTION_PENDING
     assert case_alpha.return_status == CaseStatus.ACKNOWLEDGED
     # Seulement propose : le Coordinateur peut renvoyer a l'origine.
-    perform_action(case_alpha, "return_rejection", coordinator, data={"comment": "Relancer"})
+    act(case_alpha, "return_rejection", coordinator, data={"comment": "Relancer"})
     assert case_alpha.status == CaseStatus.ACKNOWLEDGED
 
 
@@ -613,17 +597,15 @@ def test_recent_information_request_is_not_swept(case_alpha, triager):
     from apps.coordination.tasks import sweep_needs_information
 
     advance(case_alpha, CaseStatus.ACKNOWLEDGED)
-    perform_action(case_alpha, "request_information", triager, data={"comment": "Precisez"})
+    act(case_alpha, "request_information", triager, data={"comment": "Precisez"})
     assert sweep_needs_information() == 0
 
 
 def test_rejection_is_confirmed_by_coordinator(case_alpha, analyst, coordinator):
     advance(case_alpha, CaseStatus.IN_ANALYSIS)
-    perform_action(
-        case_alpha, "propose_rejection", analyst, data={"comment": "Non reproductible"}
-    )
+    act(case_alpha, "propose_rejection", analyst, data={"comment": "Non reproductible"})
     assert case_alpha.status == CaseStatus.REJECTION_PENDING
-    perform_action(case_alpha, "confirm_rejection", coordinator, data={"comment": "Confirme"})
+    act(case_alpha, "confirm_rejection", coordinator, data={"comment": "Confirme"})
     assert case_alpha.status == CaseStatus.REJECTED
     assert case_alpha.closed_at is not None
     assert not case_alpha.sla_events.filter(state=SLAState.PENDING).exists()
@@ -632,31 +614,32 @@ def test_rejection_is_confirmed_by_coordinator(case_alpha, analyst, coordinator)
 
 def test_rejection_can_be_returned_to_origin(case_alpha, analyst, coordinator):
     advance(case_alpha, CaseStatus.IN_ANALYSIS)
-    perform_action(case_alpha, "propose_rejection", analyst, data={"comment": "Doute"})
-    perform_action(case_alpha, "return_rejection", coordinator, data={"comment": "A analyser"})
+    act(case_alpha, "propose_rejection", analyst, data={"comment": "Doute"})
+    act(case_alpha, "return_rejection", coordinator, data={"comment": "A analyser"})
     assert case_alpha.status == CaseStatus.IN_ANALYSIS
 
 
 def test_rejection_not_available_after_analysis(case_alpha, analyst):
     advance(case_alpha, CaseStatus.VALIDATION_PENDING)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "propose_rejection", analyst, data={"comment": "Trop tard"})
+        act(case_alpha, "propose_rejection", analyst, data={"comment": "Trop tard"})
 
 
 def test_dsi_cannot_reject(case_alpha, dsi_alpha):
     advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "propose_rejection", dsi_alpha, data={"comment": "Non"})
+        act(case_alpha, "propose_rejection", dsi_alpha, data={"comment": "Non"})
 
 
 def test_duplicate_is_confirmed_and_linked(case_alpha, case_beta, triager, coordinator):
     advance(case_beta, CaseStatus.ACKNOWLEDGED)
+    claim(case_beta, triager)
     mark_duplicate(case_beta, case_alpha, triager, comment="Meme faille")
     case_beta.refresh_from_db()
     assert case_beta.status == CaseStatus.REJECTION_PENDING
     assert case_beta.duplicate_of_id == case_alpha.id
 
-    perform_action(case_beta, "confirm_rejection", coordinator, data={"comment": "Doublon"})
+    act(case_beta, "confirm_rejection", coordinator, data={"comment": "Doublon"})
     assert case_beta.status == CaseStatus.DUPLICATE
     assert AuditLog.objects.filter(action=AuditAction.REPORT_DUPLICATED).exists()
 
@@ -665,9 +648,10 @@ def test_duplicate_does_not_expose_original_to_reporter(
     client_for, case_alpha, case_beta, triager, coordinator, researcher_b
 ):
     advance(case_beta, CaseStatus.ACKNOWLEDGED)
+    claim(case_beta, triager)
     mark_duplicate(case_beta, case_alpha, triager, comment="Meme faille")
     case_beta.refresh_from_db()
-    perform_action(case_beta, "confirm_rejection", coordinator, data={"comment": "Doublon"})
+    act(case_beta, "confirm_rejection", coordinator, data={"comment": "Doublon"})
 
     response = client_for(researcher_b).get(f"/cases/{case_beta.case_id}/")
     content = response.content.decode()
@@ -692,21 +676,19 @@ def test_researcher_cannot_mark_duplicate(case_alpha, case_beta, researcher_a):
 
 def test_return_to_author_from_validation(case_alpha, coordinator):
     advance(case_alpha, CaseStatus.VALIDATION_PENDING)
-    perform_action(case_alpha, "return_to_author", coordinator, data={"comment": "CWE faux"})
+    act(case_alpha, "return_to_author", coordinator, data={"comment": "CWE faux"})
     assert case_alpha.status == CaseStatus.IN_ANALYSIS
 
 
 def test_return_to_author_from_advisory_review(case_alpha, coordinator):
     advance(case_alpha, CaseStatus.ADVISORY_REVIEW)
-    perform_action(case_alpha, "return_to_author", coordinator, data={"comment": "A revoir"})
+    act(case_alpha, "return_to_author", coordinator, data={"comment": "A revoir"})
     assert case_alpha.status == CaseStatus.FIX_VERIFIED
 
 
 def test_insufficient_fix_returns_to_remediation(case_alpha, analyst):
     advance(case_alpha, CaseStatus.FIX_AVAILABLE)
-    perform_action(
-        case_alpha, "insufficient_fix", analyst, data={"comment": "Encore exploitable"}
-    )
+    act(case_alpha, "insufficient_fix", analyst, data={"comment": "Encore exploitable"})
     assert case_alpha.status == CaseStatus.REMEDIATION_IN_PROGRESS
     assert case_alpha.messages.filter(
         confidentiality=Confidentiality.ORGANIZATION, is_system=True
@@ -725,7 +707,7 @@ def test_escalation_hands_the_case_to_the_coordinator(case_alpha, coordinator):
     advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     assert not case_alpha.is_visible_to(coordinator)
     with pytest.raises(OutOfScope):
-        perform_action(case_alpha, "escalate", coordinator, data={"comment": "Silence DSI"})
+        act(case_alpha, "escalate", coordinator, data={"comment": "Silence DSI"})
 
     escalate_case(case_alpha, None, "SLA depasse")
     case_alpha.refresh_from_db()
@@ -734,7 +716,7 @@ def test_escalation_hands_the_case_to_the_coordinator(case_alpha, coordinator):
     assert case_alpha.is_visible_to(coordinator)
     assert coordinator.pk in current_owner_ids(case_alpha)
     missing = missing_of(
-        lambda: perform_action(case_alpha, "escalate", coordinator, data={"comment": "Encore"})
+        lambda: act(case_alpha, "escalate", coordinator, data={"comment": "Encore"})
     )
     assert missing == ["Dossier déjà escaladé"]
 
@@ -755,7 +737,7 @@ def test_sla_escalation_makes_the_case_visible_to_the_coordinator(case_alpha, co
 def test_escalation_not_available_before_vendor_notification(case_alpha, coordinator):
     advance(case_alpha, CaseStatus.VALIDATED)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "escalate", coordinator, data={"comment": "Trop tot"})
+        act(case_alpha, "escalate", coordinator, data={"comment": "Trop tot"})
 
 
 def test_breached_vendor_sla_escalates_automatically(case_alpha):
@@ -777,9 +759,9 @@ def test_deadline_disclosure_after_90_days(case_alpha, analyst, coordinator):
     # Sans decision du Coordinateur, pas d'advisory avant le correctif : le
     # dossier n'est d'ailleurs pas dans le perimetre de l'analyste (etape 7).
     with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "submit_advisory", analyst)
+        act(case_alpha, "submit_advisory", analyst)
     with pytest.raises(OutOfScope):
-        perform_action(
+        act(
             case_alpha, "decide_deadline_disclosure", coordinator, data={"comment": "Trop tot"}
         )
 
@@ -787,7 +769,7 @@ def test_deadline_disclosure_after_90_days(case_alpha, analyst, coordinator):
     escalate_case(case_alpha, None, "SLA remediation depasse")
     case_alpha.refresh_from_db()
     missing = missing_of(
-        lambda: perform_action(
+        lambda: act(
             case_alpha, "decide_deadline_disclosure", coordinator, data={"comment": "Echeance"}
         )
     )
@@ -797,16 +779,14 @@ def test_deadline_disclosure_after_90_days(case_alpha, analyst, coordinator):
         vendor_notified_at=timezone.now() - timedelta(days=91)
     )
     case_alpha.refresh_from_db()
-    perform_action(
-        case_alpha, "decide_deadline_disclosure", coordinator, data={"comment": "Echeance"}
-    )
+    act(case_alpha, "decide_deadline_disclosure", coordinator, data={"comment": "Echeance"})
     assert case_alpha.deadline_disclosure_at is not None
     # La decision rend l'etape a l'analyste (advisory) et la retire au
     # Coordinateur.
     assert analyst.pk in current_owner_ids(case_alpha)
     assert coordinator.pk not in current_owner_ids(case_alpha)
 
-    perform_action(case_alpha, "submit_advisory", analyst)
+    act(case_alpha, "submit_advisory", analyst)
     assert case_alpha.status == CaseStatus.ADVISORY_REVIEW
 
 
@@ -826,19 +806,17 @@ def test_bounty_case_is_eligible_at_validation(submitted_bounty_case):
 
 def test_out_of_tier_proposal_requires_justification(bounty_case, analyst):
     data = {"amount": Decimal("10")}
-    missing = missing_of(
-        lambda: perform_action(bounty_case, "propose_bounty", analyst, data=data)
-    )
+    missing = missing_of(lambda: act(bounty_case, "propose_bounty", analyst, data=data))
     assert missing == ["Montant hors palier : justification écrite obligatoire"]
 
     data["justification"] = "Impact limite, montant symbolique."
-    perform_action(bounty_case, "propose_bounty", analyst, data=data)
+    act(bounty_case, "propose_bounty", analyst, data=data)
     assert bounty_case.bounty_stage == BountyStage.PROPOSED
 
 
 def test_bounty_approval_credits_wallet(bounty_case, analyst, coordinator, bounty_researcher):
-    perform_action(bounty_case, "propose_bounty", analyst, data={"amount": Decimal("900000")})
-    perform_action(bounty_case, "approve_bounty", coordinator, data={"comment": "Conforme"})
+    act(bounty_case, "propose_bounty", analyst, data={"amount": Decimal("900000")})
+    act(bounty_case, "approve_bounty", coordinator, data={"comment": "Conforme"})
     bounty_case.refresh_from_db()
 
     assert bounty_case.bounty_stage == BountyStage.CREDITED
@@ -847,15 +825,15 @@ def test_bounty_approval_credits_wallet(bounty_case, analyst, coordinator, bount
 
 
 def test_bounty_can_be_returned_to_proposer(bounty_case, analyst, coordinator):
-    perform_action(bounty_case, "propose_bounty", analyst)
-    perform_action(bounty_case, "return_bounty", coordinator, data={"comment": "Revoir"})
+    act(bounty_case, "propose_bounty", analyst)
+    act(bounty_case, "return_bounty", coordinator, data={"comment": "Revoir"})
     assert bounty_case.bounty_stage == BountyStage.ELIGIBLE
-    perform_action(bounty_case, "propose_bounty", analyst)
+    act(bounty_case, "propose_bounty", analyst)
     assert bounty_case.bounty_stage == BountyStage.PROPOSED
 
 
 def test_bounty_stage_is_independent_of_case_status(bounty_case, analyst):
-    perform_action(bounty_case, "propose_bounty", analyst)
+    act(bounty_case, "propose_bounty", analyst)
     assert bounty_case.status == CaseStatus.VALIDATED
 
     advance(bounty_case, CaseStatus.REMEDIATION_IN_PROGRESS)
@@ -865,7 +843,7 @@ def test_bounty_stage_is_independent_of_case_status(bounty_case, analyst):
 def test_bounty_cannot_be_proposed_before_validation(submitted_bounty_case, analyst):
     advance(submitted_bounty_case, CaseStatus.IN_ANALYSIS)
     with pytest.raises(TransitionNotAllowed):
-        perform_action(submitted_bounty_case, "propose_bounty", analyst)
+        act(submitted_bounty_case, "propose_bounty", analyst)
 
 
 # ------------------------------------------------------------------------ SLA
@@ -944,6 +922,8 @@ def test_sla_color_green_orange_red(case_alpha):
 
 # ---------------------------------------------------------------- severite
 def test_set_severity_from_cvss_vector(case_alpha, analyst):
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)
+    claim(case_alpha, analyst)
     set_severity(
         case_alpha,
         analyst,
@@ -957,6 +937,8 @@ def test_set_severity_from_cvss_vector(case_alpha, analyst):
 def test_invalid_cvss_vector_is_rejected(case_alpha, analyst):
     from django.core.exceptions import ValidationError
 
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)
+    claim(case_alpha, analyst)
     with pytest.raises(ValidationError):
         set_severity(case_alpha, analyst, cvss_vector="CVSS:3.1/AV:X/AC:L")
 
@@ -985,6 +967,7 @@ def _action_url(case, key):
 def test_web_action_applies_button(client_for, case_alpha, triager):
     client = client_for(triager)
     client.get(f"/cases/{case_alpha.case_id}/")  # ouverture du dossier
+    client.post(reverse("coordination:claim", args=[case_alpha.case_id]))
     response = client.post(_action_url(case_alpha, "acknowledge"), {"comment": "Recu"})
     assert response.status_code == 302
     case_alpha.refresh_from_db()
@@ -1081,7 +1064,7 @@ def test_coordinator_sees_a_pending_rejection(coordinator, triager, case_alpha):
     from apps.coordination.models import Case
 
     assert case_alpha not in Case.objects.visible_to(coordinator)
-    perform_action(case_alpha, "propose_rejection", triager, data={"comment": "Hors sujet"})
+    act(case_alpha, "propose_rejection", triager, data={"comment": "Hors sujet"})
     assert case_alpha.status == CaseStatus.REJECTION_PENDING
     assert case_alpha in Case.objects.visible_to(coordinator)
 
@@ -1092,6 +1075,6 @@ def test_coordinator_sees_a_proposed_bounty(bounty_case, analyst, coordinator):
 
     advance(bounty_case, CaseStatus.VENDOR_NOTIFIED)
     assert bounty_case not in Case.objects.visible_to(coordinator)
-    perform_action(bounty_case, "propose_bounty", analyst)
+    act(bounty_case, "propose_bounty", analyst)
     assert bounty_case.bounty_stage == BountyStage.PROPOSED
     assert bounty_case in Case.objects.visible_to(coordinator)

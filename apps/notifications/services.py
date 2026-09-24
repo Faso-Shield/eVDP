@@ -79,6 +79,11 @@ DEFAULT_TEMPLATES = {
         "Le dossier {case_id} a été escaladé : l'organisation n'a pas tenu "
         "l'échéance de remédiation. Une décision de coordination est attendue.\n\n{link}",
     ),
+    NotificationKind.CLAIM_REMINDER: (
+        "[eVDP] Rappel : dossier {case_id} pris en charge",
+        "Vous avez pris en charge le dossier {case_id} ({status}) sans y avoir encore "
+        "agi. Il attend votre action.\n\n{link}",
+    ),
     NotificationKind.ACTION_REQUIRED: (
         "[eVDP] Action attendue sur le dossier {case_id}",
         "Le dossier {case_id} attend une action de votre part.\n\n{link}",

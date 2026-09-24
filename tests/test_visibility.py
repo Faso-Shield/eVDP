@@ -26,7 +26,7 @@ from apps.coordination.visibility import (
 from apps.coordination.workflow import CaseStatus
 from apps.researchers.models import IdentityMode
 
-from .conftest import PASSWORD, advance, make_user
+from .conftest import PASSWORD, advance, claim, make_user
 
 pytestmark = pytest.mark.django_db
 
@@ -184,11 +184,15 @@ def test_channel_matrix(
         assert readable_channels(case_alpha, other) == set()
         assert writable_channels(case_alpha, other) == []
     assert set(writable_channels(case_alpha, researcher_a)) == {RES}
+    # Ecrire exige en plus la prise en charge du dossier.
+    assert writable_channels(case_alpha, dsi_alpha) == []
+    claim(case_alpha, dsi_alpha)
     assert set(writable_channels(case_alpha, dsi_alpha)) == {ORG}
 
     # Etape 8 : l'analyste est responsable (confirmer le correctif).
     advance(case_alpha, CaseStatus.FIX_AVAILABLE)
     assert readable_channels(case_alpha, analyst) == {RES, ORG, INT}
+    claim(case_alpha, analyst)
     assert set(writable_channels(case_alpha, analyst)) == {RES, ORG, INT}
     for other in (triager, coordinator, auditor, dsi_alpha):
         assert readable_channels(case_alpha, other) == set()
@@ -311,6 +315,7 @@ def test_reporter_sees_simplified_status(researcher_a, analyst, case_alpha):
 def test_reporter_never_sees_pending_rejection(researcher_a, triager, case_alpha):
     from apps.coordination.services import perform_action
 
+    claim(case_alpha, triager)
     perform_action(
         case_alpha, "propose_rejection", triager, data={"comment": "Hors perimetre"}
     )

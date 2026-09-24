@@ -231,7 +231,8 @@
         {% if claim.can_claim %}
           <form method="post" action="{% url 'coordination:claim' case.case_id %}" class="mt-1">
             {% csrf_token %}
-            <button class="btn btn-block btn-outline" type="submit">Prendre en charge</button>
+            <p class="small mb-1"><strong>Prenez le dossier en charge pour pouvoir agir.</strong></p>
+            <button class="btn btn-block btn-accent" type="submit">Prendre en charge</button>
             {% if claim.colleagues %}<p class="small muted mt-1">Le dossier sortira de la file de vos {{ claim.colleagues }} collègue(s).</p>{% endif %}
           </form>
         {% elif claim.is_mine %}

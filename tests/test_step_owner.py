@@ -27,7 +27,7 @@ from apps.coordination.workflow import (
 )
 from apps.notifications.models import Notification, NotificationKind
 
-from .conftest import advance, build_report, make_user, submit, workflow_actor
+from .conftest import act, advance, build_report, claim, make_user, submit, workflow_actor
 
 pytestmark = pytest.mark.django_db
 
@@ -186,16 +186,42 @@ def second_owners(organization):
 
 @pytest.mark.parametrize("target", MAIN_PATH[1:-1])
 def test_each_step_notifies_and_emails_its_owner(case_alpha, second_owners, target):
-    """A chaque etape franchie, le responsable de la suivante est avise."""
-    advance(case_alpha, MAIN_PATH[MAIN_PATH.index(target) - 1])
+    """A chaque etape franchie, le responsable de la suivante est avise.
+
+    L'acteur prend le dossier en charge et le garde : si l'etape suivante
+    revient a son propre role, il en reste le seul responsable et n'a pas a
+    etre avise de sa propre action ; sinon ce sont les responsables de
+    l'autre role qui le sont.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from .conftest import _WORKFLOW_STEPS, _prepare_step
+
+    previous = MAIN_PATH[MAIN_PATH.index(target) - 1]
+    advance(case_alpha, previous)
+    action, role, data = _WORKFLOW_STEPS[previous]
+    _prepare_step(case_alpha, previous)
+    if data is None:
+        data = {
+            "remediation_plan": "Corriger la requete et deployer.",
+            "remediation_target_date": timezone.localdate() + timedelta(days=20),
+        }
+    actor = workflow_actor(role, case_alpha.organization if role == "dsi" else None)
     Notification.objects.all().delete()
     mail.outbox.clear()
 
-    advance(case_alpha, target)
+    act(case_alpha, action, actor, data=dict(data))
+    case_alpha.refresh_from_db()
+    assert case_alpha.status == target
 
-    actor_id = case_alpha.status_history.order_by("-created_at").first().actor_id
-    owners = current_owner_ids(case_alpha) - {actor_id}
-    assert owners, f"aucun responsable a l'etape {target}"
+    current = current_owner_ids(case_alpha)
+    owners = current - {actor.pk}
+    if not owners:
+        # Meme role : le titulaire garde l'etape, personne d'autre a aviser.
+        assert current == {actor.pk}
+        return
     notified = set(
         Notification.objects.filter(
             case=case_alpha, kind=NotificationKind.ACTION_REQUIRED
@@ -237,16 +263,14 @@ def test_no_information_request_to_an_anonymous_reporter(anonymous_case):
     triager = workflow_actor("triager")
     advance(anonymous_case, CaseStatus.ACKNOWLEDGED)
     with pytest.raises(TransitionNotAllowed) as excinfo:
-        perform_action(
-            anonymous_case, "request_information", triager, data={"comment": "Precisez."}
-        )
+        act(anonymous_case, "request_information", triager, data={"comment": "Precisez."})
     assert any("anonyme" in item for item in excinfo.value.missing)
     anonymous_case.refresh_from_db()
     assert anonymous_case.status == CaseStatus.ACKNOWLEDGED
 
 
 def test_researcher_channel_closed_for_an_anonymous_reporter(anonymous_case):
-    triager = workflow_actor("triager")
+    triager = claim(anonymous_case, workflow_actor("triager"))
     assert Confidentiality.RESEARCHER not in writable_channels(anonymous_case, triager)
     assert Confidentiality.INTERNAL in writable_channels(anonymous_case, triager)
     with pytest.raises(PermissionDenied):
@@ -262,6 +286,6 @@ def test_case_page_warns_about_the_anonymous_reporter(client_for, anonymous_case
 def test_identified_reporter_can_still_be_asked(case_alpha):
     triager = workflow_actor("triager")
     assert reporter_can_reply(case_alpha)
-    perform_action(case_alpha, "request_information", triager, data={"comment": "Precisez."})
+    act(case_alpha, "request_information", triager, data={"comment": "Precisez."})
     case_alpha.refresh_from_db()
     assert case_alpha.status == CaseStatus.NEEDS_INFORMATION

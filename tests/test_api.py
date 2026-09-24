@@ -11,7 +11,7 @@ from apps.coordination.workflow import CaseStatus
 from apps.programs.models import Program
 from apps.reports.models import VulnerabilityReport
 
-from .conftest import advance, evidence
+from .conftest import advance, claim, evidence
 
 pytestmark = pytest.mark.django_db
 
@@ -174,7 +174,9 @@ def test_internal_messages_hidden_from_researcher(
     from apps.coordination.constants import Confidentiality
     from apps.coordination.services import post_message
 
-    # Etape 1 : l'agent de triage, responsable de l'etape, ecrit.
+    # Etape 1 : l'agent de triage, responsable de l'etape, prend le dossier en
+    # charge puis ecrit.
+    claim(case_alpha, triager)
     post_message(
         case_alpha, triager, "Note interne CSIRT", confidentiality=Confidentiality.INTERNAL
     )
@@ -249,6 +251,7 @@ def test_transition_endpoint_enforces_state_machine(client_for, triager, case_al
 def test_transition_endpoint_applies_valid_transition(client_for, triager, case_alpha):
     """Compatibilite : le statut vise designe le bouton de l'etape."""
     _mark_opened(case_alpha, triager)
+    claim(case_alpha, triager)
     client = client_for(triager)
     response = client.post(
         f"/api/v1/reports/{case_alpha.case_id}/transition/",
@@ -280,6 +283,7 @@ def test_transition_endpoint_refuses_wrong_owner(client_for, coordinator, case_a
 # ------------------------------------------------------ actions de workflow v2
 def test_actions_endpoint_applies_the_step(client_for, triager, case_alpha):
     _mark_opened(case_alpha, triager)
+    claim(case_alpha, triager)
     client = client_for(triager)
     response = client.post(
         f"/api/v1/reports/{case_alpha.case_id}/actions/",

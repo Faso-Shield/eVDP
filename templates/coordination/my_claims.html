@@ -1,0 +1,35 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Mes prises en charge{% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Mes prises en charge</h1>
+  <a class="btn btn-sm btn-outline" href="{% url 'coordination:case_list' %}">Tous mes dossiers</a>
+</div>
+<p class="muted">
+  Dossiers que vous avez pris en charge et qui attendent encore votre action.
+  Ceux marqués « Sans action » n'ont reçu aucune modification de votre part depuis
+  leur arrivée à l'étape en cours (ou leur prise en charge) : un rappel vous est
+  envoyé tant qu'ils restent en l'état.
+</p>
+<div class="card">
+  <div class="card-body table-wrap">
+    <table class="table">
+      <thead><tr><th>Dossier</th><th>Titre</th><th>Action attendue</th><th>En attente depuis</th><th></th></tr></thead>
+      <tbody>
+      {% for entry in entries %}
+        <tr>
+          <td class="mono nowrap"><a href="{{ entry.case.get_absolute_url }}">{{ entry.case.case_id }}</a></td>
+          <td>{{ entry.case.title }}</td>
+          <td>{% if entry.action.step %}<span class="muted small">Étape {{ entry.action.step }} · </span>{% endif %}{{ entry.action.label }}</td>
+          <td class="small nowrap">{{ entry.waiting_since|date:"d/m/Y H:i" }}<br><span class="muted">il y a {{ entry.waiting_since|timesince }} · pris le {{ entry.claimed_at|date:"d/m" }}</span></td>
+          <td>{% if entry.idle %}<span class="badge sev-critical">Sans action</span>{% else %}<span class="status status-progress">En cours</span>{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="muted">Aucun dossier pris en charge en attente de votre action.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -16,7 +16,7 @@ from apps.disclosures.services import (
     update_advisory,
 )
 
-from .conftest import advance
+from .conftest import act, advance, claim
 
 pytestmark = pytest.mark.django_db
 
@@ -565,7 +565,7 @@ def test_step_nine_owner_gets_the_draft_button(client_for, case_alpha):
     from .conftest import workflow_actor
 
     advance(case_alpha, CaseStatus.FIX_VERIFIED)
-    analyst = workflow_actor("analyst")
+    analyst = claim(case_alpha, workflow_actor("analyst"))
     content = _case_page(client_for(analyst), case_alpha)
     assert "Rédiger un advisory" in content
     assert reverse("disclosures:create_from_case", args=[case_alpha.case_id]) in content
@@ -596,7 +596,7 @@ def test_draft_is_a_full_proposal_built_from_the_case(client_for, case_alpha):
     report.save()
     advance(case_alpha, CaseStatus.FIX_VERIFIED)
 
-    response = client_for(workflow_actor("analyst")).get(
+    response = client_for(claim(case_alpha, workflow_actor("analyst"))).get(
         reverse("disclosures:create_from_case", args=[case_alpha.case_id])
     )
     assert response.status_code == 302
@@ -624,7 +624,7 @@ def test_second_click_reopens_the_same_draft(client_for, case_alpha):
     from .conftest import workflow_actor
 
     advance(case_alpha, CaseStatus.FIX_VERIFIED)
-    client = client_for(workflow_actor("analyst"))
+    client = client_for(claim(case_alpha, workflow_actor("analyst")))
     url = reverse("disclosures:create_from_case", args=[case_alpha.case_id])
     first = client.get(url)
     second = client.get(url)
@@ -642,7 +642,7 @@ def test_proposal_can_be_submitted_without_edit(case_alpha):
 def test_coordinator_reviews_and_edits_at_step_ten(client_for, case_alpha, coordinator):
     advance(case_alpha, CaseStatus.ADVISORY_REVIEW)
     advisory = case_alpha.advisories.get()
-    client = client_for(coordinator)
+    client = client_for(claim(case_alpha, coordinator))
 
     content = _case_page(client, case_alpha)
     assert "Relire et modifier" in content
@@ -663,12 +663,11 @@ def test_coordinator_cannot_edit_a_draft_before_step_ten(client_for, case_alpha,
 
 def test_coordinator_drafts_after_a_closure_proposal(client_for, case_alpha, coordinator):
     """Cloture sans advisory proposee : le coordinateur peut encore en rediger un."""
-    from apps.coordination.services import perform_action
 
     from .conftest import workflow_actor
 
     advance(case_alpha, CaseStatus.FIX_VERIFIED)
-    perform_action(
+    act(
         case_alpha,
         "propose_closure",
         workflow_actor("analyst"),
@@ -677,7 +676,7 @@ def test_coordinator_drafts_after_a_closure_proposal(client_for, case_alpha, coo
     assert case_alpha.status == CaseStatus.ADVISORY_REVIEW
     assert not case_alpha.advisories.exists()
 
-    response = client_for(coordinator).get(
+    response = client_for(claim(case_alpha, coordinator)).get(
         reverse("disclosures:create_from_case", args=[case_alpha.case_id])
     )
     assert response.status_code == 302
@@ -686,10 +685,9 @@ def test_coordinator_drafts_after_a_closure_proposal(client_for, case_alpha, coo
 
 # ------------------------------------------- cloture sans publication
 def test_coordinator_closes_without_publishing(case_alpha, coordinator):
-    from apps.coordination.services import perform_action
 
     advance(case_alpha, CaseStatus.ADVISORY_REVIEW)
-    perform_action(
+    act(
         case_alpha,
         "close_without_advisory",
         coordinator,
@@ -703,26 +701,23 @@ def test_coordinator_closes_without_publishing(case_alpha, coordinator):
 
 
 def test_closing_without_publishing_needs_a_comment(case_alpha, coordinator):
-    from apps.coordination.services import perform_action
     from apps.coordination.workflow import TransitionNotAllowed
 
     advance(case_alpha, CaseStatus.ADVISORY_REVIEW)
-    with pytest.raises(TransitionNotAllowed):
-        perform_action(case_alpha, "close_without_advisory", coordinator, data={"comment": ""})
+    with pytest.raises(TransitionNotAllowed) as excinfo:
+        act(case_alpha, "close_without_advisory", coordinator, data={"comment": ""})
+    assert "Commentaire manquant" in excinfo.value.missing
 
 
 def test_closing_without_publishing_waits_for_the_bounty(submitted_bounty_case, coordinator):
-    from apps.coordination.services import perform_action
     from apps.coordination.workflow import TransitionNotAllowed
 
     case = advance(submitted_bounty_case, CaseStatus.FIX_VERIFIED)
     from .conftest import workflow_actor
 
-    perform_action(
-        case, "propose_closure", workflow_actor("analyst"), data={"comment": "Sans advisory."}
-    )
+    act(case, "propose_closure", workflow_actor("analyst"), data={"comment": "Sans advisory."})
     with pytest.raises(TransitionNotAllowed) as excinfo:
-        perform_action(case, "close_without_advisory", coordinator, data={"comment": "Non."})
+        act(case, "close_without_advisory", coordinator, data={"comment": "Non."})
     assert "Branche prime non terminée" in excinfo.value.missing
 
 
@@ -730,7 +725,7 @@ def test_close_without_publishing_offered_to_the_coordinator(
     client_for, case_alpha, coordinator
 ):
     advance(case_alpha, CaseStatus.ADVISORY_REVIEW)
-    content = _case_page(client_for(coordinator), case_alpha)
+    content = _case_page(client_for(claim(case_alpha, coordinator)), case_alpha)
     assert "Clôturer sans publication" in content
 
 

@@ -12,7 +12,7 @@ from apps.notifications.models import NotificationKind
 
 from .constants import SLAKind, SLAState
 from .models import Case, SLAEvent, SLAPolicy
-from .services import escalate_case, notify_case_staff, perform_action
+from .services import escalate_case, notify_case_staff, perform_action, remind_idle_claims
 from .workflow import (
     ESCALATION_STATES,
     NEEDS_INFORMATION_TIMEOUT_DAYS,
@@ -88,6 +88,12 @@ def sweep_disclosure_schedule():
     for case in upcoming:
         notify_case_staff(case, NotificationKind.DISCLOSURE_UPCOMING)
     return upcoming.count()
+
+
+@shared_task(name="apps.coordination.tasks.remind_claims")
+def remind_claims():
+    """Relance les titulaires de dossiers pris en charge restes sans action."""
+    return remind_idle_claims()
 
 
 @shared_task(name="apps.coordination.tasks.sweep_needs_information")

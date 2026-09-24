@@ -27,7 +27,7 @@ from apps.coordination.workflow import BountyStage, CaseStatus, TransitionNotAll
 from apps.programs.models import Program, ProgramScope, RewardTier
 from apps.vulnerabilities.constants import Severity
 
-from .conftest import advance, make_user
+from .conftest import advance, claim, make_user
 
 pytestmark = pytest.mark.django_db
 
@@ -302,6 +302,7 @@ def test_coordinator_returns_bounty_to_proposer(bounty_case, analyst, coordinato
     """Renvoi (B2 -> B1) : la prime redevient proposable, meme objet mis a jour."""
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     bounty_case.refresh_from_db()
+    claim(bounty_case, coordinator)
     perform_action(
         bounty_case, "return_bounty", coordinator, data={"comment": "Revoir le palier"}
     )
@@ -315,6 +316,7 @@ def test_coordinator_returns_bounty_to_proposer(bounty_case, analyst, coordinato
 
 # ------------------------------------------------------ vues du workflow B1/B2
 def test_propose_view_goes_through_the_workflow(client_for, bounty_case, analyst):
+    claim(bounty_case, analyst)
     client = client_for(analyst)
     response = client.post(
         reverse("bounty:propose", args=[bounty_case.case_id]),
@@ -330,6 +332,8 @@ def test_approve_view_credits_the_wallet(client_for, bounty_case, analyst, coord
     from apps.bounty.services import wallet_balance
 
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    bounty_case.refresh_from_db()
+    claim(bounty_case, coordinator)
     client = client_for(coordinator)
     client.post(reverse("bounty:approve", args=[bounty.pk]), {"note": "Conforme"})
     bounty.refresh_from_db()

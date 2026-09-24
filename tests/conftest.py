@@ -355,6 +355,47 @@ _WORKFLOW_STEPS = {
 }
 
 
+def claim(case, user):
+    """Prend le dossier en charge pour `user` s'il ne l'a pas deja fait.
+
+    Toute action d'un compte metier exige desormais une prise en charge :
+    les tests qui agissent directement sur un dossier passent par ici.
+    """
+    from apps.coordination.services import claim_case
+    from apps.coordination.workflow import can_claim
+
+    if user is not None and can_claim(case, user):
+        claim_case(case, user)
+    return user
+
+
+def act(case, action_key, user, data=None):
+    """Prise en charge puis action de workflow, comme dans l'interface."""
+    from apps.coordination.services import perform_action
+
+    claim(case, user)
+    return perform_action(case, action_key, user, data=data)
+
+
+def _helper_act(case, user, do):
+    """Execute `do()` au nom de `user`, pris en charge le temps de l'action.
+
+    Les acteurs generiques des helpers (wf-*) liberent aussitot la prise en
+    charge qu'ils ont du prendre : sinon ils garderaient le dossier et en
+    fermeraient l'acces aux utilisateurs des fixtures du meme role. Un
+    titulaire reel (fixture ayant pris le dossier en charge) le garde.
+    """
+    from apps.coordination.workflow import has_claim
+
+    temporary = not has_claim(case, user) and user.email.startswith("wf-")
+    claim(case, user)
+    try:
+        return do()
+    finally:
+        if temporary:
+            case.assignments.filter(user=user, is_active=True).update(is_active=False)
+
+
 def _prepare_step(case, status):
     """Remplit ce qu'une etape exige avant son bouton (hors formulaire)."""
     from apps.audit.models import AuditAction
@@ -365,10 +406,17 @@ def _prepare_step(case, status):
         log_action(AuditAction.CASE_VIEWED, actor=workflow_actor("triager"), obj=case)
     if status == CaseStatus.IN_ANALYSIS:
         if not case.cvss_vector:
-            set_severity(
+            from apps.coordination.workflow import claim_holder
+
+            qualifier = claim_holder(case) or workflow_actor("analyst")
+            _helper_act(
                 case,
-                workflow_actor("analyst"),
-                cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+                qualifier,
+                lambda: set_severity(
+                    case,
+                    qualifier,
+                    cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+                ),
             )
         if case.cwe_id is None:
             case.cwe, _ = CWE.objects.get_or_create(
@@ -391,15 +439,21 @@ def _prepare_step(case, status):
 
 def _close_bounty_branch(case):
     """La cloture exige une branche prime terminee : proposer puis crediter."""
-    from apps.coordination.services import perform_action
-    from apps.coordination.workflow import BountyStage
+    from apps.coordination.workflow import BountyStage, bounty_action, claim_holder
 
     case.refresh_from_db()
     if case.bounty_stage == BountyStage.ELIGIBLE:
-        perform_action(case, "propose_bounty", workflow_actor("analyst"))
+        from apps.coordination.services import perform_action
+
+        proposer = claim_holder(case, bounty_action(case)) or workflow_actor("analyst")
+        _helper_act(case, proposer, lambda: perform_action(case, "propose_bounty", proposer))
+    case.refresh_from_db()
     if case.bounty_stage == BountyStage.PROPOSED:
-        perform_action(
-            case, "approve_bounty", workflow_actor("coordinator"), data={"comment": "Ok."}
+        approver = claim_holder(case, bounty_action(case)) or workflow_actor("coordinator")
+        _helper_act(
+            case,
+            approver,
+            lambda: perform_action(case, "approve_bounty", approver, data={"comment": "Ok."}),
         )
 
 
@@ -428,7 +482,13 @@ def advance(case, target):
         from apps.coordination.workflow import claim_holder
 
         actor = claim_holder(case) or workflow_actor(role, organization)
-        perform_action(case, action, actor, data=dict(data))
+        _helper_act(
+            case,
+            actor,
+            lambda action=action, actor=actor, data=data: perform_action(
+                case, action, actor, data=dict(data)
+            ),
+        )
         case.refresh_from_db()
     return case
 

@@ -1,0 +1,6 @@
+{% if my_claims_count %}
+<div class="notice mb-2">
+  <strong>{{ my_claims_count }} dossier(s) pris en charge attendent votre action</strong>{% if my_idle_claims_count %}, dont {{ my_idle_claims_count }} sans aucune modification depuis la prise en charge{% endif %}.
+  <a href="{% url 'coordination:my_claims' %}">Voir mes prises en charge</a>
+</div>
+{% endif %}

@@ -240,6 +240,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.coordination.tasks.sweep_disclosure_schedule",
         "schedule": crontab(minute=15),
     },
+    "evdp-claim-reminders": {
+        "task": "apps.coordination.tasks.remind_claims",
+        "schedule": crontab(minute=0, hour="8,14"),
+    },
     "evdp-needs-information-sweep": {
         "task": "apps.coordination.tasks.sweep_needs_information",
         "schedule": crontab(minute=45, hour=6),
@@ -440,6 +444,8 @@ EVDP = {
         "htm",
     ],
     "MAX_ATTACHMENTS_PER_CASE": env.int("EVDP_MAX_ATTACHMENTS_PER_CASE", default=20),
+    # Delai apres lequel une prise en charge restee sans action est rappelee.
+    "CLAIM_REMINDER_HOURS": env.int("EVDP_CLAIM_REMINDER_HOURS", default=48),
     "MAX_PAYOUT_METHODS": env.int("EVDP_MAX_PAYOUT_METHODS", default=5),
     "MAX_ID_DOCUMENT_SIZE": env.int("EVDP_MAX_ID_DOCUMENT_SIZE", default=10 * 1024 * 1024),
     "CAPTCHA_ENABLED": env("EVDP_CAPTCHA_ENABLED"),

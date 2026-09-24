@@ -48,15 +48,16 @@ from .workflow import (
     TransitionNotAllowed,
     available_actions,
     check_transition,
-    claim_action,
     claim_holder,
     current_actions,
     current_owner_ids,
     get_action,
+    must_claim,
     public_status_bucket,
     public_status_of,
     resolve_target,
     step_owners,
+    user_pools,
     working_advisory,
 )
 
@@ -803,19 +804,27 @@ def _record_claim(case, user, actor, note, request, pool):
 def claim_case(case, actor, request=None):
     """« Prendre en charge » : le responsable de l'etape s'attribue le dossier.
 
-    Le dossier disparait alors de la file de ses collegues du meme role, qui
-    ne recoivent plus ses avis. L'attribution vaut pour les etapes suivantes
-    de ce meme role (l'analyste suit son dossier de l'etape 3 a l'etape 9) et
-    ne gene jamais les autres roles.
+    Exigee avant toute action : le dossier disparait alors de la file de ses
+    collegues du meme role, qui ne recoivent plus ses avis. L'attribution
+    vaut pour les etapes suivantes de ce meme role (l'analyste suit son
+    dossier de l'etape 3 a l'etape 9) et ne gene jamais les autres roles.
     """
-    action = claim_action(case)
-    pool = step_owners(case, action, ignore_claim=True) if action else []
-    if actor.pk not in {user.pk for user in pool}:
+    pools = [
+        (action, pool)
+        for action, pool in user_pools(case, actor)
+        if claim_holder(case, action) is None
+    ]
+    if not user_pools(case, actor):
         raise PermissionDenied("Réservé au responsable de l'étape en cours.")
-    holder = claim_holder(case)
-    if holder is not None:
-        raise ValidationError(f"Dossier déjà pris en charge par {holder.display_name}.")
-    _record_claim(case, actor, actor, "Prise en charge", request, pool)
+    if not pools:
+        holder = next(
+            (claim_holder(case, action) for action, _ in user_pools(case, actor)), None
+        )
+        raise ValidationError(
+            f"Dossier déjà pris en charge par {holder.display_name if holder else 'un collègue'}."
+        )
+    members = [member for _action, pool in pools for member in pool]
+    _record_claim(case, actor, actor, "Prise en charge", request, members)
     add_timeline_event(case, TimelineEventType.ASSIGNED, "Dossier pris en charge", actor=actor)
     log_action(
         AuditAction.CASE_ASSIGNED,
@@ -823,23 +832,31 @@ def claim_case(case, actor, request=None):
         obj=case,
         request=request,
         claimed_by=str(actor),
-        step=action.step,
+        steps=[action.step or action.key for action, _pool in pools],
     )
     return case
+
+
+def _held_pools(case, user):
+    return [
+        (action, pool)
+        for action, pool in user_pools(case, user)
+        if claim_holder(case, action) == user
+    ]
 
 
 @transaction.atomic
 def transfer_case(case, actor, target, note="", request=None):
     """« Transférer à un collègue » : passage de relais au sein du meme role."""
-    action = claim_action(case)
-    if claim_holder(case) != actor:
+    held = _held_pools(case, actor)
+    if not held:
         raise PermissionDenied("Seul le compte qui a pris le dossier en charge le transfère.")
-    pool = step_owners(case, action, ignore_claim=True)
-    if target is None or target.pk == actor.pk or target.pk not in {u.pk for u in pool}:
+    members = [member for _action, pool in held for member in pool]
+    if target is None or target.pk == actor.pk or target not in members:
         raise ValidationError(
             "Le destinataire doit être un collègue responsable de cette étape."
         )
-    _record_claim(case, target, actor, note or "Transfert", request, pool)
+    _record_claim(case, target, actor, note or "Transfert", request, members)
     notify(target, NotificationKind.CASE_ASSIGNED, case=case)
     add_timeline_event(
         case, TimelineEventType.ASSIGNED, f"Dossier transféré à {target}", actor=actor
@@ -857,14 +874,126 @@ def transfer_case(case, actor, target, note="", request=None):
 
 def transfer_candidates(case, user):
     """Collegues a qui `user` peut transferer le dossier (meme role, meme etape)."""
-    if claim_holder(case) != user:
+    seen, result = set(), []
+    for _action, pool in _held_pools(case, user):
+        for member in pool:
+            if member.pk != user.pk and member.pk not in seen:
+                seen.add(member.pk)
+                result.append(member)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Dossiers pris en charge : rappel
+# ---------------------------------------------------------------------------
+#: Actions d'un titulaire qui comptent comme un travail sur le dossier.
+_WORK_ACTIONS = (
+    AuditAction.STATUS_CHANGED,
+    AuditAction.CASE_UPDATED,
+    AuditAction.MESSAGE_SENT,
+    AuditAction.ATTACHMENT_UPLOADED,
+    AuditAction.ADVISORY_CREATED,
+    AuditAction.ADVISORY_UPDATED,
+    AuditAction.BOUNTY_PROPOSED,
+    AuditAction.BOUNTY_APPROVED,
+)
+
+
+def my_claims(user):
+    """Dossiers que `user` a pris en charge et qui attendent encore son action.
+
+    Chaque entree porte la date de prise en charge, l'action attendue et
+    `idle` : aucune modification du dossier par `user` depuis sa prise en
+    charge. Un dossier passe a l'etape d'un autre role, ou transfere, sort
+    de la liste.
+    """
+    from apps.audit.models import AuditLog, AuditResult
+
+    from .models import Case
+
+    if not user or not user.is_authenticated:
         return []
-    action = claim_action(case)
-    return [
-        member
-        for member in step_owners(case, action, ignore_claim=True)
-        if member.pk != user.pk
-    ]
+    entries = []
+    assignments = (
+        CaseAssignment.objects.filter(user=user, is_active=True)
+        .select_related("case")
+        .order_by("created_at")
+    )
+    for assignment in assignments:
+        case = assignment.case
+        if case.status in TERMINAL_STATES or not case.is_visible_to(user):
+            continue
+        held = _held_pools(case, user)
+        if not held:
+            continue
+        # Reference : prise en charge, ou arrivee du dossier a l'etape en
+        # cours si elle est posterieure (l'analyste qui retrouve a l'etape 5
+        # un dossier pris a l'etape 3 doit le voir signale).
+        since = assignment.created_at
+        last_step = case.status_history.order_by("-created_at").first()
+        if last_step is not None and last_step.created_at > since:
+            since = last_step.created_at
+        worked = AuditLog.objects.filter(
+            actor=user,
+            object_type=Case.__name__,
+            object_id=str(case.pk),
+            action__in=_WORK_ACTIONS,
+            result=AuditResult.SUCCESS,
+            timestamp__gt=since,
+        )
+        # La transition qui a amene le dossier a l'etape en cours n'est pas un
+        # travail sur cette etape (son audit suit l'historique de quelques ms).
+        worked = worked.exclude(
+            action=AuditAction.STATUS_CHANGED, metadata__to_status=case.status
+        ).exists()
+        entries.append(
+            {
+                "case": case,
+                "claimed_at": assignment.created_at,
+                "waiting_since": since,
+                "action": held[0][0],
+                "idle": not worked,
+            }
+        )
+    return entries
+
+
+def remind_idle_claims(idle_after=None, now=None):
+    """Rappel (notification et email) des prises en charge restees sans action.
+
+    Un rappel par dossier et par jour au plus : le titulaire n'est relance
+    que tant que le dossier attend son action sans qu'il y ait touche.
+    """
+    from django.conf import settings
+
+    from apps.accounts.models import User
+    from apps.notifications.models import Notification
+
+    now = now or timezone.now()
+    idle_after = idle_after or timedelta(hours=settings.EVDP.get("CLAIM_REMINDER_HOURS", 48))
+    sent = 0
+    holders = User.objects.filter(is_active=True, case_assignments__is_active=True).distinct()
+    for user in holders:
+        for entry in my_claims(user):
+            if not entry["idle"] or now - entry["waiting_since"] < idle_after:
+                continue
+            already = Notification.objects.filter(
+                recipient=user,
+                case=entry["case"],
+                kind=NotificationKind.CLAIM_REMINDER,
+                created_at__gte=now - timedelta(days=1),
+            ).exists()
+            if already:
+                continue
+            notify(
+                user,
+                NotificationKind.CLAIM_REMINDER,
+                case=entry["case"],
+                title=f"[{entry['case'].case_id}] Rappel : {entry['action'].label}",
+                body="Vous avez pris ce dossier en charge sans y avoir encore agi.",
+            )
+            sent += 1
+    return sent
 
 
 # ---------------------------------------------------------------------------
@@ -892,6 +1021,8 @@ def post_message(
             raise PermissionDenied("Rôle en lecture seule.")
         if confidentiality not in writable_channels(case, author):
             raise PermissionDenied("Vous n'êtes pas autorisé à écrire dans ce canal.")
+        if must_claim(case, author):
+            raise PermissionDenied("Prenez d'abord le dossier en charge.")
     if not (body or "").strip():
         raise ValidationError("Le message ne peut pas être vide.")
 
@@ -983,6 +1114,8 @@ def set_severity(case, actor, severity=None, cvss_vector="", request=None):
         raise PermissionDenied("Capacité requise pour définir la sévérité.")
     if case.status not in QUALIFICATION_EDITABLE_STATES:
         raise ValidationError("La qualification n'est plus modifiable à cette étape.")
+    if must_claim(case, actor):
+        raise PermissionDenied("Prenez d'abord le dossier en charge.")
     from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
 
     updates = ["severity", "updated_at"]
@@ -1111,6 +1244,8 @@ __all__ = [
     "transition_case",
     "claim_case",
     "transfer_case",
+    "my_claims",
+    "remind_idle_claims",
     "post_message",
     "visible_messages",
     "mark_duplicate",

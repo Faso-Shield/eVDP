@@ -420,6 +420,8 @@ def can_edit_case_advisory(case, user):
         return False
     if not has_content_access(case, user) or case.reporter_id == user.pk:
         return False
+    if must_claim(case, user):
+        return False
     needed = Capability.DRAFT_ADVISORY if step == "draft" else Capability.PUBLISH_ADVISORY
     return user.has_capability(needed)
 
@@ -969,6 +971,10 @@ def check_transition(case, action, user=None, data=None):
             raise TransitionNotAllowed(
                 "Règle des quatre yeux : l'auteur de l'étape précédente ne peut pas la valider."
             )
+    if user is not None and not action.reporter_only and must_claim(case, user):
+        raise TransitionNotAllowed(
+            f"{CLAIM_REQUIRED_MESSAGE} avant d'agir.", [CLAIM_REQUIRED_MESSAGE]
+        )
     return True
 
 
@@ -1027,9 +1033,22 @@ def claim_action(case):
     return action
 
 
-def claim_holder(case):
-    """Compte ayant pris en charge l'etape en cours, ou None."""
-    action = claim_action(case)
+def claim_pools(case):
+    """(action, groupe de responsables) pour chaque action en cours.
+
+    Dossier, branche prime et escalade peuvent attendre des roles
+    differents en meme temps : chacun se prend en charge separement.
+    """
+    return [
+        (action, step_owners(case, action, ignore_claim=True))
+        for action in current_actions(case)
+        if not action.reporter_only
+    ]
+
+
+def claim_holder(case, action=None):
+    """Compte ayant pris en charge l'action (par defaut le bouton principal)."""
+    action = action or claim_action(case)
     if action is None:
         return None
     claimed = claimed_ids(case)
@@ -1037,6 +1056,33 @@ def claim_holder(case):
         if user.pk in claimed:
             return user
     return None
+
+
+def user_pools(case, user):
+    """Groupes de responsables auxquels `user` appartient a l'etape en cours."""
+    return [(action, pool) for action, pool in claim_pools(case) if user in pool]
+
+
+def has_claim(case, user):
+    """`user` a-t-il pris en charge une etape en cours de ce dossier ?"""
+    return bool(user_pools(case, user)) and user.pk in claimed_ids(case)
+
+
+def can_claim(case, user):
+    """`user` peut-il prendre en charge une etape en cours restee libre ?"""
+    if getattr(user, "is_read_only", False) or has_claim(case, user):
+        return False
+    return any(claim_holder(case, action) is None for action, _pool in user_pools(case, user))
+
+
+def must_claim(case, user):
+    """Toute action d'un compte metier exige d'avoir pris le dossier en charge."""
+    if user is None or case.reporter_id == user.pk:
+        return False
+    return not has_claim(case, user)
+
+
+CLAIM_REQUIRED_MESSAGE = "Prenez d'abord le dossier en charge"
 
 
 def statuses_owned_by(user):

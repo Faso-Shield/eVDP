@@ -164,6 +164,11 @@ def writable_channels(case, user):
     kind = viewer_kind(case, user)
     if kind == VENDOR and case.status not in ORG_VISIBLE_STATES:
         return []
+    from .workflow import must_claim
+
+    if kind not in (None, REPORTER) and must_claim(case, user):
+        # Prise en charge exigee avant d'ecrire dans le dossier.
+        return []
     content = has_content_access(case, user) if kind not in (None, REPORTER) else None
     channels = [
         channel

@@ -46,7 +46,7 @@ def landing_route(user):
     return "dashboard:researcher"
 
 
-def sidebar_sections(user):
+def sidebar_sections(user, claims_count=0):
     """Sections du menu pour `user`, vides s'il n'est pas authentifie.
 
     Rend une liste de `(titre, liens)`. Le titre vaut None pour une entree
@@ -86,6 +86,10 @@ def sidebar_sections(user):
             (
                 "Coordination",
                 [
+                    {
+                        "label": f"Mes prises en charge ({claims_count})",
+                        "url": reverse("coordination:my_claims"),
+                    },
                     _lien("Dossiers", "coordination:case_list"),
                     _lien("Kanban", "coordination:kanban"),
                     _lien("Recherche globale", "dashboard:search"),

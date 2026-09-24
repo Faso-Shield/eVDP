@@ -22,8 +22,14 @@ from apps.accounts.roles import Role
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination.models import SLAPolicy
-from apps.coordination.services import owners_of, perform_action, set_severity
-from apps.coordination.workflow import BountyStage, CaseStatus, author_of, get_action
+from apps.coordination.services import claim_case, owners_of, perform_action, set_severity
+from apps.coordination.workflow import (
+    BountyStage,
+    CaseStatus,
+    author_of,
+    can_claim,
+    get_action,
+)
 from apps.core.models import SiteSetting
 from apps.core.views import DEFAULT_DISCLOSURE_POLICY
 from apps.disclosures.services import create_advisory_from_case
@@ -635,6 +641,9 @@ class Command(BaseCommand):
         )
         if action_key == "acknowledge":
             log_action(AuditAction.CASE_VIEWED, actor=actor, obj=case)
+        # Toute action exige une prise en charge prealable.
+        if can_claim(case, actor):
+            claim_case(case, actor)
         data["comment"] = comment
         perform_action(case, action_key, actor, data=data)
         case.refresh_from_db()
@@ -651,6 +660,8 @@ class Command(BaseCommand):
             attachment_readable=True,
         )
         if not case.cvss_vector:
+            if can_claim(case, analyst):
+                claim_case(case, analyst)
             set_severity(
                 case, analyst, cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
             )

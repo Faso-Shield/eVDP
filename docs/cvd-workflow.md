@@ -63,6 +63,21 @@ Code de référence : `apps/coordination/workflow.py` (table des actions et
    charge suit le dossier sur les étapes de ce rôle (l'analyste le garde de
    l'étape 3 à l'étape 9) et ne gêne jamais les autres rôles. Elle est
    journalisée. Il n'existe plus d'assignation manuelle par un tiers.
+
+   **La prise en charge est obligatoire** : aucun compte métier n'agit sur un
+   dossier (bouton du workflow, qualification, message, pièce jointe, CVE,
+   date de divulgation, advisory) sans l'avoir pris en charge. Le serveur le
+   refuse (« Prenez d'abord le dossier en charge »), pour l'interface comme
+   pour l'API. Le déclarant et les tâches automatiques n'y sont pas soumis.
+
+   **Aucun dossier oublié** : la page « Mes prises en charge » (menu
+   Coordination, avec compteur) liste les dossiers pris en charge qui
+   attendent encore l'action de leur titulaire, et signale « Sans action »
+   ceux qu'il n'a pas modifiés depuis leur arrivée à l'étape en cours. Un
+   bandeau le rappelle sur les tableaux de bord, et un rappel (notification
+   et email) part deux fois par jour pour chaque dossier resté sans action
+   au-delà de 48 h (`EVDP_CLAIM_REMINDER_HOURS`), au plus une fois par jour
+   et par dossier.
 9. **Un avis par étape** — à chaque étape franchie (et dès la soumission), le
    responsable de l'étape suivante reçoit une notification et un email
    (« Action attendue »), sauf s'il est l'auteur de l'action.

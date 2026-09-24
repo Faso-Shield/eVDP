@@ -64,6 +64,12 @@ def test_unknown_version_is_rejected():
 
 @pytest.mark.django_db
 def test_qualification_accepts_a_v40_vector(case_alpha, analyst):
+    from apps.coordination.workflow import CaseStatus
+
+    from .conftest import advance, claim
+
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)
+    claim(case_alpha, analyst)
     set_severity(case_alpha, analyst, cvss_vector=V4_CRITICAL)
     case_alpha.refresh_from_db()
     assert case_alpha.cvss_vector == V4_CRITICAL
