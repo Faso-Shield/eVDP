@@ -62,7 +62,20 @@ class BaseAccountAdmin(DjangoUserAdmin):
 
     def save_model(self, request, obj, form, change):
         role_changed = change and "role" in form.changed_data
+        senior_changed = change and "is_senior_analyst" in form.changed_data
         super().save_model(request, obj, form, change)
+
+        if senior_changed and not role_changed:
+            # Permission individuelle de validation (4 yeux) : tracee comme
+            # un changement de role, puisqu'elle en elargit les capacites.
+            log_action(
+                AuditAction.ROLE_CHANGED,
+                actor=request.user,
+                obj=obj,
+                request=request,
+                new_role=obj.role,
+                senior_analyst=obj.is_senior_analyst,
+            )
 
         if role_changed:
             log_action(
@@ -95,12 +108,20 @@ class BusinessAccountAdmin(BaseAccountAdmin):
         "email",
         "full_name",
         "role",
+        "is_senior_analyst",
         "organisation",
         "is_active",
         "second_facteur",
         "last_login",
     )
-    list_filter = ("role", "is_active", "is_staff", "mfa_enabled", "email_verified")
+    list_filter = (
+        "role",
+        "is_senior_analyst",
+        "is_active",
+        "is_staff",
+        "mfa_enabled",
+        "email_verified",
+    )
     actions = ("reinitialiser_mfa",)
     readonly_fields = BaseAccountAdmin.readonly_fields + ("mfa_confirmed_at",)
     fieldsets = (
@@ -111,6 +132,7 @@ class BusinessAccountAdmin(BaseAccountAdmin):
             {
                 "fields": (
                     "role",
+                    "is_senior_analyst",
                     "is_active",
                     "is_staff",
                     "is_superuser",
@@ -137,7 +159,14 @@ class BusinessAccountAdmin(BaseAccountAdmin):
             None,
             {
                 "classes": ("wide",),
-                "fields": ("email", "full_name", "role", "password1", "password2"),
+                "fields": (
+                    "email",
+                    "full_name",
+                    "role",
+                    "is_senior_analyst",
+                    "password1",
+                    "password2",
+                ),
             },
         ),
     )

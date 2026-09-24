@@ -173,3 +173,54 @@ def test_the_lists_carry_the_expected_french_headers():
     assert "Second facteur" in metiers
     assert "Adresse vérifiée" in signaleurs
     assert "Inscrit le" in signaleurs, "created_at est renomme par la liste"
+
+
+# ---------------------------------------------------------- analyste senior
+def _champs(fieldsets):
+    return {champ for _nom, options in fieldsets for champ in options["fields"]}
+
+
+def test_senior_analyst_can_be_granted_from_the_business_admin():
+    """Sans cette case, l'etape 4 (validation 4 yeux) n'a qu'un seul valideur
+    possible, le coordinateur."""
+    assert "is_senior_analyst" in _champs(BusinessAccountAdmin.fieldsets)
+    assert "is_senior_analyst" in _champs(BusinessAccountAdmin.add_fieldsets)
+    assert "is_senior_analyst" in BusinessAccountAdmin.list_filter
+
+
+def test_senior_analyst_flag_is_reserved_to_csirt_analysts(triager):
+    from django.core.exceptions import ValidationError
+
+    triager.is_senior_analyst = True
+    with pytest.raises(ValidationError) as erreur:
+        triager.clean()
+    assert "is_senior_analyst" in erreur.value.message_dict
+
+
+def test_senior_analyst_created_in_admin_gets_validation_rights(client, django_user_model):
+    from django.urls import reverse
+
+    from apps.accounts.roles import Capability
+
+    admin = django_user_model.objects.create_superuser(
+        email="root@evdp.test", password="Motdepasse-tres-long-42"
+    )
+    client.force_login(admin)
+    session = client.session
+    session["mfa_verified"] = True
+    session.save()
+    reponse = client.post(
+        reverse("admin:accounts_businessaccount_add"),
+        {
+            "email": "senior@evdp.test",
+            "full_name": "Analyste Senior",
+            "role": Role.CSIRT_ANALYST,
+            "is_senior_analyst": "on",
+            "password1": "Motdepasse-tres-long-42",
+            "password2": "Motdepasse-tres-long-42",
+        },
+    )
+    assert reponse.status_code == 302, reponse.content.decode()[:2000]
+    senior = User.objects.get(email="senior@evdp.test")
+    assert senior.is_senior_analyst
+    assert senior.has_capability(Capability.VALIDATE_SEVERITY)

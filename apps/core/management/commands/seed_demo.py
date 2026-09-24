@@ -271,6 +271,13 @@ class Command(BaseCommand):
                 "ANSSI-BF",
             ),
             ("analyste@csirt.bf", "Analyste CSIRT", Role.CSIRT_ANALYST, False, "CSIRT-BF"),
+            (
+                "analyste.senior@csirt.bf",
+                "Analyste CSIRT senior",
+                Role.CSIRT_ANALYST,
+                False,
+                "CSIRT-BF",
+            ),
             ("triage@csirt.bf", "Agent de triage", Role.TRIAGER, False, "CSIRT-BF"),
             ("dsi@sante.gov.bf", "DSI Ministere demo", Role.DSI_ADMIN, False, "MINDEMO"),
             (
@@ -316,6 +323,13 @@ class Command(BaseCommand):
                     user=user,
                     defaults={"membership_role": membership_role, "is_primary": True},
                 )
+
+        # Analyste senior : meme role, plus la permission individuelle de
+        # valider la qualification d'un pair (etape 4, 4 yeux).
+        senior = users["analyste.senior@csirt.bf"]
+        if not senior.is_senior_analyst:
+            senior.is_senior_analyst = True
+            senior.save(update_fields=["is_senior_analyst", "updated_at"])
 
         get_or_create_profile(
             users["researcher@demo.bf"],

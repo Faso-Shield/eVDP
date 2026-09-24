@@ -143,10 +143,11 @@ Mot de passe commun : **`EvdpDemo2026!`**
 
 | Rôle | Email | Peut faire |
 |------|-------|-----------|
-| Administrateur | `admin@evdp.bf` | Tout |
-| Coordinateur national | `coordinateur@anssi.bf` | Publier, approuver les récompenses, auditer |
-| Analyste CSIRT | `analyste@csirt.bf` | Trier, qualifier, rédiger des advisories |
-| Agent de triage | `triage@csirt.bf` | Trier, définir la sévérité |
+| Administrateur | `admin@evdp.bf` | Administration technique (comptes, paramètres) — pas d'accès aux dossiers |
+| Coordinateur national | `coordinateur@anssi.bf` | Valider la qualification, approuver les primes, publier et clôturer |
+| Analyste CSIRT | `analyste@csirt.bf` | Qualifier (CVSS), transmettre à l'organisation, vérifier le correctif, rédiger l'advisory |
+| Analyste CSIRT senior | `analyste.senior@csirt.bf` | Comme l'analyste, plus valider la qualification d'un autre analyste (4 yeux) |
+| Agent de triage | `triage@csirt.bf` | Accuser réception, déclarer recevable |
 | DSI ministère | `dsi@sante.gov.bf` | Voir **uniquement** les vulnérabilités de son ministère |
 | Responsable organisation | `responsable@education.gov.bf` | Gérer son organisation et ses programmes |
 | Chercheur | `researcher@demo.bf` | Soumettre, suivre ses rapports |

@@ -73,9 +73,9 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     is_senior_analyst = models.BooleanField(
         default=False,
         verbose_name="Analyste senior",
-        help_text="Permission individuelle : un analyste CSIRT senior peut valider "
-        "la qualification d'un autre analyste (étape 4). Sans effet sur les "
-        "autres rôles.",
+        help_text="À cocher avec le rôle « Analyste CSIRT » : l'analyste senior "
+        "peut valider la qualification d'un autre analyste (étape 4, "
+        "4 yeux). Réservé au rôle Analyste CSIRT.",
     )
     is_active = models.BooleanField(default=True, verbose_name="Compte actif")
     is_staff = models.BooleanField(default=False, verbose_name="Accès à l'administration")
@@ -125,6 +125,13 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         return self.display_name or self.full_name or self.email
 
     def clean(self):
+        if self.is_senior_analyst and self.role != Role.CSIRT_ANALYST:
+            raise ValidationError(
+                {
+                    "is_senior_analyst": "Seul un compte au rôle « Analyste CSIRT » "
+                    "peut être analyste senior."
+                }
+            )
         if self.mfa_enabled and self.is_researcher:
             raise ValidationError(
                 {

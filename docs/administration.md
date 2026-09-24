@@ -69,6 +69,21 @@ de la liste.
 > Attribuez `AUDITOR` pour toute mission d'inspection : le rôle voit tout et
 > ne peut rien écrire.
 
+### Créer un analyste senior
+
+« Analyste senior » n'est pas un rôle mais une **permission individuelle**
+ajoutée à un analyste CSIRT : elle lui permet de valider la qualification
+d'un autre analyste (étape 4, principe des 4 yeux), comme le coordinateur.
+
+1. **Comptes métiers et administrateurs** → **Ajouter** (ou ouvrir un
+   analyste existant).
+2. **Rôle** : « Analyste CSIRT ».
+3. Cochez **Analyste senior**, puis enregistrez.
+
+La case est refusée sur tout autre rôle. Son changement est journalisé
+(`ROLE_CHANGED`). Le filtre « Analyste senior » de la liste retrouve ces
+comptes. Un analyste senior ne peut jamais valider sa propre qualification.
+
 ---
 
 ## 2. Créer une organisation

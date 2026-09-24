@@ -278,7 +278,14 @@ def test_senior_analyst_validates_a_peer(case_alpha, advance):
 
 
 def test_senior_flag_has_no_effect_on_other_roles(db):
-    triager = make_user("t2@test.bf", "TRIAGER", is_senior_analyst=True)
+    """Defense en profondeur : meme ecrit en base sans passer par la
+    validation (qui le refuse), le drapeau n'ouvre rien hors analyste."""
+    from apps.accounts.models import User
+
+    triager = make_user("t2@test.bf", "TRIAGER")
+    User.objects.filter(pk=triager.pk).update(is_senior_analyst=True)
+    triager.refresh_from_db()
+    assert triager.is_senior_analyst
     assert not triager.has_capability("VALIDATE_SEVERITY")
 
 
