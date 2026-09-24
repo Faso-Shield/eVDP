@@ -647,3 +647,24 @@ def test_validation_sets_timestamp_and_reputation(case_alpha, advance, researche
     assert case_alpha.validated_at is not None
     assert profile.reputation > 0
     assert profile.reports_validated == 1
+
+
+# ------------------------------------------------------- jeu de demonstration
+def test_seed_demo_is_replayable_and_resettable():
+    """seed_demo se rejoue sans erreur (base deja peuplee ou migree de la v1)
+    et --reset vide une base dont le Wallet contient des ecritures."""
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    from apps.coordination.models import Case
+
+    call_command("seed_demo", stdout=StringIO())
+    statuses = sorted(Case.objects.values_list("status", flat=True))
+    call_command("seed_demo", stdout=StringIO())
+    assert sorted(Case.objects.values_list("status", flat=True)) == statuses
+    assert S.CLOSED in statuses and S.NEEDS_INFORMATION in statuses
+
+    # Base v1 migree : le dossier 3 est deja en complements demandes.
+    call_command("seed_demo", "--reset", stdout=StringIO())
+    assert Case.objects.count() == 3

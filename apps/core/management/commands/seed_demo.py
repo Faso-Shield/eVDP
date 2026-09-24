@@ -23,7 +23,7 @@ from apps.bounty.services import approve_bounty, propose_bounty
 from apps.coordination.models import SLAPolicy
 from apps.coordination.scenarios import Team, advance_case
 from apps.coordination.services import transition_case
-from apps.coordination.workflow import CaseStatus
+from apps.coordination.workflow import CaseBountyStatus, CaseStatus
 from apps.core.models import SiteSetting
 from apps.core.views import DEFAULT_DISCLOSURE_POLICY
 from apps.disclosures.services import create_advisory_from_case
@@ -131,10 +131,16 @@ class Command(BaseCommand):
 
     # ------------------------------------------------------------------ reset
     def _reset(self):
+        from django.db.models import QuerySet
+
+        from apps.bounty.models import WalletEntry
         from apps.coordination.models import Case
         from apps.disclosures.models import Advisory
 
         self.stdout.write(self.style.WARNING("Suppression des données de démo…"))
+        # Le grand livre refuse toute suppression (append-only) : la remise a
+        # zero d'une base de DEMONSTRATION est la seule exception, explicite.
+        QuerySet.delete(WalletEntry.objects.all())
         Advisory.objects.all().delete()
         Case.objects.all().delete()
         VulnerabilityReport.objects.all().delete()
@@ -647,9 +653,13 @@ class Command(BaseCommand):
             advance_case(cases[1], CaseStatus.VALIDATED, team)
 
         # Case 3 : en analyse, avec une demande de complements au declarant.
+        # Rejouable : rien n'est redemande si le dossier a deja avance
+        # (ou vient d'une base v1 migree, deja en NEEDS_INFORMATION).
         if len(cases) > 2:
             case = cases[2]
             advance_case(case, CaseStatus.IN_ANALYSIS, team)
+            if case.status != CaseStatus.IN_ANALYSIS:
+                return
             transition_case(
                 case,
                 "request_information",
@@ -662,7 +672,10 @@ class Command(BaseCommand):
         if len(cases) < 2:
             return
         case = cases[1]
+        case.refresh_from_db()
         if getattr(case, "bounty", None) is not None:
+            return
+        if case.bounty_status != CaseBountyStatus.BOUNTY_ELIGIBLE:
             return
         bounty = propose_bounty(
             case,
@@ -682,11 +695,22 @@ class Command(BaseCommand):
     def _advisory(self, cases, users):
         from apps.disclosures.models import Advisory
 
-        if not cases or Advisory.objects.exists():
+        if not cases:
             return
         case = cases[0]
+        case.refresh_from_db()
         coordinator = users["coordinateur@anssi.bf"]
         analyst = users["analyste@csirt.bf"]
+        if case.status == CaseStatus.ADVISORY_REVIEW:
+            transition_case(case, "publish_and_close", coordinator, comment="Relecture faite.")
+            return
+        # Rejouable : rien a faire si le dossier n'attend pas son advisory
+        # (deja clos, ou base v1 migree avec un advisory deja publie).
+        if (
+            case.status != CaseStatus.FIX_VERIFIED
+            or Advisory.objects.filter(case=case).exclude(status="RETRACTED").exists()
+        ):
+            return
         # Etapes 9 et 10 : l'analyste redige et soumet, le Coordinateur relit
         # puis publie et clot (quatre yeux).
         create_advisory_from_case(
