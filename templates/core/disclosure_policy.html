@@ -24,6 +24,6 @@
 </div>
 
 <div class="btn-row">
-  <a class="btn btn-accent" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>
+  {% if can_report %}<a class="btn btn-accent" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>{% endif %}
 </div>
 {% endblock %}

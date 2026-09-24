@@ -121,7 +121,7 @@
       <div class="card-header"><h3>Signaler une vulnérabilité</h3></div>
       <div class="card-body small">
         <p>Vous avez identifié une faille sur un service public ?</p>
-        <a class="btn btn-sm btn-accent" href="{% url 'reports:submit' %}">Signaler</a>
+        {% if can_report %}<a class="btn btn-sm btn-accent" href="{% url 'reports:submit' %}">Signaler</a>{% endif %}
       </div>
     </div>
   </aside>

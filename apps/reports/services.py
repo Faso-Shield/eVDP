@@ -5,7 +5,7 @@ rapport, ouvre le Case correspondant, initialise la chronologie, les
 participants, les SLA et notifie les parties prenantes.
 """
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -56,6 +56,21 @@ def _severity_for(report):
     return report.reported_severity or Severity.MEDIUM, report.cvss_score
 
 
+def may_report(user):
+    """Qui peut declarer une vulnerabilite (web et API).
+
+    Un signaleur anonyme (sans compte), ou un compte chercheur : chercheur,
+    chercheur Bug Bounty ou utilisateur public (capacite SUBMIT_REPORT).
+    Jamais un compte metier : il traite les signalements, il ne les emet pas.
+    L'import CSAF, geste de l'analyste, n'est pas un signalement.
+    """
+    from apps.accounts.roles import Capability
+
+    if user is None or not user.is_authenticated:
+        return True
+    return user.has_capability(Capability.SUBMIT_REPORT)
+
+
 def _check_attachments(files, source):
     """Controle serveur : au moins une piece jointe valide (web et API)."""
     from apps.attachments.services import validate_upload
@@ -94,6 +109,16 @@ def submit_report(
     pour le formulaire web et l'API (controle serveur, pas seulement HTML).
     """
     files = _check_attachments(attachments, source)
+    if (
+        source in ATTACHMENT_REQUIRED_SOURCES
+        and reporter is not None
+        and reporter.is_authenticated
+        and not may_report(reporter)
+    ):
+        raise PermissionDenied(
+            "Les comptes métiers ne déclarent pas de vulnérabilité : le signalement "
+            "est réservé aux chercheurs et aux signaleurs anonymes."
+        )
     if reporter is not None and reporter.is_authenticated:
         report.reporter = reporter
 

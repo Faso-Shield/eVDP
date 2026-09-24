@@ -101,9 +101,8 @@ class CaseQuerySet(models.QuerySet):
         if not user or not user.is_authenticated:
             return self.none()
         if user.role in STEP_SCOPED_ROLES:
-            return self.filter(
-                models.Q(reporter=user) | models.Q(pk__in=self._owned_ids(user))
-            )
+            scope = models.Q(reporter=user) | models.Q(pk__in=self._owned_ids(user))
+            return self.filter(scope | self._archive_filter(user)).distinct()
         if user.sees_all_cases:
             return self
         filters = models.Q(reporter=user)
@@ -123,6 +122,22 @@ class CaseQuerySet(models.QuerySet):
         else:
             filters |= models.Q(participants__user=user, participants__is_active=True)
         return self.filter(filters).distinct()
+
+    def _archive_filter(self, user):
+        """Archives visibles (voir workflow.archive_access)."""
+        from .workflow import (
+            ARCHIVE_CONTENT_ROLES,
+            ARCHIVE_METADATA_ROLES,
+            ORGANIZATION_ARCHIVE_ROLES,
+        )
+
+        if user.role in ARCHIVE_CONTENT_ROLES | ARCHIVE_METADATA_ROLES:
+            return models.Q(status__in=TERMINAL_STATES)
+        if user.role in ORGANIZATION_ARCHIVE_ROLES:
+            org_ids = user.organization_ids()
+            if org_ids:
+                return models.Q(status=CaseStatus.CLOSED, organization_id__in=org_ids)
+        return models.Q(pk__in=[])
 
     def _owned_ids(self, user):
         """Dossiers dont `user` est responsable de l'etape en cours.
@@ -363,8 +378,10 @@ class Case(BaseModel):
             return False
         if self.reporter_id == user.id or user.role not in STEP_SCOPED_ROLES:
             return True
-        from .workflow import current_owner_ids
+        from .workflow import archive_access, current_owner_ids
 
+        if archive_access(self, user):
+            return True
         return user.pk in current_owner_ids(self)
 
     def in_role_scope(self, user):

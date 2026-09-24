@@ -5,6 +5,12 @@ from django.conf import settings
 from .navigation import sidebar_sections
 
 
+def _can_report(user):
+    from apps.reports.services import may_report
+
+    return may_report(user)
+
+
 def evdp_context(request):
     user = getattr(request, "user", None)
     unread = 0
@@ -23,6 +29,7 @@ def evdp_context(request):
         "PLATFORM_TAGLINE": settings.EVDP["PLATFORM_TAGLINE"],
         "PROJECT_CODE": settings.EVDP["PROJECT_CODE"],
         "unread_notifications": unread,
+        "can_report": _can_report(user),
         "my_claims_count": len(claims),
         "my_idle_claims_count": sum(1 for entry in claims if entry["idle"]),
         "sidebar_sections": sidebar_sections(user, claims_count=len(claims)),

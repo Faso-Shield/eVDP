@@ -13,7 +13,7 @@
       un service public ou une infrastructure numérique burkinabè.
     </p>
     <div class="btn-row mt-2">
-      <a class="btn btn-accent btn-lg" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>
+      {% if can_report %}<a class="btn btn-accent btn-lg" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>{% endif %}
       <a class="btn btn-outline btn-lg" href="{% url 'programs:list' %}">Voir les programmes Bug Bounty</a>
       <a class="btn btn-outline btn-lg" href="{% url 'disclosures:advisory_list' %}">Voir les advisories</a>
       <a class="btn btn-outline btn-lg" href="{% url 'core:disclosure_policy' %}">Politique de divulgation</a>

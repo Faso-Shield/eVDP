@@ -1052,7 +1052,8 @@ def test_coordinator_sees_only_his_steps(coordinator, auditor, case_alpha, triag
         CaseStatus.VENDOR_NOTIFIED: False,
         CaseStatus.FIX_VERIFIED: False,
         CaseStatus.ADVISORY_REVIEW: True,
-        CaseStatus.CLOSED: False,
+        # Archives : le Coordinateur consulte les dossiers clos (lecture seule).
+        CaseStatus.CLOSED: True,
     }
     for status, visible in expected.items():
         advance(case_alpha, status)

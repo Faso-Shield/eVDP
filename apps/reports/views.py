@@ -14,7 +14,7 @@ from apps.programs.models import Program
 from apps.vulnerabilities.constants import ReportSource
 
 from .forms import TrackingCodeForm, VulnerabilityReportForm
-from .services import submit_report
+from .services import may_report, submit_report
 
 
 @rate_limited("report")
@@ -23,6 +23,10 @@ def submit(request):
 
     Le rapport cree est prive : il n'apparait jamais sur une page publique.
     """
+    if not may_report(request.user):
+        # Compte metier : pas de formulaire, une explication.
+        return render(request, "reports/business_account.html", status=403)
+
     program = None
     program_slug = request.GET.get("program")
     if program_slug:

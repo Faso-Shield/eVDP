@@ -39,6 +39,14 @@
   </ol>
 {% endif %}
 
+{% if view.archive %}
+<div class="notice">
+  <strong>Dossier archivé — lecture seule.</strong>
+  {% if view.archive == "content" %}Le dossier est terminé : son contenu reste consultable, aucune action n'y est plus possible.
+  {% else %}Le dossier est terminé : seules ses métadonnées sont consultables (recherche de doublons, suivi).{% endif %}
+</div>
+{% endif %}
+
 {% if case.status == "DUPLICATE" %}
 <div class="notice">
   <strong>{% if view.is_reporter %}Votre rapport a été identifié comme doublon.{% else %}Dossier clos comme doublon.{% endif %}</strong>

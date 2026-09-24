@@ -140,6 +140,35 @@ STEP_SCOPED_ROLES = frozenset(
     }
 )
 
+#: Archives : dossiers clos, rejetes ou doublons, consultables en lecture
+#: seule une fois qu'ils n'ont plus de responsable d'etape.
+#:   * Coordinateur : tous, contenu compris ;
+#:   * agent de triage et analyste : tous, en metadonnees (recherche de
+#:     doublons, suivi) ;
+#:   * DSI et responsable d'organisation : les dossiers clos de leur
+#:     organisation, contenu compris.
+ARCHIVE_CONTENT_ROLES = frozenset({"NATIONAL_COORDINATOR"})
+ARCHIVE_METADATA_ROLES = frozenset({"TRIAGER", "CSIRT_ANALYST"})
+ORGANIZATION_ARCHIVE_ROLES = frozenset({"DSI_ADMIN", "ORGANIZATION_MANAGER"})
+
+
+def archive_access(case, user):
+    """Acces aux archives : "content", "metadata" ou None.
+
+    Ne vaut que pour un dossier termine ; aucune action n'y est possible
+    (plus d'etape en cours, donc plus de prise en charge).
+    """
+    if case.status not in TERMINAL_STATES or not user or not user.is_authenticated:
+        return None
+    if user.role in ARCHIVE_CONTENT_ROLES:
+        return "content"
+    if user.role in ARCHIVE_METADATA_ROLES:
+        return "metadata"
+    if user.role in ORGANIZATION_ARCHIVE_ROLES and case.in_role_scope(user):
+        return "content"
+    return None
+
+
 #: Etapes ou l'escalade (manuelle ou automatique sur SLA depasse) s'applique.
 ESCALATION_STATES = (CaseStatus.VENDOR_NOTIFIED, CaseStatus.REMEDIATION_IN_PROGRESS)
 

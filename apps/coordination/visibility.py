@@ -121,12 +121,14 @@ CONTENT_DATA = frozenset(
 
 
 def has_content_access(case, user):
-    """Acces au contenu : declarant, ou responsable de l'etape en cours."""
-    from .workflow import current_owner_ids
+    """Acces au contenu : declarant, responsable de l'etape, ou archives."""
+    from .workflow import archive_access, current_owner_ids
 
     if not user or not user.is_authenticated or not case.is_visible_to(user):
         return False
     if case.reporter_id == user.pk:
+        return True
+    if archive_access(case, user) == "content":
         return True
     return user.pk in current_owner_ids(case)
 
@@ -221,8 +223,11 @@ def case_view(case, user):
     get = lambda data: level(case, user, data, kind, content)  # noqa: E731
     simplified = kind == REPORTER
     bucket_key, bucket_label = public_status_of(case)
+    from .workflow import archive_access
+
     return {
         "kind": kind,
+        "archive": archive_access(case, user) if kind not in (None, REPORTER) else None,
         "is_reporter": kind == REPORTER,
         "content": content,
         "report_body": get("report") == READ,

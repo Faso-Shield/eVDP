@@ -90,10 +90,12 @@ def test_organization_reads_only_during_its_own_steps(dsi_alpha, case_alpha):
     assert case_alpha not in Case.objects.visible_to(dsi_alpha)
 
 
-def test_closed_case_content_is_closed_to_staff(analyst, coordinator, auditor, case_alpha):
+def test_closed_case_is_an_archive(analyst, coordinator, auditor, case_alpha):
+    """Plus de responsable : contenu au Coordinateur (archives), pas aux autres."""
     advance(case_alpha, CaseStatus.CLOSED)
     assert current_owner_ids(case_alpha) == set()
-    for user in (analyst, coordinator, auditor):
+    assert has_content_access(case_alpha, coordinator)
+    for user in (analyst, auditor):
         assert not has_content_access(case_alpha, user)
 
 

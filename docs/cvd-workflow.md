@@ -49,6 +49,22 @@ Code de référence : `apps/coordination/workflow.py` (table des actions et
    les étapes 6 et 7. L'auditeur, sans étape, garde une vue nationale en
    métadonnées ; le super admin ne voit aucun dossier.
 
+   **Archives** : un dossier clos, rejeté ou doublon n'a plus de responsable
+   d'étape ; il reste consultable en lecture seule, sans aucune action
+   possible. Le Coordinateur lit tous les dossiers terminés, contenu compris
+   (historique, messagerie, advisory) ; l'agent de triage et l'analyste les
+   retrouvent en métadonnées (recherche de doublons, suivi) ; la DSI et le
+   responsable d'organisation lisent les dossiers clos de leur organisation.
+   L'auditeur est inchangé (métadonnées).
+
+   **Signalement réservé** : seuls un compte chercheur (chercheur, chercheur
+   Bug Bounty) ou un signaleur anonyme déclarent une vulnérabilité, par le
+   formulaire comme par l'API. Un compte métier (triage, analyste,
+   Coordinateur, DSI, responsable d'organisation, auditeur, super admin)
+   traite les signalements, il n'en émet pas : le lien « Signaler » lui est
+   masqué et le serveur refuse (403). L'import CSAF, geste de l'analyste,
+   n'est pas un signalement et reste possible.
+
    Conséquences : l'escalade est automatique (SLA des étapes 6 ou 7 dépassé)
    et fait du Coordinateur le responsable du dossier jusqu'à sa décision de
    divulgation à échéance. La fiche d'une prime reste accessible à qui

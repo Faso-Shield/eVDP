@@ -110,6 +110,16 @@ class ReportViewSet(
         une soumission refusee (piece jointe absente ou invalide) ne laisse
         aucun rapport orphelin.
         """
+        from apps.reports.services import may_report
+
+        if not may_report(request.user):
+            return Response(
+                {
+                    "detail": "Les comptes métiers ne déclarent pas de vulnérabilité : "
+                    "le signalement est réservé aux chercheurs et aux signaleurs anonymes."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = ReportSubmissionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():

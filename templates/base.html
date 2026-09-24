@@ -21,7 +21,7 @@
            alt="{{ PLATFORM_NAME }} — {{ PLATFORM_TAGLINE }}" width="409" height="159">
     </a>
     <nav class="nav-links" aria-label="Navigation principale">
-      <a href="{% url 'reports:submit' %}">Signaler</a>
+      {% if can_report %}<a href="{% url 'reports:submit' %}">Signaler</a>{% endif %}
       <a href="{% url 'programs:list' %}">Programmes</a>
       <a href="{% url 'disclosures:advisory_list' %}">Advisories</a>
       <a href="{% url 'researchers:list' %}">Chercheurs</a>
@@ -67,7 +67,7 @@
       <div>
         <h4>Signalement</h4>
         <ul>
-          <li><a href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a></li>
+          {% if can_report %}<li><a href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a></li>{% endif %}
           <li><a href="{% url 'core:disclosure_policy' %}">Politique de divulgation</a></li>
           <li><a href="{% url 'core:pgp_key' %}">Clé PGP nationale</a></li>
           <li><a href="/.well-known/security.txt">security.txt</a></li>

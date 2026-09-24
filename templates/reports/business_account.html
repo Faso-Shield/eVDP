@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Signalement réservé aux chercheurs{% endblock %}
+{% block content %}
+<div class="card" style="max-width:40rem;margin:2rem auto">
+  <div class="card-header"><h1 class="mb-0">Signalement réservé aux chercheurs</h1></div>
+  <div class="card-body">
+    <p>
+      Votre compte est un compte métier : il traite les signalements, il n'en
+      déclare pas. La déclaration d'une vulnérabilité est réservée aux comptes
+      chercheur et chercheur Bug Bounty, ainsi qu'aux signaleurs anonymes.
+    </p>
+    <a class="btn btn-accent" href="{% url 'dashboard:home' %}">Retour au tableau de bord</a>
+  </div>
+</div>
+{% endblock %}
