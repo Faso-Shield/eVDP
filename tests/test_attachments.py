@@ -192,3 +192,33 @@ def test_infected_file_cannot_be_downloaded(client_for, case_alpha, researcher_a
 
     client = client_for(researcher_a)
     assert client.get(reverse("attachments:download", args=[attachment.id])).status_code == 404
+
+
+# ------------------------------------------------------- stockage indisponible
+def test_storage_failure_gives_a_clear_error_and_no_orphan_case(client, monkeypatch):
+    """MinIO / S3 injoignable ou mal configure : message clair, pas de 500,
+    et la soumission est annulee (aucun dossier sans sa preuve)."""
+    from django.core.files.storage import FileSystemStorage
+
+    from apps.coordination.models import Case
+
+    def panne(*args, **kwargs):
+        raise OSError("NoSuchBucket")
+
+    monkeypatch.setattr(FileSystemStorage, "_save", panne)
+    response = client.post(
+        reverse("reports:submit"),
+        {
+            "title": "Faille avec stockage en panne",
+            "vulnerability_type": "XSS",
+            "reported_severity": "MEDIUM",
+            "affected_organization_name": "Ministere Alpha",
+            "description": "Une description assez longue pour passer la validation.",
+            "accept_policy": "on",
+            "contact_email": "x@exemple.bf",
+            "attachments": upload("preuve.txt"),
+        },
+    )
+    assert response.status_code == 200
+    assert "stockage des pièces jointes" in response.content.decode()
+    assert Case.objects.count() == 0

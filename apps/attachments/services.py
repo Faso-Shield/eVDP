@@ -1,5 +1,6 @@
 """Validation et enregistrement securises des pieces jointes."""
 
+import logging
 import mimetypes
 
 from django.conf import settings
@@ -12,6 +13,14 @@ from apps.core.pgp import is_encrypted_blob
 from apps.core.utils import sha256_hexdigest
 
 from .models import Attachment, ScanStatus
+
+logger = logging.getLogger("evdp.attachments")
+
+#: Message montre quand le stockage (MinIO / S3) refuse l'ecriture.
+STORAGE_UNAVAILABLE = (
+    "Le stockage des pièces jointes est momentanément indisponible : rien n'a "
+    "été enregistré. Réessayez plus tard ou contactez l'équipe de la plateforme."
+)
 
 #: Signatures binaires refusees quel que soit le nom du fichier.
 DANGEROUS_MAGIC = (
@@ -165,7 +174,19 @@ def store_attachment(
         scan_status=ScanStatus.PENDING,
     )
     attachment.save()
-    attachment.file.save(attachment.storage_name, uploaded_file, save=True)
+    try:
+        attachment.file.save(attachment.storage_name, uploaded_file, save=True)
+    except Exception as exc:
+        # Stockage objet injoignable ou mal configure (bucket absent,
+        # identifiants) : l'erreur technique est journalisee pour
+        # l'exploitant, l'utilisateur recoit un message clair, et la
+        # transaction englobante (soumission) est annulee - pas de dossier
+        # orphelin sans sa preuve.
+        logger.exception(
+            "attachment_storage_failed",
+            extra={"storage_error": exc.__class__.__name__, "upload_name": uploaded_file.name},
+        )
+        raise ValidationError(STORAGE_UNAVAILABLE) from exc
 
     log_action(
         AuditAction.ATTACHMENT_UPLOADED,
