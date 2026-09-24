@@ -46,19 +46,20 @@ def _visible_bounties(user):
 
 
 def _get_bounty(request, bounty_id):
-    bounty = get_object_or_404(_visible_bounties(request.user), pk=bounty_id)
-    if not bounty.case.is_visible_to(request.user):
-        raise Http404("Recompense introuvable.")
-    return bounty
+    """Prime du perimetre de l'utilisateur (visible_bounties), sinon 404.
+
+    Le perimetre des primes suffit : un versement a traiter reste accessible
+    a qui l'enregistre, meme une fois le dossier sorti de son etape.
+    """
+    return get_object_or_404(_visible_bounties(request.user), pk=bounty_id)
 
 
 def _get_payment(request, payment_id):
-    payment = get_object_or_404(
-        BountyPayment.objects.select_related("bounty__case"), pk=payment_id
+    return get_object_or_404(
+        BountyPayment.objects.select_related("bounty__case"),
+        pk=payment_id,
+        bounty__in=_visible_bounties(request.user),
     )
-    if not payment.bounty.case.is_visible_to(request.user):
-        raise Http404("Versement introuvable.")
-    return payment
 
 
 def _instruit_les_recompenses(user):

@@ -233,8 +233,9 @@ def test_analyst_cannot_patch_qualification_once_submitted(client_for, analyst, 
     assert case_alpha.severity != "LOW"
 
 
-def test_transition_endpoint_enforces_state_machine(client_for, coordinator, case_alpha):
-    client = client_for(coordinator)
+def test_transition_endpoint_enforces_state_machine(client_for, triager, case_alpha):
+    """Meme pour le responsable de l'etape, une transition hors table est refusee."""
+    client = client_for(triager)
     response = client.post(
         f"/api/v1/reports/{case_alpha.case_id}/transition/",
         data=json.dumps({"target_status": "CLOSED"}),
@@ -260,7 +261,10 @@ def test_transition_endpoint_applies_valid_transition(client_for, triager, case_
 
 
 def test_transition_endpoint_refuses_wrong_owner(client_for, coordinator, case_alpha):
-    """Un bouton, un role : le coordinateur n'accuse pas reception."""
+    """Un bouton, un role : le coordinateur n'accuse pas reception.
+
+    Hors de son etape, le dossier n'est meme pas dans son perimetre (404).
+    """
     _mark_opened(case_alpha, coordinator)
     client = client_for(coordinator)
     response = client.post(
@@ -268,7 +272,7 @@ def test_transition_endpoint_refuses_wrong_owner(client_for, coordinator, case_a
         data=json.dumps({"target_status": "ACKNOWLEDGED"}),
         content_type="application/json",
     )
-    assert response.status_code == 400
+    assert response.status_code == 404
     case_alpha.refresh_from_db()
     assert case_alpha.status == CaseStatus.SUBMITTED
 

@@ -41,6 +41,7 @@ from .visibility import readable_channels, writable_channels
 from .workflow import (
     ADMISSIBILITY_CHECKLIST,
     ORG_VISIBLE_STATES,
+    PRIMARY,
     TERMINAL_STATES,
     BountyStage,
     CaseStatus,
@@ -729,7 +730,8 @@ def notify_step_owners(case, actor=None):
     """
     notified = []
     for action in current_actions(case):
-        if action.reporter_only:
+        # L'escalade a son propre avis (NotificationKind.ESCALATED).
+        if action.reporter_only or action.kind != PRIMARY:
             continue
         recipients = [
             user for user in step_owners(case, action) if actor is None or user.pk != actor.pk

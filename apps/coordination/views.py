@@ -114,6 +114,10 @@ def secondary_panels(case, user):
     for action in available_actions(case, kind=SECONDARY):
         if not user_can_click(case, action, user):
             continue
+        if action.key == "escalate":
+            # L'escalade est automatique (SLA des etapes 6-7 depasse) : un
+            # compte ne voit un dossier non escalade qu'a son etape.
+            continue
         if action.key == "request_information" and not reporter_can_reply(case):
             # Declarant anonyme : l'action n'est pas proposee du tout (le
             # moteur la refuse de toute facon, voir _pre_request_information).

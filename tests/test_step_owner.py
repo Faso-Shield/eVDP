@@ -42,18 +42,19 @@ def test_only_the_step_owner_reads_the_report(
 ):
     """Etape 1 : l'agent de triage lit le rapport.
 
-    L'analyste, dont l'etape n'est pas venue, ne voit meme pas le dossier ;
-    coordinateur et auditeur (vue nationale) n'en lisent que les metadonnees.
+    Analyste et coordinateur, dont l'etape n'est pas venue, ne voient meme
+    pas le dossier ; l'auditeur (vue nationale, aucune etape) n'en lit que
+    les metadonnees.
     """
     body = "Description suffisamment longue"
     assert body in _detail(client_for(triager), case_alpha).content.decode()
-    assert _detail(client_for(analyst), case_alpha).status_code == 404
-    for other in (coordinator, auditor):
-        response = _detail(client_for(other), case_alpha)
-        assert response.status_code == 200  # le dossier reste reperable
-        content = response.content.decode()
-        assert body not in content
-        assert "Contenu réservé au responsable" in content
+    for other in (analyst, coordinator):
+        assert _detail(client_for(other), case_alpha).status_code == 404
+    response = _detail(client_for(auditor), case_alpha)
+    assert response.status_code == 200  # le dossier reste reperable
+    content = response.content.decode()
+    assert body not in content
+    assert "Contenu réservé au responsable" in content
 
 
 def test_content_follows_the_current_step(triager, analyst, coordinator, case_alpha):
@@ -73,11 +74,20 @@ def test_reporter_always_reads_his_own_report(researcher_a, case_alpha):
 
 
 def test_organization_reads_only_during_its_own_steps(dsi_alpha, case_alpha):
-    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
-    assert has_content_access(case_alpha, dsi_alpha)
+    """La DSI ne voit son dossier qu'aux etapes 6 et 7, ni avant, ni apres."""
+    from apps.coordination.models import Case
+
+    advance(case_alpha, CaseStatus.VALIDATED)
+    assert not case_alpha.is_visible_to(dsi_alpha)
+    for status in (CaseStatus.VENDOR_NOTIFIED, CaseStatus.REMEDIATION_IN_PROGRESS):
+        advance(case_alpha, status)
+        assert case_alpha.is_visible_to(dsi_alpha)
+        assert has_content_access(case_alpha, dsi_alpha)
+        assert case_alpha in Case.objects.visible_to(dsi_alpha)
     advance(case_alpha, CaseStatus.FIX_AVAILABLE)
-    assert case_alpha.is_visible_to(dsi_alpha)
+    assert not case_alpha.is_visible_to(dsi_alpha)
     assert not has_content_access(case_alpha, dsi_alpha)
+    assert case_alpha not in Case.objects.visible_to(dsi_alpha)
 
 
 def test_closed_case_content_is_closed_to_staff(analyst, coordinator, auditor, case_alpha):
@@ -126,11 +136,12 @@ def test_non_owner_gets_no_pdf_export(client_for, analyst, case_alpha):
 
 
 def test_api_hides_the_report_from_a_non_owner(
-    client_for, analyst, coordinator, triager, case_alpha
+    client_for, analyst, coordinator, auditor, triager, case_alpha
 ):
     url = f"/api/v1/reports/{case_alpha.case_id}/"
     assert client_for(analyst).get(url).status_code == 404
-    report = client_for(coordinator).get(url).json()["report"]
+    assert client_for(coordinator).get(url).status_code == 404
+    report = client_for(auditor).get(url).json()["report"]
     assert "description" not in report
     report = client_for(triager).get(url).json()["report"]
     assert report["description"].startswith("Description")

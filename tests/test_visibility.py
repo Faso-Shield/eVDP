@@ -266,15 +266,19 @@ def test_dsi_sees_no_bounty(bounty_case, analyst, triager, organization):
 def test_advisory_matrix(
     analyst, coordinator, auditor, triager, researcher_a, dsi_alpha, notified_case
 ):
-    assert case_view(notified_case, coordinator)["advisory"] == "write"
+    # Etape 6 : la DSI est responsable ; analyste et coordinateur n'ont pas
+    # le dossier dans leur perimetre ; l'auditeur garde la vue nationale.
     assert case_view(notified_case, dsi_alpha)["advisory"] == "read"
     assert case_view(notified_case, auditor)["advisory"] == "read"
     assert case_view(notified_case, triager)["advisory"] is None
     assert case_view(notified_case, researcher_a)["advisory"] is None
-    # Etape 6 : l'analyste n'est pas responsable, le dossier lui est ferme.
     assert case_view(notified_case, analyst)["advisory"] is None
+    assert case_view(notified_case, coordinator)["advisory"] is None
     advance(notified_case, CaseStatus.FIX_VERIFIED)
     assert case_view(notified_case, analyst)["advisory"] == "write"
+    assert case_view(notified_case, dsi_alpha)["advisory"] is None
+    advance(notified_case, CaseStatus.ADVISORY_REVIEW)
+    assert case_view(notified_case, coordinator)["advisory"] == "write"
 
 
 # -------------------------------------------------------------- journal d'audit

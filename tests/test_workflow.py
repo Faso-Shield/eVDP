@@ -22,6 +22,7 @@ from apps.coordination.constants import Confidentiality, SLAKind, SLAState
 from apps.coordination.models import SLAEvent
 from apps.coordination.selectors import sla_color
 from apps.coordination.services import (
+    escalate_case,
     mark_duplicate,
     perform_action,
     set_severity,
@@ -38,6 +39,7 @@ from apps.coordination.workflow import (
     allowed_targets,
     author_of,
     available_actions,
+    current_owner_ids,
     get_action,
     primary_action,
     remediation_limit_days,
@@ -517,7 +519,6 @@ def test_bounty_proposer_cannot_approve(bounty_case, analyst, monkeypatch):
         (CaseStatus.ADVISORY_REVIEW, "publish_and_close", "coordinator"),
         (CaseStatus.ACKNOWLEDGED, "request_information", "triager"),
         (CaseStatus.ACKNOWLEDGED, "propose_rejection", "triager"),
-        (CaseStatus.VENDOR_NOTIFIED, "escalate", "coordinator"),
     ],
 )
 def test_comment_is_mandatory(case_alpha, status, action, role):
@@ -525,6 +526,22 @@ def test_comment_is_mandatory(case_alpha, status, action, role):
     data = {"review_done": True}
     missing = missing_of(
         lambda: perform_action(case_alpha, action, workflow_actor(role), data=data)
+    )
+    assert missing == ["Commentaire manquant"]
+
+
+def test_comment_is_mandatory_for_deadline_disclosure(case_alpha):
+    """Decision du Coordinateur sur un dossier escalade : commentaire exige."""
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
+    type(case_alpha).objects.filter(pk=case_alpha.pk).update(
+        vendor_notified_at=timezone.now() - timedelta(days=91)
+    )
+    case_alpha.refresh_from_db()
+    escalate_case(case_alpha, None, "SLA depasse")
+    missing = missing_of(
+        lambda: perform_action(
+            case_alpha, "decide_deadline_disclosure", workflow_actor("coordinator"), data={}
+        )
     )
     assert missing == ["Commentaire manquant"]
 
@@ -698,15 +715,41 @@ def test_insufficient_fix_returns_to_remediation(case_alpha, analyst):
     assert remediation.state == SLAState.PENDING
 
 
-def test_manual_escalation_keeps_status(case_alpha, coordinator):
+def test_escalation_hands_the_case_to_the_coordinator(case_alpha, coordinator):
+    """Etapes 6-7 : le Coordinateur ne voit le dossier qu'une fois escalade.
+
+    L'escalade (automatique, sur SLA depasse) ne change pas le statut mais
+    fait du Coordinateur le responsable d'une decision : il voit alors le
+    dossier, et une seconde escalade est sans objet.
+    """
     advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
-    perform_action(case_alpha, "escalate", coordinator, data={"comment": "Silence DSI"})
+    assert not case_alpha.is_visible_to(coordinator)
+    with pytest.raises(OutOfScope):
+        perform_action(case_alpha, "escalate", coordinator, data={"comment": "Silence DSI"})
+
+    escalate_case(case_alpha, None, "SLA depasse")
+    case_alpha.refresh_from_db()
     assert case_alpha.status == CaseStatus.VENDOR_NOTIFIED
     assert case_alpha.escalated_at is not None
+    assert case_alpha.is_visible_to(coordinator)
+    assert coordinator.pk in current_owner_ids(case_alpha)
     missing = missing_of(
         lambda: perform_action(case_alpha, "escalate", coordinator, data={"comment": "Encore"})
     )
     assert missing == ["Dossier déjà escaladé"]
+
+
+def test_sla_escalation_makes_the_case_visible_to_the_coordinator(case_alpha, coordinator):
+    from apps.coordination.models import Case
+    from apps.coordination.tasks import sweep_sla
+
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
+    assert case_alpha not in Case.objects.visible_to(coordinator)
+    case_alpha.sla_events.filter(kind=SLAKind.VENDOR_RESPONSE).update(
+        due_at=timezone.now() - timedelta(hours=1)
+    )
+    sweep_sla()
+    assert case_alpha in Case.objects.visible_to(coordinator)
 
 
 def test_escalation_not_available_before_vendor_notification(case_alpha, coordinator):
@@ -731,11 +774,18 @@ def test_breached_vendor_sla_escalates_automatically(case_alpha):
 def test_deadline_disclosure_after_90_days(case_alpha, analyst, coordinator):
     advance(case_alpha, CaseStatus.REMEDIATION_IN_PROGRESS)
     draft_advisory(case_alpha, analyst)
-    # Sans decision du Coordinateur, pas d'advisory avant le correctif.
+    # Sans decision du Coordinateur, pas d'advisory avant le correctif : le
+    # dossier n'est d'ailleurs pas dans le perimetre de l'analyste (etape 7).
     with pytest.raises(TransitionNotAllowed):
         perform_action(case_alpha, "submit_advisory", analyst)
+    with pytest.raises(OutOfScope):
+        perform_action(
+            case_alpha, "decide_deadline_disclosure", coordinator, data={"comment": "Trop tot"}
+        )
 
-    perform_action(case_alpha, "escalate", coordinator, data={"comment": "Retard"})
+    # Escalade automatique (SLA depasse) : le Coordinateur devient responsable.
+    escalate_case(case_alpha, None, "SLA remediation depasse")
+    case_alpha.refresh_from_db()
     missing = missing_of(
         lambda: perform_action(
             case_alpha, "decide_deadline_disclosure", coordinator, data={"comment": "Echeance"}
@@ -751,6 +801,10 @@ def test_deadline_disclosure_after_90_days(case_alpha, analyst, coordinator):
         case_alpha, "decide_deadline_disclosure", coordinator, data={"comment": "Echeance"}
     )
     assert case_alpha.deadline_disclosure_at is not None
+    # La decision rend l'etape a l'analyste (advisory) et la retire au
+    # Coordinateur.
+    assert analyst.pk in current_owner_ids(case_alpha)
+    assert coordinator.pk not in current_owner_ids(case_alpha)
 
     perform_action(case_alpha, "submit_advisory", analyst)
     assert case_alpha.status == CaseStatus.ADVISORY_REVIEW
@@ -955,9 +1009,10 @@ def test_web_action_refused_to_auditor(client_for, case_alpha, auditor):
     assert case_alpha.status == CaseStatus.SUBMITTED
 
 
-def test_detail_shows_waiting_owner_to_other_roles(client_for, case_alpha, coordinator):
+def test_detail_shows_waiting_owner_to_other_roles(client_for, case_alpha, auditor):
+    """L'auditeur, seul a voir un dossier hors etape, lit « En attente de »."""
     advance(case_alpha, CaseStatus.IN_ANALYSIS)
-    content = client_for(coordinator).get(f"/cases/{case_alpha.case_id}/").content.decode()
+    content = client_for(auditor).get(f"/cases/{case_alpha.case_id}/").content.decode()
     assert "En attente de" in content
     assert "Analyste CSIRT" in content
 
@@ -998,9 +1053,45 @@ def test_analyst_sees_only_the_cases_of_his_steps(analyst, case_alpha):
     assert case_alpha in Case.objects.visible_to(analyst)
 
 
-def test_coordinator_keeps_the_national_view(coordinator, case_alpha):
+def test_coordinator_sees_only_his_steps(coordinator, auditor, case_alpha, triager):
+    """Le Coordinateur ne voit que ses etapes ; l'auditeur garde la vue nationale."""
     from apps.coordination.models import Case
 
-    for status in (CaseStatus.SUBMITTED, CaseStatus.IN_ANALYSIS, CaseStatus.CLOSED):
+    def seen(user):
+        case_alpha.refresh_from_db()
+        return case_alpha in Case.objects.visible_to(user) and case_alpha.is_visible_to(user)
+
+    expected = {
+        CaseStatus.SUBMITTED: False,
+        CaseStatus.IN_ANALYSIS: False,
+        CaseStatus.VALIDATION_PENDING: True,
+        CaseStatus.VALIDATED: False,
+        CaseStatus.VENDOR_NOTIFIED: False,
+        CaseStatus.FIX_VERIFIED: False,
+        CaseStatus.ADVISORY_REVIEW: True,
+        CaseStatus.CLOSED: False,
+    }
+    for status, visible in expected.items():
         advance(case_alpha, status)
-        assert case_alpha in Case.objects.visible_to(coordinator)
+        assert seen(coordinator) is visible, status
+        assert seen(auditor), status
+
+
+def test_coordinator_sees_a_pending_rejection(coordinator, triager, case_alpha):
+    from apps.coordination.models import Case
+
+    assert case_alpha not in Case.objects.visible_to(coordinator)
+    perform_action(case_alpha, "propose_rejection", triager, data={"comment": "Hors sujet"})
+    assert case_alpha.status == CaseStatus.REJECTION_PENDING
+    assert case_alpha in Case.objects.visible_to(coordinator)
+
+
+def test_coordinator_sees_a_proposed_bounty(bounty_case, analyst, coordinator):
+    """Branche prime : B2 revient au Coordinateur, quel que soit le dossier."""
+    from apps.coordination.models import Case
+
+    advance(bounty_case, CaseStatus.VENDOR_NOTIFIED)
+    assert bounty_case not in Case.objects.visible_to(coordinator)
+    perform_action(bounty_case, "propose_bounty", analyst)
+    assert bounty_case.bounty_stage == BountyStage.PROPOSED
+    assert bounty_case in Case.objects.visible_to(coordinator)

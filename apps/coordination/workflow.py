@@ -125,12 +125,20 @@ ORG_VISIBLE_STATES = frozenset(
     }
 )
 
-#: Roles operationnels du CSIRT dont le perimetre suit l'etape en cours : ils
-#: ne voient un dossier (liste, fiche, API) que lorsqu'ils en sont
-#: responsables. Le Coordinateur garde la vue nationale (arbitrage, escalade,
-#: assignation) et l'auditeur ses metadonnees ; l'organisation voit ses
-#: dossiers a partir de l'etape 5, contenu limite a ses etapes.
-STEP_SCOPED_ROLES = frozenset({"TRIAGER", "CSIRT_ANALYST"})
+#: Comptes metiers dont le perimetre suit l'etape en cours : ils ne voient un
+#: dossier (liste, Kanban, fiche, API) et n'agissent dessus que lorsqu'ils en
+#: sont responsables. Un dossier escalade devient une etape du Coordinateur.
+#: Restent hors de cette regle l'auditeur (aucune etape : metadonnees en vue
+#: nationale) et le super admin (aucun dossier).
+STEP_SCOPED_ROLES = frozenset(
+    {
+        "TRIAGER",
+        "CSIRT_ANALYST",
+        "NATIONAL_COORDINATOR",
+        "DSI_ADMIN",
+        "ORGANIZATION_MANAGER",
+    }
+)
 
 #: Etapes ou l'escalade (manuelle ou automatique sur SLA depasse) s'applique.
 ESCALATION_STATES = (CaseStatus.VENDOR_NOTIFIED, CaseStatus.REMEDIATION_IN_PROGRESS)
@@ -933,12 +941,30 @@ def statuses_owned_by(user):
             continue
         if user.has_capability(action.capability):
             (stages if action.track == "bounty" else statuses).update(action.sources)
+    if user.has_capability(ACTIONS_BY_KEY["decide_deadline_disclosure"].capability):
+        statuses.update(ESCALATION_STATES)
     return statuses, stages
 
 
+def escalation_action(case):
+    """Decision attendue du Coordinateur sur un dossier escalade.
+
+    Un depassement aux etapes 6 ou 7 escalade le dossier : le Coordinateur en
+    devient responsable, jusqu'a sa decision de divulgation a echeance.
+    """
+    if (
+        case.escalated_at
+        and not case.deadline_disclosure_at
+        and case.status in ESCALATION_STATES
+    ):
+        return ACTIONS_BY_KEY["decide_deadline_disclosure"]
+    return None
+
+
 def current_actions(case):
-    """Boutons attendus a l'etape en cours : dossier et branche prime."""
-    return [action for action in (primary_action(case), bounty_action(case)) if action]
+    """Actions attendues a l'etape en cours : dossier, branche prime, escalade."""
+    candidates = (primary_action(case), bounty_action(case), escalation_action(case))
+    return [action for action in candidates if action]
 
 
 def current_owner_ids(case):

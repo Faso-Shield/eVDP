@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.accounts.roles import Capability
@@ -567,21 +567,38 @@ def adjust_wallet(researcher, actor, amount, label, currency="XOF", request=None
 def visible_bounties(user):
     """Primes visibles selon la matrice v2 (donnee « Wallet »).
 
-    Coordinateur et auditeur : toutes ; analyste : toutes (il propose) ;
-    chercheur : les siennes ; triage, DSI et super admin : aucune.
+    Chercheur : les siennes. Auditeur : toutes. Analyste et Coordinateur :
+    celles des dossiers dont ils sont responsables de l'etape en cours, et,
+    pour qui enregistre les versements (RECORD_PAYMENT), celles dont un
+    versement reste a enregistrer ou a confirmer. Triage, DSI et super
+    admin : aucune.
     """
     from apps.accounts.roles import Role
+    from apps.coordination.models import Case
 
     queryset = Bounty.objects.select_related("case", "program", "researcher")
     if not user or not user.is_authenticated:
         return queryset.none()
-    if (
+    if user.role == Role.AUDITOR:
+        return queryset
+    if not (
         user.has_capability(Capability.APPROVE_BOUNTY)
         or user.has_capability(Capability.PROPOSE_BOUNTY)
-        or user.role == Role.AUDITOR
     ):
-        return queryset
-    return queryset.filter(researcher=user)
+        return queryset.filter(researcher=user)
+    scope = Q(researcher=user) | Q(case__in=Case.objects.visible_to(user))
+    if user.has_capability(Capability.RECORD_PAYMENT):
+        scope |= Q(status__in=PAYMENT_OPEN_STATUSES)
+    return queryset.filter(scope)
+
+
+#: Primes du perimetre de qui enregistre les versements : versement a
+#: enregistrer, a confirmer, ou regle (sa preuve reste consultable).
+PAYMENT_OPEN_STATUSES = (
+    BountyStatus.APPROVED,
+    BountyStatus.PAYMENT_PENDING,
+    BountyStatus.PAID,
+)
 
 
 def wallet_balance(researcher):

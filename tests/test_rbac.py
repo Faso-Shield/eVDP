@@ -71,9 +71,15 @@ def test_dsi_cannot_publish_advisory(dsi_alpha):
 
 
 # ---------------------------------------------------------------- roles CSIRT
-def test_national_roles_see_all_cases(coordinator, case_alpha, case_beta):
-    visible = set(Case.objects.visible_to(coordinator).values_list("case_id", flat=True))
+def test_auditor_keeps_the_national_view(auditor, coordinator, case_alpha, case_beta):
+    """Seul l'auditeur (aucune etape) garde la vue nationale, en metadonnees.
+
+    Le coordinateur, comme les autres comptes metiers, ne voit que les
+    dossiers de ses etapes : aucun a la reception.
+    """
+    visible = set(Case.objects.visible_to(auditor).values_list("case_id", flat=True))
     assert visible == {case_alpha.case_id, case_beta.case_id}
+    assert not Case.objects.visible_to(coordinator).exists()
 
 
 def test_analyst_cannot_approve_bounty(analyst):

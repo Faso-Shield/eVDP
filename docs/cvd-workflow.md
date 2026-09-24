@@ -39,12 +39,21 @@ Code de référence : `apps/coordination/workflow.py` (table des actions et
    le dossier n'en lisent que les métadonnées (titre, statut, « En attente
    de », échéances). Le déclarant garde toujours l'accès à son propre rapport.
    Un dossier clos n'a plus de responsable : son contenu n'est plus lu par
-   personne côté métier. Pour l'agent de triage et l'analyste CSIRT, la règle
-   vaut aussi pour l'accès au dossier lui-même : ils ne le voient (liste,
-   Kanban, fiche, API) que lorsqu'ils sont responsables de son étape en cours
-   ; une fois leur étape franchie, il sort de leur périmètre (404). Le
-   Coordinateur garde la vue nationale (arbitrage, escalade, assignation) et
-   l'auditeur les métadonnées. Les actions d'exception des étapes 1 à 3 et
+   personne côté métier. La règle vaut aussi pour l'accès au dossier lui-même,
+   pour tous les comptes métiers (agent de triage, analyste, Coordinateur,
+   DSI, responsable d'organisation) : chacun ne voit un dossier (liste,
+   Kanban, fiche, API) et n'agit dessus que lorsqu'il est responsable de son
+   étape en cours ; une fois son étape franchie, le dossier sort de son
+   périmètre (404). Le Coordinateur voit ainsi les étapes 4 et 10, les rejets
+   à confirmer, les primes à approuver (B2) et les dossiers escaladés ; la DSI
+   les étapes 6 et 7. L'auditeur, sans étape, garde une vue nationale en
+   métadonnées ; le super admin ne voit aucun dossier.
+
+   Conséquences : l'escalade est automatique (SLA des étapes 6 ou 7 dépassé)
+   et fait du Coordinateur le responsable du dossier jusqu'à sa décision de
+   divulgation à échéance. La fiche d'une prime reste accessible à qui
+   enregistre les versements (`RECORD_PAYMENT`) tant qu'un versement est à
+   enregistrer ou à confirmer, et une fois réglé pour sa preuve. Les actions d'exception des étapes 1 à 3 et
    « Correctif insuffisant » sont réservées à ce responsable.
 8. **Un avis par étape** — à chaque étape franchie (et dès la soumission), le
    responsable de l'étape suivante reçoit une notification et un email
@@ -120,7 +129,7 @@ statut de prime (`Case.bounty_stage`) est **distinct** du statut du dossier.
 | Marquer comme doublon (`propose_duplicate`) | Triage, Analyste | 1 à 3 | `REJECTION_PENDING` (motif doublon) | Coordinateur confirme → `DUPLICATE`, rattaché à l'original sans fuite |
 | Renvoyer à l'auteur (`return_to_author`, `return_bounty`) | Coordinateur | 4, 10, B2 | Retour à l'étape précédente | — |
 | Correctif insuffisant (`insufficient_fix`) | Analyste | 8 | Retour en `REMEDIATION_IN_PROGRESS` | — |
-| Escalader (`escalate`) | Automatique (SLA 6 ou 7 dépassé) ou Coordinateur | 6, 7 | Alerte rouge, notification du Coordinateur | Le Coordinateur peut décider une divulgation à échéance (`decide_deadline_disclosure`) après 90 j : l'advisory peut alors être soumis sans correctif |
+| Escalader | Automatique (SLA 6 ou 7 dépassé) | 6, 7 | Alerte rouge ; le Coordinateur devient responsable du dossier | Le Coordinateur peut décider une divulgation à échéance (`decide_deadline_disclosure`) après 90 j : l'advisory peut alors être soumis sans correctif |
 
 La DSI ne peut ni rejeter ni marquer un doublon : si elle conteste, elle
 l'écrit dans le canal CSIRT ↔ organisation et le CSIRT décide.

@@ -211,15 +211,20 @@ def test_proposer_cannot_approve_own_bounty(bounty_case, analyst, coordinator):
 def test_proposer_cannot_approve_through_the_workflow_button(
     bounty_case, analyst, coordinator
 ):
-    """Meme regle via le bouton B2 : l'auteur de B1 est refuse (quatre yeux)."""
-    from apps.coordination.workflow import author_of, get_action
+    """Meme regle via le bouton B2 : l'auteur de B1 est refuse (quatre yeux).
+
+    Exclu des responsables de B2, le proposeur n'a meme plus le dossier dans
+    son perimetre : refus « introuvable ».
+    """
+    from apps.coordination.workflow import OutOfScope, author_of, get_action
 
     bounty = _proposed_by(
         propose_bounty(bounty_case, analyst, amount=Decimal("200000")), coordinator
     )
     bounty_case.refresh_from_db()
     assert author_of(bounty_case, get_action("approve_bounty")) == coordinator.pk
-    with pytest.raises(TransitionNotAllowed, match="quatre yeux"):
+    assert not bounty_case.is_visible_to(coordinator)
+    with pytest.raises(OutOfScope):
         perform_action(bounty_case, "approve_bounty", coordinator, data={"comment": "Ok"})
     bounty.refresh_from_db()
     assert bounty.status == BountyStatus.PENDING
@@ -229,9 +234,25 @@ def test_approve_button_hidden_for_proposer(client_for, bounty_case, analyst, co
     bounty = _proposed_by(
         propose_bounty(bounty_case, analyst, amount=Decimal("200000")), coordinator
     )
+    # Le proposeur n'est pas responsable de B2 : la prime sort de son
+    # perimetre, il n'a donc aucun bouton d'approbation.
     client = client_for(coordinator)
     response = client.get(reverse("bounty:detail", args=[bounty.pk]))
-    assert response.context["can_approve"] is False
+    assert response.status_code == 404
+
+
+def test_coordinator_keeps_a_bounty_whose_payment_is_open(
+    client_for, bounty_case, analyst, coordinator, coordinator_b
+):
+    """Versement a traiter : la prime reste accessible a qui l'enregistre,
+    meme une fois le dossier sorti de son etape."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator_b)
+    bounty_case.refresh_from_db()
+    assert not bounty_case.is_visible_to(coordinator)
+
+    response = client_for(coordinator).get(reverse("bounty:detail", args=[bounty.pk]))
+    assert response.status_code == 200
 
 
 def test_approve_button_visible_for_other_coordinator(

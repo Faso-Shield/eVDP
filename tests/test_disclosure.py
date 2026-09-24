@@ -467,17 +467,20 @@ def test_publish_and_close_requires_another_person(case_alpha):
     """Quatre yeux : l'auteur de l'advisory soumis ne peut pas le publier."""
     from apps.accounts.roles import Role
     from apps.coordination.services import perform_action
-    from apps.coordination.workflow import TransitionNotAllowed
+    from apps.coordination.workflow import OutOfScope, current_owner_ids
 
     from .conftest import workflow_actor
 
     case = advance(case_alpha, CaseStatus.ADVISORY_REVIEW)
     author = workflow_actor("analyst")
     # L'auteur recoit la capacite de publier : la regle porte sur la
-    # personne, pas seulement sur le role.
+    # personne, pas seulement sur le role. Exclu des responsables de
+    # l'etape 10, il n'a meme plus le dossier dans son perimetre.
     author.role = Role.NATIONAL_COORDINATOR
     author.save(update_fields=["role"])
-    with pytest.raises(TransitionNotAllowed, match="quatre yeux"):
+    assert author.pk not in current_owner_ids(case)
+    assert workflow_actor("coordinator").pk in current_owner_ids(case)
+    with pytest.raises(OutOfScope):
         perform_action(
             case,
             "publish_and_close",
