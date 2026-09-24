@@ -17,26 +17,98 @@ from apps.vulnerabilities.cvss import CVSSError, describe
 
 from . import selectors
 from .forms import (
+    AdmissibilityForm,
     AssignmentForm,
     CaseFilterForm,
     CaseMessageForm,
     CveLinkForm,
     DisclosureScheduleForm,
     DuplicateForm,
-    StatusTransitionForm,
+    EscalationForm,
+    FixForm,
+    FixVerificationForm,
+    RemediationPlanForm,
     TriageForm,
+    VendorSummaryForm,
+    WorkflowActionForm,
 )
 from .models import Case
 from .services import (
+    QUALIFICATION_OPEN_STATES,
     assign_case,
-    mark_duplicate,
+    build_vendor_summary,
+    escalate_case,
     post_message,
+    propose_duplicate,
+    record_admissibility,
+    record_fix,
+    record_fix_verification,
+    record_remediation_plan,
+    record_vendor_summary,
     schedule_disclosure,
     set_severity,
     transition_case,
     visible_messages,
 )
-from .workflow import TransitionNotAllowed, allowed_targets
+from .workflow import (
+    ESCALATION_STATES,
+    TransitionNotAllowed,
+    button_for,
+    public_status_bucket,
+    secondary_actions_for,
+)
+from .workflow import CaseStatus as S
+
+#: Donnees d'etape : statut courant -> (cle, formulaire, capacite, titre).
+STEP_FORMS = {
+    S.ACKNOWLEDGED: (
+        "admissibility",
+        AdmissibilityForm,
+        Capability.TRIAGE_CASE,
+        "Checklist de recevabilité",
+    ),
+    S.VALIDATED: (
+        "vendor_summary",
+        VendorSummaryForm,
+        Capability.NOTIFY_VENDOR,
+        "Version « organisation » du rapport",
+    ),
+    S.VENDOR_NOTIFIED: (
+        "remediation_plan",
+        RemediationPlanForm,
+        Capability.MANAGE_REMEDIATION,
+        "Plan de remédiation",
+    ),
+    S.REMEDIATION_IN_PROGRESS: (
+        "fix",
+        FixForm,
+        Capability.MANAGE_REMEDIATION,
+        "Correctif",
+    ),
+    S.FIX_AVAILABLE: (
+        "fix_verification",
+        FixVerificationForm,
+        Capability.VERIFY_FIX,
+        "Contre-vérification du correctif",
+    ),
+}
+STEP_FORMS_BY_KEY = {value[0]: (status, *value[1:]) for status, value in STEP_FORMS.items()}
+
+
+def _step_form_for(case, user, data=None):
+    entry = STEP_FORMS.get(case.status)
+    if entry is None or user.is_read_only or not user.has_capability(entry[2]):
+        return None
+    key, form_class, _cap, title = entry
+    initial = {}
+    if key == "vendor_summary" and not case.vendor_summary:
+        initial["vendor_summary"] = build_vendor_summary(case)
+    form = (
+        form_class(data, instance=case, initial=initial)
+        if data is not None
+        else form_class(instance=case, initial=initial)
+    )
+    return {"key": key, "form": form, "title": title}
 
 
 def _get_case(request, case_id):
@@ -101,36 +173,83 @@ def kanban(request):
     )
 
 
+def _viewer_profile(case, user):
+    """Profil d'affichage selon la matrice de visibilite de la spec v2."""
+    if case.reporter_id == user.pk and not user.can_view_all_cases:
+        return "reporter"
+    if user.is_read_only:
+        return "auditor"
+    if user.is_organization_user and not user.can_view_all_cases:
+        return "organization"
+    return "csirt"
+
+
 @login_required
 def case_detail(request, case_id):
     case = _get_case(request, case_id)
     log_action(AuditAction.CASE_VIEWED, actor=request.user, obj=case, request=request)
+    user = request.user
+    profile = _viewer_profile(case, user)
 
     cvss_breakdown = []
-    if case.cvss_vector:
+    if case.cvss_vector and profile in ("csirt", "auditor"):
         try:
             cvss_breakdown = describe(case.cvss_vector)
         except CVSSError:
             cvss_breakdown = []
 
-    is_reporter = case.reporter_id == request.user.id
-    can_manage = request.user.has_capability(Capability.CHANGE_CASE_STATUS)
-    can_draft_advisory = request.user.has_capability(Capability.DRAFT_ADVISORY)
+    can_write = not user.is_read_only
+    can_qualify = (
+        can_write
+        and user.has_capability(Capability.SET_SEVERITY)
+        and case.status in QUALIFICATION_OPEN_STATES
+    )
+    can_draft_advisory = user.has_capability(Capability.DRAFT_ADVISORY) and case.status in (
+        S.FIX_VERIFIED,
+    )
+    message_form = CaseMessageForm(user=user, case=case)
+    advisory = (
+        case.current_advisory() if profile in ("csirt", "organization", "auditor") else None
+    )
+    advisory_issues = []
+    if advisory is not None and profile == "csirt":
+        from apps.disclosures.services import sanitization_issues
+
+        advisory_issues = sanitization_issues(advisory)
 
     context = {
         "case": case,
         "report": case.report,
-        "messages_list": visible_messages(case, request.user),
-        "timeline": case.timeline.select_related("actor"),
-        "attachments": case.attachments.select_related("uploaded_by"),
-        "sla_events": case.sla_events.all(),
-        "status_history": case.status_history.select_related("actor")[:30],
-        "participants": case.participants.select_related("user").filter(is_active=True),
-        "message_form": CaseMessageForm(user=request.user),
-        "upload_form": AttachmentUploadForm(),
-        "status_form": (
-            StatusTransitionForm(case=case, user=request.user) if can_manage else None
+        "profile": profile,
+        "show_content": profile != "auditor",
+        "researcher_status": public_status_bucket(case.status)[1],
+        "messages_list": visible_messages(case, user),
+        # Declarant et organisation : jalons publics seulement.
+        "timeline": (
+            case.timeline.select_related("actor")
+            if profile in ("csirt", "auditor")
+            else case.timeline.filter(is_public=True)
         ),
+        "attachments": case.attachments.select_related("uploaded_by"),
+        "sla_events": case.sla_events.all() if profile != "reporter" else [],
+        "sla_badge": case.sla_badge() if profile != "reporter" else None,
+        "status_history": (
+            case.status_history.select_related("actor")[:30] if profile != "reporter" else []
+        ),
+        "participants": (
+            case.participants.select_related("user").filter(is_active=True)
+            if profile in ("csirt", "auditor")
+            else []
+        ),
+        "message_form": (
+            message_form if message_form.fields["confidentiality"].choices else None
+        ),
+        "upload_form": AttachmentUploadForm() if can_write and profile != "auditor" else None,
+        # Un bouton, un role (spec v2).
+        "button": button_for(case, user),
+        "action_form": WorkflowActionForm(),
+        "secondary_actions": secondary_actions_for(case, user),
+        "step": _step_form_for(case, user),
         "triage_form": (
             TriageForm(
                 case=case,
@@ -143,32 +262,59 @@ def case_detail(request, case_id):
                     "tags": ", ".join(case.tags or []),
                 },
             )
-            if request.user.has_capability(Capability.TRIAGE_CASE)
+            if can_qualify
             else None
         ),
         "assignment_form": (
             AssignmentForm(initial={"assignee": case.assignee_id})
-            if request.user.has_capability(Capability.ASSIGN_CASE)
+            if can_write and user.has_capability(Capability.ASSIGN_CASE)
             else None
         ),
         "duplicate_form": (
-            DuplicateForm() if request.user.has_capability(Capability.TRIAGE_CASE) else None
+            DuplicateForm()
+            if can_write
+            and user.has_capability(Capability.PROPOSE_REJECTION)
+            and any(a.action == "propose_duplicate" for a in secondary_actions_for(case, user))
+            else None
+        ),
+        "escalation_form": (
+            EscalationForm()
+            if can_write
+            and user.has_capability(Capability.ESCALATE_CASE)
+            and case.status in ESCALATION_STATES
+            else None
         ),
         "disclosure_form": (
             DisclosureScheduleForm(initial={"disclosure_date": case.disclosure_date})
-            if can_manage
+            if can_write and user.has_capability(Capability.CHANGE_CASE_STATUS)
             else None
         ),
-        "cve_form": CveLinkForm() if can_manage else None,
+        "cve_form": (
+            CveLinkForm()
+            if can_write and user.has_capability(Capability.CHANGE_CASE_STATUS)
+            else None
+        ),
         "cvss_breakdown": cvss_breakdown,
-        "allowed_targets": allowed_targets(case.status, case.workflow),
-        "is_reporter": is_reporter,
-        "can_manage": can_manage,
-        "can_draft_advisory": can_draft_advisory,
-        "bounty": getattr(case, "bounty", None),
-        "advisories": case.advisories.all(),
+        "is_reporter": profile == "reporter",
+        "can_draft_advisory": can_draft_advisory and advisory is None,
+        "advisory": advisory,
+        "advisory_issues": advisory_issues,
+        # Spec v2 : la DSI ne voit ni la prime ni le Wallet.
+        "bounty": getattr(case, "bounty", None) if profile in ("csirt", "reporter") else None,
+        "show_bounty_branch": profile == "csirt",
+        "can_propose_bounty": (
+            can_write
+            and user.has_capability(Capability.PROPOSE_BOUNTY)
+            and case.bounty_status == "BOUNTY_ELIGIBLE"
+        ),
+        "can_declare_not_eligible": (
+            can_write
+            and user.has_capability(Capability.APPROVE_BOUNTY)
+            and case.bounty_status in ("UNDETERMINED", "BOUNTY_ELIGIBLE")
+            and case.validated_at is not None
+        ),
         # Le case original d'un doublon n'est jamais expose au declarant.
-        "show_duplicate_origin": case.duplicate_of_id is not None and request.user.is_national,
+        "show_duplicate_origin": case.duplicate_of_id is not None and user.can_view_all_cases,
     }
     return render(request, "coordination/case_detail.html", context)
 
@@ -177,7 +323,7 @@ def case_detail(request, case_id):
 @require_not_read_only
 def post_case_message(request, case_id):
     case = _get_case(request, case_id)
-    form = CaseMessageForm(request.POST, user=request.user)
+    form = CaseMessageForm(request.POST, user=request.user, case=case)
     if form.is_valid():
         try:
             post_message(
@@ -197,31 +343,117 @@ def post_case_message(request, case_id):
 
 @login_required
 @require_not_read_only
-@require_capability(Capability.CHANGE_CASE_STATUS)
-def change_status(request, case_id):
+def workflow_action(request, case_id):
+    """Applique l'action demandee. L'interface guide, le serveur decide :
+    tout passe par check_transition() (perimetre, capacite, pre-requis,
+    quatre yeux, commentaire), et chaque refus est audite."""
     case = _get_case(request, case_id)
-    form = StatusTransitionForm(request.POST, case=case, user=request.user)
+    if request.method != "POST":
+        return redirect("coordination:case_detail", case_id=case.case_id)
+    form = WorkflowActionForm(request.POST)
     if form.is_valid():
         try:
             transition_case(
                 case,
-                form.cleaned_data["target_status"],
+                form.cleaned_data["action"],
                 request.user,
                 comment=form.cleaned_data.get("comment", ""),
                 request=request,
             )
-            messages.success(request, f"Statut mis à jour : {case.get_status_display()}.")
+            messages.success(request, f"Dossier : {case.get_status_display()}.")
         except TransitionNotAllowed as exc:
+            if exc.code == "not_found":
+                raise Http404("Dossier introuvable.") from exc
             messages.error(request, str(exc))
+        except (PermissionDenied, ValidationError) as exc:
+            messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
-        messages.error(request, "Transition invalide.")
+        messages.error(request, "Action invalide.")
+    return redirect("coordination:case_detail", case_id=case.case_id)
+
+
+#: Compatibilite des anciennes URL : un changement de statut libre n'existe plus.
+change_status = workflow_action
+
+
+@login_required
+@require_not_read_only
+def save_step(request, case_id, step):
+    """Enregistre les donnees de l'etape courante (pre-requis du bouton)."""
+    case = _get_case(request, case_id)
+    entry = STEP_FORMS_BY_KEY.get(step)
+    if entry is None or request.method != "POST":
+        raise Http404("Étape inconnue.")
+    status, form_class, capability, _title = entry
+    if case.status != status or not request.user.has_capability(capability):
+        from apps.accounts.permissions import deny
+
+        deny(request, f"Étape {step} : non propriétaire ou hors étape.", obj=case)
+    form = form_class(request.POST, instance=Case.objects.get(pk=case.pk))
+    if not form.is_valid():
+        messages.error(request, form.errors.as_text())
+        return redirect("coordination:case_detail", case_id=case.case_id)
+    data = form.cleaned_data
+    try:
+        if step == "admissibility":
+            record_admissibility(
+                case,
+                request.user,
+                data["admissibility_scope_ok"],
+                data["admissibility_organization_ok"],
+                data["admissibility_attachment_ok"],
+                request=request,
+            )
+        elif step == "vendor_summary":
+            record_vendor_summary(case, request.user, data["vendor_summary"], request=request)
+        elif step == "remediation_plan":
+            record_remediation_plan(
+                case,
+                request.user,
+                data["remediation_plan"],
+                data["remediation_due_date"],
+                request=request,
+            )
+        elif step == "fix":
+            record_fix(
+                case,
+                request.user,
+                data["fix_description"],
+                data["fix_version"],
+                request=request,
+            )
+        elif step == "fix_verification":
+            record_fix_verification(
+                case, request.user, data["fix_verification_notes"], request=request
+            )
+        messages.success(request, "Étape enregistrée.")
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     return redirect("coordination:case_detail", case_id=case.case_id)
 
 
 @login_required
 @require_not_read_only
-@require_capability(Capability.TRIAGE_CASE)
+@require_capability(Capability.ESCALATE_CASE)
+def escalate(request, case_id):
+    case = _get_case(request, case_id)
+    form = EscalationForm(request.POST)
+    if form.is_valid():
+        try:
+            escalate_case(case, request.user, form.cleaned_data["comment"], request=request)
+            messages.success(request, "Dossier escaladé.")
+        except (PermissionDenied, ValidationError) as exc:
+            messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.error(request, form.errors.as_text())
+    return redirect("coordination:case_detail", case_id=case.case_id)
+
+
+@login_required
+@require_not_read_only
+@require_capability(Capability.SET_SEVERITY)
 def triage(request, case_id):
+    """Qualification (etape 3) : seul l'analyste CSIRT saisit le CVSS."""
     case = _get_case(request, case_id)
     form = TriageForm(request.POST, case=case)
     if form.is_valid():
@@ -290,20 +522,21 @@ def assign(request, case_id):
 
 @login_required
 @require_not_read_only
-@require_capability(Capability.TRIAGE_CASE)
+@require_capability(Capability.PROPOSE_REJECTION)
 def mark_as_duplicate(request, case_id):
+    """Marquer comme doublon = proposer ; le Coordinateur confirme."""
     case = _get_case(request, case_id)
     form = DuplicateForm(request.POST)
     if form.is_valid():
         try:
-            mark_duplicate(
+            propose_duplicate(
                 case,
                 form.cleaned_data["original_case_id"],
                 request.user,
                 comment=form.cleaned_data.get("comment", ""),
                 request=request,
             )
-            messages.success(request, "Dossier marqué comme doublon.")
+            messages.success(request, "Doublon proposé au Coordinateur.")
         except (PermissionDenied, ValidationError, TransitionNotAllowed) as exc:
             messages.error(request, str(exc))
     else:

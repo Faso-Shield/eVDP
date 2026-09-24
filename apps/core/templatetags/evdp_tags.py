@@ -64,3 +64,18 @@ def query_replace(context, **kwargs):
         else:
             params[key] = value
     return params.urlencode()
+
+
+@register.filter(name="case_status_for")
+def case_status_for(case, user):
+    """Libelle de statut adapte au lecteur : le declarant ne voit que les
+    cinq paliers simplifies (spec v2), jamais l'avancement interne."""
+    from apps.coordination.workflow import public_status_bucket
+
+    if (
+        user is not None
+        and case.reporter_id == getattr(user, "pk", None)
+        and not getattr(user, "can_view_all_cases", False)
+    ):
+        return public_status_bucket(case.status)[1]
+    return case.get_status_display()

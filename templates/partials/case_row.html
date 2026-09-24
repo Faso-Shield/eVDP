@@ -3,7 +3,7 @@
   <td class="mono nowrap"><a href="{{ case.get_absolute_url }}">{{ case.case_id }}</a></td>
   <td>{{ case.title }}</td>
   <td><span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span></td>
-  <td><span class="status">{{ case.get_status_display }}</span></td>
+  <td><span class="status">{{ case|case_status_for:user }}</span></td>
   <td>{% firstof case.organization.acronym case.organization.name "—" %}</td>
   <td class="nowrap small">{{ case.created_at|date:"d/m/Y" }}</td>
 </tr>

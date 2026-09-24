@@ -166,6 +166,16 @@ class VulnerabilityReport(BaseModel):
         return self.reporter_name or self.reporter_email or "Declarant externe"
 
     @property
+    def reporter_public_label(self):
+        """Identite montree a l'organisation : pseudonyme ou rien selon le
+        mode choisi par le declarant, jamais son email (spec v2)."""
+        if self.is_anonymous:
+            return ""
+        if self.reporter:
+            return self.reporter.public_identity()
+        return ""
+
+    @property
     def notification_email(self):
         if self.reporter:
             return self.reporter.email

@@ -154,8 +154,9 @@ def test_sort_by_reward_puts_vdp_programs_last(client, organization):
 
 
 def test_sort_by_reports_orders_by_case_count(client, organization, researcher_a):
-    from apps.reports.services import submit_report
     from tests.conftest import build_report
+
+    from .conftest import submit as submit_report
 
     make_program(organization, "Programme calme")
     busy = make_program(organization, "Programme actif")
@@ -453,11 +454,10 @@ def test_unfilled_default_tiers_are_not_shown_as_a_public_reward(
 
 
 # ----------------------------------------------- statistiques et hall of fame
-def test_program_detail_shows_trust_stats(client, bounty_case, coordinator):
-    from apps.coordination.services import transition_case
+def test_program_detail_shows_trust_stats(client, bounty_case, advance):
     from apps.coordination.workflow import CaseStatus
 
-    transition_case(bounty_case, CaseStatus.RECEIVED, actor=coordinator)
+    advance(bounty_case, CaseStatus.ACKNOWLEDGED)
 
     response = client.get(reverse("programs:detail", args=[bounty_case.program.slug]))
     assert response.status_code == 200
@@ -465,13 +465,13 @@ def test_program_detail_shows_trust_stats(client, bounty_case, coordinator):
 
 
 def test_program_detail_hall_of_fame_lists_credited_researchers_only(
-    client, bounty_case, coordinator
+    client, bounty_case, coordinator, analyst
 ):
     """Seuls les chercheurs ayant choisi d'etre credites publiquement (et
     jamais "Chercheur anonyme") apparaissent sur la fiche du programme."""
     from apps.disclosures.services import create_advisory_from_case, publish_advisory
 
-    advisory = create_advisory_from_case(bounty_case, coordinator, summary="Resume public.")
+    advisory = create_advisory_from_case(bounty_case, analyst, summary="Resume public.")
     advisory.status = "APPROVED"
     advisory.save(update_fields=["status"])
     publish_advisory(advisory, coordinator)

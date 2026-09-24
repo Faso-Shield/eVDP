@@ -74,7 +74,7 @@ def advisory_detail(request, advisory_id):
 
 
 @login_required
-@require_capability(Capability.DRAFT_ADVISORY)
+@require_capability(Capability.DRAFT_ADVISORY, Capability.PUBLISH_ADVISORY)
 def advisory_manage_list(request):
     queryset = Advisory.objects.select_related("organization", "case").order_by("-created_at")
     page = Paginator(queryset, 25).get_page(request.GET.get("page"))
@@ -132,6 +132,12 @@ def _appliquer_action(request, advisory):
         return advisory
 
     try:
+        if action == "publish" and advisory.case_id and advisory.case.is_open:
+            # Un advisory de dossier se publie a l'etape 10, depuis le dossier :
+            # « Publier et clôturer » verifie relecture, quatre yeux et prime.
+            raise ValidationError(
+                "Cet advisory se publie depuis son dossier (« Publier et clôturer »)."
+            )
         if action == "publish":
             publish_advisory(advisory, request.user, request=request)
             messages.success(request, f"Advisory {advisory.advisory_id} publié.")
@@ -159,11 +165,20 @@ def _appliquer_action(request, advisory):
 
 @login_required
 @require_not_read_only
-@require_capability(Capability.DRAFT_ADVISORY)
+@require_capability(Capability.DRAFT_ADVISORY, Capability.PUBLISH_ADVISORY)
 def advisory_manage(request, advisory_id):
+    """Redaction (analyste) et relecture / publication (Coordinateur).
+
+    Spec v2 : le Coordinateur relit le brouillon sans le reecrire ; seul un
+    redacteur (DRAFT_ADVISORY) enregistre le contenu.
+    """
     advisory = get_object_or_404(Advisory, advisory_id=advisory_id.upper())
+    can_edit = request.user.has_capability(Capability.DRAFT_ADVISORY)
 
     if request.method == "POST":
+        if not can_edit:
+            _appliquer_action(request, advisory)
+            return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
         form = AdvisoryForm(request.POST, instance=advisory)
         formset = AdvisoryTimelineFormSet(request.POST, instance=advisory)
         if form.is_valid() and formset.is_valid():
@@ -178,6 +193,9 @@ def advisory_manage(request, advisory_id):
     else:
         form = AdvisoryForm(instance=advisory)
         formset = AdvisoryTimelineFormSet(instance=advisory)
+    if not can_edit:
+        for field in form.fields.values():
+            field.disabled = True
 
     return render(
         request,
@@ -187,6 +205,7 @@ def advisory_manage(request, advisory_id):
             "form": form,
             "formset": formset,
             "can_publish": request.user.has_capability(Capability.PUBLISH_ADVISORY),
+            "can_edit": can_edit,
             "statuses": AdvisoryStatus.choices,
         },
     )

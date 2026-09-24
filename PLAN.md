@@ -35,7 +35,7 @@ projet.
 | Élément | État | Détail |
 |---------|------|--------|
 | Utilisateur personnalisé | ✅ | Email comme identifiant, UUID, Argon2 |
-| 10 rôles RBAC | ✅ | `accounts/roles.py`, matrice de 23 capacités |
+| 10 rôles RBAC | ✅ | `accounts/roles.py`, matrice alignée sur la spec v2 (une capacité par bouton ; Super admin limité à l'administration ; analyste senior en permission individuelle) |
 | Inscription publique bornée | ✅ | Seuls les rôles chercheur sont acceptés |
 | Vérification d'email | ✅ | Jeton à usage unique et durée limitée |
 | Réinitialisation de mot de passe | ✅ | Vues Django + rate limiting |
@@ -55,9 +55,9 @@ projet.
 | Formulaire public | ✅ | 25 champs, Markdown, PGP, pièces jointes, anonymat |
 | Soumission anonyme | ✅ | Adresse de contact ou anonymat strict |
 | Création automatique du Case | ✅ | `EVDP-AAAA-NNNNNN`, séquence verrouillée |
-| Workflow CVD | ✅ | 24 états, transitions déclaratives, capacités requises |
-| Workflow Bug Bounty | ✅ | Table de transitions distincte |
-| Kanban | ✅ | 7 colonnes |
+| Workflow v2 | ✅ | 11 étapes + 4 statuts d'exception, un bouton / un rôle, pré-requis bloquants, quatre yeux, `check_transition()` unique (SPEC-eVDP-2026-V2) |
+| Branche Bug Bounty | ✅ | `Case.bounty_status` parallèle (B1/B2), Wallet en grand livre (solde calculé) |
+| Kanban | ✅ | 6 colonnes, badge d'échéance vert / orange (75 %) / rouge |
 | Messagerie sécurisée | ✅ | 3 niveaux de confidentialité, hash d'intégrité SHA-256 |
 | Pièces jointes | ✅ | Nom opaque, SHA-256, extension + MIME + signature binaire |
 | Antivirus ClamAV | ✅ | Service optionnel, protocole INSTREAM, blocage des fichiers infectés |
@@ -90,7 +90,7 @@ projet.
 | Chronologie publique | ✅ | Recopiée uniquement depuis les évènements publics |
 | Crédit chercheur | ✅ | Respecte le mode d'identité choisi |
 | CVSS v3.1 | ✅ | Calculateur autonome, recalculable, hors ligne |
-| CVSS v4.0 | 🟡 | Détecté et rejeté proprement (**TODO** : implémentation) |
+| CVSS v4.0 | ✅ | Calculateur autonome (macro-vecteurs FIRST, base/menace/environnement) |
 | CWE / CVE | ✅ | Référentiels locaux, association aux cases et advisories |
 | NVD / MITRE / KEV / EPSS | ⬜ | Champs présents, synchronisation non implémentée |
 
@@ -137,18 +137,34 @@ projet.
 
 ---
 
+## Workflow v2 (SPEC-eVDP-2026-V2) ✅
+
+Refonte du 23 septembre 2026 — voir `docs/cvd-workflow.md`.
+
+| Écart constaté | Correction |
+|----------------|------------|
+| TRIAGER possède la capacité « sévérité » | Retirée : seul l'analyste CSIRT saisit le CVSS |
+| CVSS v4.0 détecté puis rejeté | Calculateur v4.0 implémenté (`vulnerabilities/cvss4.py`) |
+| SUPER_ADMIN a toutes les capacités | Limité à l'administration technique, aucun accès aux dossiers |
+| Pas de capacité de validation distincte | `VALIDATE_SEVERITY` (Coordinateur, analyste senior) |
+| Règle des 4 yeux sur le rôle seulement | Comparaison des utilisateurs (auteur de l'étape précédente, auteur du CVSS, proposeur de la prime, auteur de l'advisory) |
+| Pièce jointe non exigée | Refus serveur de toute soumission web / API sans pièce jointe |
+| Pas de Wallet | Grand livre `WalletEntry`, solde calculé, alimenté par B2 |
+| 24 statuts | Migration de données vers 11 étapes + exceptions (`coordination.0008`) |
+
+---
+
 ## Points explicitement non implémentés
 
 Ces éléments sont volontairement absents du MVP. Chacun dispose d'un point
 d'accroche documenté et d'un `TODO` dans le code.
 
 1. **SSO / OIDC / Keycloak / LDAP** — écarté du MVP pour ne pas complexifier le déploiement (conforme §32 du cahier des charges).
-2. **CVSS v4.0** — le calculateur détecte et rejette explicitement les vecteurs v4 plutôt que de produire un score faux.
-3. **Synchronisation NVD / MITRE / CISA KEV / EPSS** — le fonctionnement de base ne dépend d'aucune API externe (conforme §20).
-4. **Elasticsearch / OpenSearch** — PostgreSQL suffit au volume du MVP (conforme §36).
-5. **Paiement réel des récompenses** — délibérément absent (conforme §18).
-6. **Carte du Burkina Faso** — prévue en version ultérieure (conforme §29).
-7. **HSM** — eVDP ne détient aucune clé privée et ne vérifie aucune signature côté serveur : seule la forme des blocs PGP est contrôlée.
+2. **Synchronisation NVD / MITRE / CISA KEV / EPSS** — le fonctionnement de base ne dépend d'aucune API externe (conforme §20).
+3. **Elasticsearch / OpenSearch** — PostgreSQL suffit au volume du MVP (conforme §36).
+4. **Paiement réel des récompenses** — délibérément absent (conforme §18).
+5. **Carte du Burkina Faso** — prévue en version ultérieure (conforme §29).
+6. **HSM** — eVDP ne détient aucune clé privée et ne vérifie aucune signature côté serveur : seule la forme des blocs PGP est contrôlée.
 
 ---
 

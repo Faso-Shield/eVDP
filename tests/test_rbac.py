@@ -40,7 +40,19 @@ def test_organization_cannot_access_other_organization_case(client_for, dsi_beta
     assert response.status_code == 404
 
 
-def test_organization_accesses_own_case(client_for, dsi_alpha, case_alpha):
+def test_organization_does_not_see_case_before_step_5(client_for, dsi_alpha, case_alpha):
+    """Spec v2 : l'organisation n'entre dans le dossier qu'a l'etape 5."""
+    client = client_for(dsi_alpha)
+    response = client.get(reverse("coordination:case_detail", args=[case_alpha.case_id]))
+    assert response.status_code == 404
+
+
+def test_organization_accesses_own_case_from_step_5(
+    client_for, dsi_alpha, case_alpha, advance
+):
+    from apps.coordination.workflow import CaseStatus
+
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     client = client_for(dsi_alpha)
     response = client.get(reverse("coordination:case_detail", args=[case_alpha.case_id]))
     assert response.status_code == 200
@@ -110,7 +122,19 @@ def test_auditor_can_read_audit_log(client_for, auditor):
         (Role.SECURITY_RESEARCHER, Capability.SUBMIT_REPORT, True),
         (Role.SECURITY_RESEARCHER, Capability.VIEW_ALL_CASES, False),
         (Role.SECURITY_RESEARCHER, Capability.TRIAGE_CASE, False),
-        (Role.CSIRT_ANALYST, Capability.TRIAGE_CASE, True),
+        (Role.CSIRT_ANALYST, Capability.SET_SEVERITY, True),
+        (Role.CSIRT_ANALYST, Capability.VALIDATE_SEVERITY, False),
+        (Role.TRIAGER, Capability.SET_SEVERITY, False),
+        (Role.TRIAGER, Capability.TRIAGE_CASE, True),
+        (Role.NATIONAL_COORDINATOR, Capability.VALIDATE_SEVERITY, True),
+        (Role.NATIONAL_COORDINATOR, Capability.SET_SEVERITY, False),
+        (Role.DSI_ADMIN, Capability.MANAGE_REMEDIATION, True),
+        (Role.DSI_ADMIN, Capability.PROPOSE_REJECTION, False),
+        (Role.DSI_ADMIN, Capability.PROPOSE_BOUNTY, False),
+        (Role.SUPER_ADMIN, Capability.VIEW_ALL_CASES, False),
+        (Role.SUPER_ADMIN, Capability.MANAGE_USERS, True),
+        (Role.SUPER_ADMIN, Capability.PUBLISH_ADVISORY, False),
+        (Role.AUDITOR, Capability.CHANGE_CASE_STATUS, False),
         (Role.CSIRT_ANALYST, Capability.MANAGE_USERS, False),
         (Role.NATIONAL_COORDINATOR, Capability.PUBLISH_ADVISORY, True),
         (Role.DSI_ADMIN, Capability.VIEW_ALL_CASES, False),

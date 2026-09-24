@@ -15,9 +15,9 @@ from apps.accounts.models import TokenPurpose, UserToken
 from apps.accounts.tasks import remind_unverified_accounts
 from apps.accounts.verification import grace_deadline, is_within_grace
 from apps.notifications.models import Notification
-from apps.reports.services import submit_report
 
 from .conftest import build_report
+from .conftest import submit as submit_report
 
 pytestmark = pytest.mark.django_db
 

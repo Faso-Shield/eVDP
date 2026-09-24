@@ -58,9 +58,7 @@ def parse_vector(vector):
     raw = vector.strip().upper()
     parts = raw.split("/")
     if not parts or parts[0] not in (PREFIX_31, PREFIX_30):
-        raise CVSSError(
-            "Le vecteur doit commencer par CVSS:3.1/, CVSS:3.0/ ou CVSS:4.0/."
-        )
+        raise CVSSError("Le vecteur doit commencer par CVSS:3.1/, CVSS:3.0/ ou CVSS:4.0/.")
     metrics = {}
     for chunk in parts[1:]:
         if ":" not in chunk:

@@ -5,12 +5,14 @@ l'utilisateur : aucune vue ne renvoie de donnee hors habilitation.
 """
 
 from django.core.exceptions import PermissionDenied
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -23,12 +25,18 @@ from apps.bounty.models import Bounty
 from apps.coordination.constants import Confidentiality
 from apps.coordination.models import Case
 from apps.coordination.selectors import search_cases, visible_cases
-from apps.coordination.services import post_message, transition_case, visible_messages
-from apps.coordination.workflow import TransitionNotAllowed
+from apps.coordination.services import (
+    QUALIFICATION_OPEN_STATES,
+    post_message,
+    set_severity,
+    transition_case,
+    visible_messages,
+)
+from apps.coordination.workflow import TransitionNotAllowed, button_for
 from apps.disclosures.models import Advisory
 from apps.organizations.models import Organization, OrganizationStatus
 from apps.programs.models import Program
-from apps.reports.services import submit_report
+from apps.reports.services import submit_report, validate_submission_attachments
 from apps.researchers.models import IdentityMode, ResearcherProfile
 from apps.vulnerabilities.constants import ReportSource
 
@@ -58,6 +66,7 @@ class ReportViewSet(
     """Soumission et suivi des rapports (exposes via leur Case)."""
 
     permission_classes = [IsAuthenticated, ReadOnlyForAuditors]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
     lookup_field = "case_id"
     lookup_value_regex = r"[A-Za-z0-9\-]+"
     throttle_scope = "report-submission"
@@ -88,11 +97,22 @@ class ReportViewSet(
         description="Soumet un rapport de vulnerabilite et cree le Case associe.",
     )
     def create(self, request, *args, **kwargs):
-        serializer = ReportSubmissionSerializer(data=request.data)
+        """Soumission multipart : champs du rapport + `attachments` (au moins 1)."""
+        data = request.data.dict() if hasattr(request.data, "dict") else request.data
+        serializer = ReportSubmissionSerializer(data=data)
         serializer.is_valid(raise_exception=True)
+        files = request.FILES.getlist("attachments") if request.FILES else []
+        try:
+            validate_submission_attachments(files, ReportSource.API)
+        except DjangoValidationError as exc:
+            return Response(exc.message_dict, status=status.HTTP_400_BAD_REQUEST)
         report = serializer.save(reporter=request.user)
         case = submit_report(
-            report, request=request, source=ReportSource.API, reporter=request.user
+            report,
+            request=request,
+            source=ReportSource.API,
+            reporter=request.user,
+            attachments=files,
         )
         return Response(CaseDetailSerializer(case).data, status=status.HTTP_201_CREATED)
 
@@ -102,13 +122,56 @@ class ReportViewSet(
             case_id=self.kwargs["case_id"].upper(),
         )
         if not case.is_visible_to(self.request.user):
+            log_action(
+                AuditAction.CASE_VIEWED,
+                actor=self.request.user,
+                obj=case,
+                result="DENIED",
+                request=self.request,
+                via="api",
+            )
             raise NotFound("Ressource introuvable.")
         return case
 
+    def retrieve(self, request, *args, **kwargs):
+        # Toute consultation est tracee : elle vaut « dossier ouvert »,
+        # pre-requis de l'accuse de reception (spec v2, etape 1).
+        response = super().retrieve(request, *args, **kwargs)
+        log_action(
+            AuditAction.CASE_VIEWED,
+            actor=request.user,
+            obj=self.get_object(),
+            request=request,
+            via="api",
+        )
+        return response
+
     def perform_update(self, serializer):
-        if not self.request.user.has_capability(Capability.SET_SEVERITY):
+        """Qualification par l'API : memes regles que l'interface (spec v2).
+
+        Seul un analyste saisit le CVSS, et seulement avant la soumission de
+        la qualification ; l'auteur est memorise pour les quatre yeux.
+        """
+        user = self.request.user
+        if not user.has_capability(Capability.SET_SEVERITY):
             raise PermissionDenied("Capacité requise pour modifier ce dossier.")
-        case = serializer.save()
+        case = serializer.instance
+        if case.status not in QUALIFICATION_OPEN_STATES:
+            raise PermissionDenied("La qualification n'est plus modifiable à ce stade.")
+        data = dict(serializer.validated_data)
+        vector = data.pop("cvss_vector", None)
+        severity = data.pop("severity", None)
+        for field_name, value in data.items():
+            setattr(case, field_name, value)
+        if data:
+            case.save(update_fields=list(data) + ["updated_at"])
+        if vector or severity:
+            try:
+                set_severity(case, user, severity=severity, cvss_vector=vector or "")
+            except DjangoValidationError as exc:
+                raise DRFValidationError(
+                    exc.message_dict if hasattr(exc, "error_dict") else exc.messages
+                ) from exc
         log_action(
             AuditAction.CASE_UPDATED,
             actor=self.request.user,
@@ -186,30 +249,42 @@ class ReportViewSet(
             "application/json": {
                 "type": "object",
                 "properties": {
-                    "target_status": {"type": "string"},
+                    "action": {"type": "string"},
                     "comment": {"type": "string"},
                 },
             }
         },
         responses={
             200: CaseDetailSerializer,
-            400: OpenApiResponse(description="Transition interdite"),
+            400: OpenApiResponse(description="Transition interdite ou pré-requis manquants"),
+            403: OpenApiResponse(description="Capacité ou règle des quatre yeux"),
         },
     )
-    @action(detail=True, methods=["post"], url_path="transition")
+    @action(detail=True, methods=["get", "post"], url_path="transition")
     def transition(self, request, case_id=None):
+        """GET : bouton de l'etape pour l'utilisateur ; POST : applique `action`."""
         case = self.get_object()
-        target = request.data.get("target_status", "")
+        if request.method == "GET":
+            return Response(button_for(case, request.user))
         try:
             transition_case(
                 case,
-                target,
+                request.data.get("action", ""),
                 request.user,
                 comment=request.data.get("comment", ""),
                 request=request,
             )
         except TransitionNotAllowed as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            if exc.code == "not_found":
+                raise NotFound("Ressource introuvable.") from exc
+            code = (
+                status.HTTP_403_FORBIDDEN
+                if exc.code in ("forbidden", "four_eyes")
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response(
+                {"detail": str(exc), "code": exc.code, "missing": exc.missing}, status=code
+            )
         return Response(CaseDetailSerializer(case).data)
 
 
@@ -331,10 +406,11 @@ class BountyViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
         # Generation du schema OpenAPI : aucun utilisateur authentifie.
         if not user.is_authenticated:
             return queryset.none()
-        if user.is_national:
+        # Spec v2 : la DSI ne voit pas le Wallet ; le chercheur ne voit que
+        # ses propres primes.
+        if user.can_view_all_cases:
             return queryset
-        case_ids = Case.objects.visible_to(user).values_list("id", flat=True)
-        return queryset.filter(case_id__in=case_ids)
+        return queryset.filter(researcher=user)
 
 
 class SearchView(viewsets.ViewSet):

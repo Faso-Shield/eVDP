@@ -71,9 +71,8 @@ def test_expected_assets_are_present():
 def test_views_render_with_case_without_organization(
     client_for, analyst, researcher_a, sla_policy
 ):
-    from apps.reports.services import submit_report
-
     from .conftest import build_report
+    from .conftest import submit as submit_report
 
     submit_report(
         build_report(researcher_a, organization=None, title="Sans organisation"),
@@ -86,14 +85,14 @@ def test_views_render_with_case_without_organization(
 
 
 @pytest.mark.django_db
-def test_advisory_list_renders_without_organization(client, coordinator, case_alpha):
+def test_advisory_list_renders_without_organization(client, coordinator, analyst, case_alpha):
     from apps.disclosures.models import AdvisoryStatus
     from apps.disclosures.services import create_advisory_from_case, publish_advisory
 
     case_alpha.organization = None
     case_alpha.save(update_fields=["organization"])
 
-    advisory = create_advisory_from_case(case_alpha, coordinator, summary="Resume public.")
+    advisory = create_advisory_from_case(case_alpha, analyst, summary="Resume public.")
     advisory.status = AdvisoryStatus.APPROVED
     advisory.save(update_fields=["status"])
     publish_advisory(advisory, coordinator)

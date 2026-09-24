@@ -8,10 +8,10 @@ Guide d'exploitation quotidienne à destination des équipes ANSSI-BF / CSIRT.
 
 | Rôle | Attribué à | Portée |
 |------|-----------|--------|
-| `SUPER_ADMIN` | Administrateurs plateforme | Tout |
-| `NATIONAL_COORDINATOR` | Coordination nationale | Tous les dossiers, publication, approbation des récompenses, audit |
-| `CSIRT_ANALYST` | Analystes CSIRT | Triage, qualification, rédaction d'advisory, proposition de récompense |
-| `TRIAGER` | Agents de premier niveau | Triage et sévérité uniquement |
+| `SUPER_ADMIN` | Administrateurs plateforme | Comptes, rôles, configuration, SLA, matrices de prime — **aucun accès au contenu des dossiers** (spec v2) |
+| `NATIONAL_COORDINATOR` | Coordination nationale | Validation de la qualification, confirmation des rejets, approbation des primes, publication, escalade, audit |
+| `CSIRT_ANALYST` | Analystes CSIRT | Qualification (seul à saisir le CVSS), transmission à l'organisation, vérification du correctif, advisory, proposition de prime. Permission individuelle « analyste senior » : validation de la qualification d'un pair |
+| `TRIAGER` | Agents de premier niveau | Accusé de réception, recevabilité, compléments, proposition de rejet — pas de CVSS |
 | `AUDITOR` | Contrôle interne, inspection | **Lecture seule** + journal d'audit |
 | `DSI_ADMIN` | DSI d'administration | Ses organisations |
 | `ORGANIZATION_MANAGER` | Responsable d'entité | Ses organisations + gestion |
@@ -105,28 +105,31 @@ Un programme `PUBLIC` et `ACTIVE` apparaît immédiatement sur `/programs/`.
 ### File de traitement
 
 - **`/cases/`** — liste filtrable, triée par score de priorité
-- **`/cases/kanban/`** — vue Kanban en 7 colonnes
+- **`/cases/kanban/`** — vue Kanban en 6 colonnes, badge d'échéance vert / orange / rouge
 
 Le score de priorité (0–100) combine sévérité, secteur de l'organisation,
 ancienneté et dépassements de SLA.
 
 ### Séquence type
 
-1. **Accuser réception** — `RECEIVED` puis `ACKNOWLEDGED` (SLA 72 h).
-2. **Assigner** un analyste.
-3. **Qualifier** — sévérité, vecteur CVSS, CWE, organisation, étiquettes.
-4. **Décider** — `VALIDATED`, `NEEDS_INFORMATION`, ou une issue de triage.
-5. **Coordonner** — `VENDOR_CONTACTED`, échanges via la messagerie.
-6. **Suivre la remédiation** — jusqu'à `FIX_VERIFIED`.
-7. **Planifier la divulgation**, rédiger et publier l'advisory.
-8. **Clore** le dossier.
+Chaque étape a un seul bouton, porté par un seul rôle (workflow v2, voir
+`docs/cvd-workflow.md`) :
+
+1. **Accuser réception** (triage, SLA 72 h) puis **déclarer recevable** (checklist).
+2. **Qualifier** (analyste) — vecteur CVSS v3.1 ou v4.0, CWE, organisation.
+3. **Valider la qualification** (Coordinateur ou analyste senior, autre personne).
+4. **Transmettre à l'organisation** (version « organisation », identité protégée).
+5. **Plan de remédiation** puis **correctif disponible** (DSI).
+6. **Confirmer le correctif** puis **soumettre l'advisory** (analyste).
+7. **Publier et clôturer** (Coordinateur, après relecture et règlement de la prime).
 
 ### Messagerie
 
 | Niveau | Usage |
 |--------|-------|
-| Participants | Échange avec le déclarant et l'organisation |
-| Interne | Analyse entre équipes nationales |
+| Canal chercheur | Échange CSIRT ↔ déclarant (l'organisation ne le lit pas) |
+| Canal CSIRT ↔ organisation | Échange CSIRT ↔ organisation (le déclarant ne le lit pas) |
+| Interne | Notes de triage et d'analyse entre équipes nationales |
 | Restreint | Coordination nationale uniquement |
 
 **Vérifiez le niveau avant d'envoyer.** Un message « Participants » est visible

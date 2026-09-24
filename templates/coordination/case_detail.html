@@ -8,17 +8,25 @@
     <span class="mono muted">{{ case.case_id }}</span>
     <h1 class="mb-0">{{ case.title }}</h1>
     <div class="flex mt-1">
-      <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
-      <span class="status">{{ case.get_status_display }}</span>
-      <span class="pill">{{ case.get_workflow_display }}</span>
-      {% if case.cvss_score %}<span class="pill">CVSS {{ case.cvss_score }}</span>{% endif %}
-      {% if case.cwe %}<span class="pill">{{ case.cwe.code }}</span>{% endif %}
-      {% if case.cve %}<span class="pill">{{ case.cve.cve_id }}</span>{% endif %}
-      <span class="pill">Priorité {{ case.priority_score }}</span>
+      {% if is_reporter %}
+        {# Statut simplifie a 5 paliers : rien de l'avancement interne. #}
+        <span class="status">{{ researcher_status }}</span>
+      {% else %}
+        <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
+        <span class="status">{{ case.get_status_display }}</span>
+        {% if sla_badge %}<span class="sla-badge sla-{{ sla_badge }}" title="Échéance de l'étape">●</span>{% endif %}
+        <span class="pill">{{ case.get_workflow_display }}</span>
+        {% if case.cvss_score %}<span class="pill">CVSS {{ case.cvss_score }}</span>{% endif %}
+        {% if case.cwe %}<span class="pill">{{ case.cwe.code }}</span>{% endif %}
+        {% if case.cve %}<span class="pill">{{ case.cve.cve_id }}</span>{% endif %}
+        {% if profile == "csirt" %}<span class="pill">Priorité {{ case.priority_score }}</span>{% endif %}
+        {% if case.escalated_at %}<span class="badge sev-critical">Escaladé</span>{% endif %}
+        {% if show_bounty_branch and case.bounty_status != "UNDETERMINED" %}<span class="pill">{{ case.get_bounty_status_display }}</span>{% endif %}
+      {% endif %}
     </div>
   </div>
   <div class="btn-row">
-    {% if user.is_national or user.is_organization_user %}
+    {% if profile == "csirt" or profile == "organization" %}
       <a class="btn btn-sm btn-outline" href="{% url 'dashboard:export_case_pdf' case.case_id %}">Export PDF</a>
     {% endif %}
     {% if can_draft_advisory %}
@@ -26,6 +34,80 @@
     {% endif %}
   </div>
 </div>
+
+{# ---- Un bouton, un role (workflow v2) --------------------------------- #}
+{% if button.kind != "none" and not is_reporter or button.kind == "button" %}
+<div class="card workflow-step">
+  <div class="card-body flex-between">
+    {% if button.kind == "button" %}
+      <form method="post" action="{% url 'coordination:workflow_action' case.case_id %}" class="workflow-primary"
+            onsubmit="return {% if button.enabled %}confirm('{{ button.label|escapejs }} ?'){% else %}false{% endif %};">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="{{ button.action }}">
+        {% if button.comment_required %}
+          <label for="primary-comment">Commentaire (obligatoire)</label>
+          <textarea id="primary-comment" name="comment" rows="2" required></textarea>
+        {% else %}
+          <input type="hidden" name="comment" value="">
+        {% endif %}
+        <button class="btn btn-accent" type="submit" {% if not button.enabled %}disabled aria-disabled="true"{% endif %}>{{ button.label }}</button>
+        {% if button.missing %}
+          <ul class="small muted prerequisites">
+            {% for item in button.missing %}<li>{{ item }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+      </form>
+    {% elif button.kind == "waiting" %}
+      <p class="muted mb-0">En attente de : <strong>{{ button.waiting_for|join:", " }}</strong></p>
+    {% endif %}
+
+    {% if secondary_actions %}
+      <details class="workflow-secondary">
+        <summary class="btn btn-sm btn-outline">Autres actions</summary>
+        {% for action in secondary_actions %}
+          {% if action.action != "propose_duplicate" %}
+          <form method="post" action="{% url 'coordination:workflow_action' case.case_id %}" class="mt-1"
+                onsubmit="return confirm('{{ action.label|escapejs }} ?');">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="{{ action.action }}">
+            <textarea name="comment" rows="2" placeholder="Commentaire obligatoire" required></textarea>
+            <button class="btn btn-sm btn-outline" type="submit">{{ action.label }}</button>
+          </form>
+          {% endif %}
+        {% endfor %}
+      </details>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if step %}
+<div class="card">
+  <div class="card-header"><h3>{{ step.title }}</h3><span class="pill">Données de l'étape</span></div>
+  <div class="card-body">
+    <form method="post" action="{% url 'coordination:save_step' case.case_id step.key %}">
+      {% csrf_token %}
+      {% for field in step.form %}{% include "partials/form_field.html" %}{% endfor %}
+      <button class="btn btn-outline" type="submit">Enregistrer</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if advisory and profile == "csirt" %}
+<div class="card">
+  <div class="card-header"><h3>Advisory {{ advisory.advisory_id }}</h3><span class="status">{{ advisory.get_status_display }}</span></div>
+  <div class="card-body small">
+    {% if advisory_issues %}
+      <p><strong>Brouillon non assaini :</strong></p>
+      <ul>{% for issue in advisory_issues %}<li>{{ issue }}</li>{% endfor %}</ul>
+    {% else %}
+      <p class="muted">Brouillon assaini : aucun PoC, aucune IP, aucune URL.</p>
+    {% endif %}
+    <a class="btn btn-sm btn-outline" href="{{ advisory.get_absolute_url }}">Ouvrir l'advisory</a>
+  </div>
+</div>
+{% endif %}
 
 {% if case.status == "DUPLICATE" %}
 <div class="notice">
@@ -48,6 +130,15 @@
 
 <div class="grid" style="grid-template-columns: 2fr 1fr">
   <div>
+    {% if not show_content %}
+    <div class="notice">Profil d'audit : métadonnées uniquement. Le contenu du rapport, les preuves et les échanges ne sont pas accessibles sans demande tracée.</div>
+    {% endif %}
+    {% if profile == "organization" %}
+    <div class="card">
+      <div class="card-header"><h2>Rapport (version organisation)</h2><span class="pill">Identité protégée</span></div>
+      <div class="card-body prose">{{ case.vendor_summary|markdown }}</div>
+    </div>
+    {% elif show_content %}
     <div class="card">
       <div class="card-header"><h2>Rapport</h2><span class="pill">Privé</span></div>
       <div class="card-body prose">
@@ -63,7 +154,9 @@
         {% endif %}
       </div>
     </div>
+    {% endif %}
 
+    {% if show_content %}
     <div class="card">
       <div class="card-header">
         <h2>Messagerie sécurisée</h2>
@@ -94,13 +187,16 @@
           <p class="muted">Aucun message pour le moment.</p>
         {% endfor %}
 
+        {% if message_form %}
         <form method="post" action="{% url 'coordination:post_message' case.case_id %}" class="mt-2">
           {% csrf_token %}
           {% for field in message_form %}{% include "partials/form_field.html" %}{% endfor %}
           <button class="btn btn-accent" type="submit">Publier le message</button>
         </form>
+        {% endif %}
       </div>
     </div>
+    {% endif %}
 
     <div class="card">
       <div class="card-header">
@@ -123,7 +219,9 @@
                 </td>
                 <td class="small">{{ attachment.uploaded_by.display_name|default:"—" }}</td>
                 <td>
-                  {% if attachment.is_downloadable %}
+                  {% if not show_content %}
+                    <span class="muted">—</span>
+                  {% elif attachment.is_downloadable %}
                     <a class="btn btn-sm btn-outline" href="{% url 'attachments:download' attachment.id %}">Télécharger</a>
                   {% else %}
                     <span class="badge sev-critical">Bloqué</span>
@@ -136,7 +234,9 @@
             </tbody>
           </table>
         </div>
+        <p class="small muted">Les pièces du déclarant sont des preuves : lecture seule pour tous les rôles.</p>
 
+        {% if upload_form %}
         <form method="post" enctype="multipart/form-data" action="{% url 'coordination:upload_attachment' case.case_id %}" class="mt-2">
           {% csrf_token %}
           <div class="filters">
@@ -144,6 +244,7 @@
             <button class="btn btn-outline" type="submit">Téléverser</button>
           </div>
         </form>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -153,12 +254,13 @@
       <div class="card-header"><h3>Dossier</h3></div>
       <div class="card-body">
         <dl class="dl-inline">
-          <dt>Déclarant</dt><dd>{{ report.reporter_display }}</dd>
+          <dt>Déclarant</dt><dd>{% if profile == "csirt" or is_reporter %}{{ report.reporter_display }}{% elif profile == "organization" %}{{ case.report.reporter_public_label|default:"Identité protégée" }}{% else %}Pseudonymisé{% endif %}</dd>
           <dt>Organisation</dt><dd>{% firstof case.organization.name report.affected_organization_name "Non déterminée" %}</dd>
           <dt>Produit</dt><dd>{{ case.product|default:"—" }}</dd>
           <dt>Type</dt><dd>{{ case.get_vulnerability_type_display }}</dd>
           <dt>Programme</dt><dd>{% if case.program %}<a href="{% url 'programs:detail' case.program.slug %}">{{ case.program.name }}</a>{% else %}—{% endif %}</dd>
-          <dt>Analyste</dt><dd>{{ case.assignee.display_name|default:"Non assigné" }}</dd>
+          {% if not is_reporter %}<dt>Analyste</dt><dd>{{ case.assignee.display_name|default:"Non assigné" }}</dd>{% endif %}
+          {% if case.remediation_due_date and not is_reporter %}<dt>Correctif attendu</dt><dd>{{ case.remediation_due_date|date:"d/m/Y" }}</dd>{% endif %}
           <dt>Créé le</dt><dd>{{ case.created_at|date:"d/m/Y H:i" }}</dd>
           <dt>Divulgation prévue</dt><dd>{{ case.disclosure_date|date:"d/m/Y"|default:"Non planifiée" }}</dd>
         </dl>
@@ -178,6 +280,7 @@
     </div>
     {% endif %}
 
+    {% if not is_reporter %}
     <div class="card">
       <div class="card-header"><h3>Échéances SLA</h3></div>
       <div class="card-body small">
@@ -193,6 +296,7 @@
         {% endfor %}
       </div>
     </div>
+    {% endif %}
 
     <div class="card">
       <div class="card-header"><h3>Chronologie</h3></div>
@@ -202,7 +306,7 @@
             <li>
               <div class="tl-date">{{ event.occurred_at|date:"d/m/Y H:i" }}</div>
               <div class="tl-label">{{ event.label }}</div>
-              {% if event.actor %}<div class="small muted">{{ event.actor.display_name }}</div>{% endif %}
+              {% if event.actor and profile == "csirt" or event.actor and profile == "auditor" %}<div class="small muted">{{ event.actor.display_name }}</div>{% endif %}
             </li>
           {% empty %}
             <li><div class="tl-label muted">Aucun évènement.</div></li>
@@ -211,6 +315,7 @@
       </div>
     </div>
 
+    {% if participants %}
     <div class="card">
       <div class="card-header"><h3>Participants</h3></div>
       <div class="card-body small">
@@ -222,6 +327,7 @@
         {% empty %}<p class="muted">Aucun participant.</p>{% endfor %}
       </div>
     </div>
+    {% endif %}
 
     {% if bounty %}
     <div class="card">
@@ -232,36 +338,31 @@
         <a class="btn btn-sm btn-outline mt-1" href="{% url 'bounty:detail' bounty.id %}">Ouvrir</a>
       </div>
     </div>
-    {% elif case.is_bug_bounty and can_manage %}
+    {% elif can_propose_bounty %}
     <div class="card">
-      <div class="card-header"><h3>Récompense</h3></div>
+      <div class="card-header"><h3>Prime (branche B1)</h3></div>
       <div class="card-body small">
-        <p class="muted">Aucune récompense proposée.</p>
-        <a class="btn btn-sm btn-accent" href="{% url 'bounty:propose' case.case_id %}">Proposer une récompense</a>
+        <p class="muted">Dossier éligible : la prime se décide en parallèle de la remédiation.</p>
+        <a class="btn btn-sm btn-accent" href="{% url 'bounty:propose' case.case_id %}">Proposer la prime</a>
       </div>
     </div>
     {% endif %}
-
-    {% if status_form %}
+    {% if can_declare_not_eligible %}
     <div class="card">
-      <div class="card-header"><h3>Changer le statut</h3></div>
-      <div class="card-body">
-        {% if allowed_targets %}
-          <form method="post" action="{% url 'coordination:change_status' case.case_id %}">
-            {% csrf_token %}
-            {% for field in status_form %}{% include "partials/form_field.html" %}{% endfor %}
-            <button class="btn btn-block" type="submit">Appliquer</button>
-          </form>
-        {% else %}
-          <p class="muted small">Aucune transition possible depuis cet état.</p>
-        {% endif %}
+      <div class="card-header"><h3>Prime</h3></div>
+      <div class="card-body small">
+        <form method="post" action="{% url 'bounty:not_eligible' case.case_id %}">
+          {% csrf_token %}
+          <textarea name="comment" rows="2" placeholder="Motif (obligatoire)" required></textarea>
+          <button class="btn btn-sm btn-outline" type="submit">Déclarer non éligible</button>
+        </form>
       </div>
     </div>
     {% endif %}
 
     {% if triage_form %}
     <div class="card">
-      <div class="card-header"><h3>Qualification</h3></div>
+      <div class="card-header"><h3>Qualification (CVSS v3.1 ou v4.0)</h3></div>
       <div class="card-body">
         <form method="post" action="{% url 'coordination:triage' case.case_id %}">
           {% csrf_token %}
@@ -287,12 +388,25 @@
 
     {% if duplicate_form %}
     <div class="card">
-      <div class="card-header"><h3>Marquer comme doublon</h3></div>
+      <div class="card-header"><h3>Marquer comme doublon (proposition)</h3></div>
       <div class="card-body">
         <form method="post" action="{% url 'coordination:mark_duplicate' case.case_id %}">
           {% csrf_token %}
           {% for field in duplicate_form %}{% include "partials/form_field.html" %}{% endfor %}
           <button class="btn btn-block btn-outline" type="submit">Marquer</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if escalation_form %}
+    <div class="card">
+      <div class="card-header"><h3>Escalader</h3></div>
+      <div class="card-body">
+        <form method="post" action="{% url 'coordination:escalate' case.case_id %}">
+          {% csrf_token %}
+          {% for field in escalation_form %}{% include "partials/form_field.html" %}{% endfor %}
+          <button class="btn btn-block btn-outline" type="submit">Escalader</button>
         </form>
       </div>
     </div>
@@ -316,6 +430,7 @@
     </div>
     {% endif %}
 
+    {% if not is_reporter %}
     <div class="card">
       <div class="card-header"><h3>Historique des statuts</h3></div>
       <div class="card-body small">
@@ -328,6 +443,7 @@
         {% empty %}<p class="muted">Aucun changement enregistré.</p>{% endfor %}
       </div>
     </div>
+    {% endif %}
   </aside>
 </div>
 {% endblock %}

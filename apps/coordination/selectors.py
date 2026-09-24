@@ -64,7 +64,9 @@ def search_cases(
 
 def kanban_board(user, limit_per_column=40):
     """Regroupe les cases visibles par colonne Kanban."""
-    queryset = visible_cases(user).exclude(status=CaseStatus.CLOSED)
+    queryset = (
+        visible_cases(user).exclude(status=CaseStatus.CLOSED).prefetch_related("sla_events")
+    )
     board = []
     for key, label, states in KANBAN_COLUMNS:
         column_cases = list(queryset.filter(status__in=states)[:limit_per_column])
@@ -93,16 +95,20 @@ def case_statistics(user):
         "total": total,
         "new": queryset.filter(status=CaseStatus.SUBMITTED).count(),
         "in_triage": queryset.filter(
-            status__in=[CaseStatus.TRIAGE, CaseStatus.NEEDS_INFORMATION]
+            status__in=[
+                CaseStatus.ACKNOWLEDGED,
+                CaseStatus.IN_ANALYSIS,
+                CaseStatus.NEEDS_INFORMATION,
+                CaseStatus.VALIDATION_PENDING,
+                CaseStatus.REJECTION_PENDING,
+            ]
         ).count(),
         "validated": validated,
         "in_remediation": queryset.filter(
             status__in=[
-                CaseStatus.REMEDIATION,
-                CaseStatus.VENDOR_CONTACTED,
-                CaseStatus.VENDOR_ACKNOWLEDGED,
+                CaseStatus.VENDOR_NOTIFIED,
+                CaseStatus.REMEDIATION_IN_PROGRESS,
                 CaseStatus.FIX_AVAILABLE,
-                CaseStatus.IN_PROGRESS,
             ]
         ).count(),
         "critical": severities.get(Severity.CRITICAL, 0),

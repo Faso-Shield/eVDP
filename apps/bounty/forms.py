@@ -25,7 +25,9 @@ class BountyDecisionForm(forms.Form):
         required=False,
     )
     note = forms.CharField(
-        label="Note de décision", widget=forms.Textarea(attrs={"rows": 3}), required=False
+        label="Commentaire de décision (obligatoire)",
+        widget=forms.Textarea(attrs={"rows": 3}),
+        required=False,
     )
 
 

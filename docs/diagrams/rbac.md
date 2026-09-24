@@ -1,16 +1,22 @@
 # Diagramme — RBAC
 
+Workflow v2 (SPEC-eVDP-2026-V2) : une capacité par bouton, un propriétaire
+par étape. Source : `apps/accounts/roles.py`.
+
 ```mermaid
 graph LR
     subgraph national["Rôles nationaux — voient tous les dossiers"]
-        SA["SUPER_ADMIN"]
         NC["NATIONAL_COORDINATOR"]
-        CA["CSIRT_ANALYST"]
+        CA["CSIRT_ANALYST<br/>(+ analyste senior)"]
         TR["TRIAGER"]
-        AU["AUDITOR<br/>(lecture seule)"]
+        AU["AUDITOR<br/>(lecture seule, métadonnées)"]
     end
 
-    subgraph orga["Rôles organisation — périmètre limité"]
+    subgraph admin["Administration technique — aucun dossier"]
+        SA["SUPER_ADMIN"]
+    end
+
+    subgraph orga["Rôles organisation — à partir de l'étape 5"]
         DSI["DSI_ADMIN"]
         OM["ORGANIZATION_MANAGER"]
     end
@@ -21,42 +27,42 @@ graph LR
         PU["PUBLIC_USER"]
     end
 
-    subgraph caps["Capacités"]
-        C1["VIEW_ALL_CASES"]
-        C2["VIEW_ORG_CASES"]
-        C3["TRIAGE_CASE"]
-        C4["CHANGE_CASE_STATUS"]
-        C5["SET_SEVERITY"]
-        C6["POST_INTERNAL_MESSAGE"]
-        C7["PROPOSE_BOUNTY"]
-        C8["APPROVE_BOUNTY"]
-        C9["RECORD_PAYMENT"]
-        C10["DRAFT_ADVISORY"]
-        C11["PUBLISH_ADVISORY"]
-        C12["VIEW_AUDIT_LOG"]
-        C13["VIEW_NATIONAL_DASHBOARD"]
-        C14["SUBMIT_REPORT"]
-        C15["MANAGE_PROGRAM"]
-        C16["EXPORT_DATA"]
+    subgraph caps["Capacités de workflow"]
+        W1["TRIAGE_CASE<br/>étapes 1-2"]
+        W2["SET_SEVERITY<br/>étape 3 (CVSS)"]
+        W3["VALIDATE_SEVERITY<br/>étape 4"]
+        W4["NOTIFY_VENDOR<br/>étape 5"]
+        W5["MANAGE_REMEDIATION<br/>étapes 6-7"]
+        W6["VERIFY_FIX<br/>étape 8"]
+        W7["DRAFT_ADVISORY<br/>étape 9"]
+        W8["PUBLISH_ADVISORY<br/>étape 10"]
+        W9["PROPOSE_BOUNTY<br/>B1"]
+        W10["APPROVE_BOUNTY<br/>B2"]
+        X1["REQUEST_INFORMATION<br/>PROPOSE_REJECTION"]
+        X2["CONFIRM_REJECTION<br/>SEND_BACK · ESCALATE_CASE"]
+        X3["SUBMIT_REPORT<br/>PROVIDE_INFORMATION"]
+        A1["MANAGE_USERS · MANAGE_ALL_ORGANIZATIONS<br/>MANAGE_PROGRAM · VIEW_AUDIT_LOG"]
     end
 
-    SA --> C1 & C3 & C4 & C5 & C7 & C8 & C9 & C10 & C11 & C12 & C13 & C15 & C16
-    NC --> C1 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10 & C11 & C12 & C13 & C15 & C16
-    CA --> C1 & C3 & C4 & C5 & C6 & C7 & C10 & C15 & C16
-    TR --> C1 & C3 & C4 & C5 & C6
-    AU --> C1 & C12 & C13 & C16
-    DSI --> C2 & C4 & C6 & C7 & C15 & C16
-    OM --> C2 & C4 & C6 & C7 & C15 & C16
-    SR --> C14
-    BR --> C14
-    PU --> C14
+    TR --> W1 & X1
+    CA --> W2 & W4 & W6 & W7 & W9 & X1
+    CA -. "is_senior_analyst" .-> W3
+    NC --> W3 & W8 & W10 & X2 & A1
+    DSI --> W5
+    OM --> W5
+    SR --> X3
+    BR --> X3
+    PU --> X3
+    SA --> A1
 
     classDef nat fill:#0b2a4a,stroke:#071c33,color:#fff
     classDef org fill:#123f6d,stroke:#071c33,color:#fff
     classDef res fill:#0d7a5f,stroke:#08553f,color:#fff
-    class SA,NC,CA,TR,AU nat
+    classDef adm fill:#5a5a5a,stroke:#333,color:#fff
+    class NC,CA,TR,AU nat
     class DSI,OM org
     class SR,BR,PU res
+    class SA adm
 ```
 
 ## Trois barrières d'autorisation

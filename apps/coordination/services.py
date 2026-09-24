@@ -16,7 +16,12 @@ from apps.audit.models import AuditAction, AuditResult
 from apps.audit.services import log_action
 from apps.core.utils import hash_text
 from apps.notifications.models import NotificationKind
-from apps.notifications.services import notify, notify_case_team, notify_external
+from apps.notifications.services import (
+    notify,
+    notify_case_team,
+    notify_external,
+    notify_many,
+)
 from apps.vulnerabilities.constants import Severity
 
 from .constants import (
@@ -36,37 +41,46 @@ from .models import (
     CaseTrackingToken,
     SLAEvent,
     SLAPolicy,
+    channels_visible_to,
+    channels_writable_by,
 )
 from .workflow import (
+    DISMISSED_STATES,
+    ESCALATION_STATES,
+    EXCEPTION_STATES,
+    ORG_VISIBLE_STATES,
+    REMEDIATION_DAYS,
+    TERMINAL_STATES,
+    CaseBountyStatus,
     CaseStatus,
     TransitionNotAllowed,
     check_transition,
     public_status_bucket,
+    resolve_target,
 )
 
 #: Duree de validite d'un lien de suivi remis a un declarant sans compte.
 TRACKING_TOKEN_VALIDITY = timedelta(days=180)
 
-#: Statut -> evenement de chronologie correspondant.
+#: Statut d'arrivee -> evenement de chronologie correspondant.
 STATUS_TIMELINE_EVENTS = {
     CaseStatus.ACKNOWLEDGED: TimelineEventType.ACKNOWLEDGED,
-    CaseStatus.TRIAGE: TimelineEventType.TRIAGE_STARTED,
+    CaseStatus.IN_ANALYSIS: TimelineEventType.TRIAGE_STARTED,
     CaseStatus.NEEDS_INFORMATION: TimelineEventType.INFORMATION_REQUESTED,
+    CaseStatus.VALIDATION_PENDING: TimelineEventType.QUALIFICATION_SUBMITTED,
     CaseStatus.VALIDATED: TimelineEventType.VALIDATED,
-    CaseStatus.SEVERITY_ASSIGNED: TimelineEventType.SEVERITY_SET,
-    CaseStatus.VENDOR_CONTACTED: TimelineEventType.ORGANIZATION_CONTACTED,
-    CaseStatus.VENDOR_ACKNOWLEDGED: TimelineEventType.ORGANIZATION_ACKNOWLEDGED,
+    CaseStatus.VENDOR_NOTIFIED: TimelineEventType.ORGANIZATION_CONTACTED,
+    CaseStatus.REMEDIATION_IN_PROGRESS: TimelineEventType.REMEDIATION_PLANNED,
     CaseStatus.FIX_AVAILABLE: TimelineEventType.FIX_PROVIDED,
     CaseStatus.FIX_VERIFIED: TimelineEventType.FIX_VERIFIED,
-    CaseStatus.DISCLOSURE_SCHEDULED: TimelineEventType.DISCLOSURE_SCHEDULED,
-    CaseStatus.PUBLISHED: TimelineEventType.ADVISORY_PUBLISHED,
-    CaseStatus.REWARD_APPROVED: TimelineEventType.REWARD_APPROVED,
+    CaseStatus.ADVISORY_REVIEW: TimelineEventType.ADVISORY_SUBMITTED,
+    CaseStatus.REJECTION_PENDING: TimelineEventType.REJECTION_PROPOSED,
     CaseStatus.DUPLICATE: TimelineEventType.DUPLICATE_MARKED,
     CaseStatus.REJECTED: TimelineEventType.REJECTED,
     CaseStatus.CLOSED: TimelineEventType.CLOSED,
 }
 
-#: Statuts declenchant une notification au declarant.
+#: Statuts declenchant une notification dediee au declarant.
 STATUS_NOTIFICATIONS = {
     CaseStatus.ACKNOWLEDGED: NotificationKind.ACKNOWLEDGEMENT,
     CaseStatus.NEEDS_INFORMATION: NotificationKind.INFORMATION_REQUESTED,
@@ -124,10 +138,11 @@ def add_participant(case, user, role=ParticipantRole.OBSERVER, added_by=None):
 
 
 def ensure_default_participants(case):
-    """Rattache automatiquement le declarant et les contacts de l'organisation."""
+    """Rattache automatiquement le declarant, puis -- a partir de l'etape 5
+    seulement -- les contacts de l'organisation affectee."""
     if case.reporter_id:
         add_participant(case, case.reporter, ParticipantRole.REPORTER)
-    if case.organization_id:
+    if case.organization_id and case.status in ORG_VISIBLE_STATES:
         from apps.organizations.models import MembershipRole
 
         members = case.organization.members.filter(
@@ -192,57 +207,121 @@ def satisfy_sla(case, kind):
     return event
 
 
-def _sla_side_effects(case, new_status):
-    """Ouvre et solde les echeances au fil du workflow."""
+def suspend_sla(case):
+    """Gele les echeances en cours (compléments demandes au declarant)."""
+    now = timezone.now()
+    case.sla_events.filter(state__in=[SLAState.PENDING, SLAState.APPROACHING]).update(
+        state=SLAState.SUSPENDED, suspended_at=now, updated_at=now
+    )
+
+
+def resume_sla(case):
+    """Relance les echeances gelees, decalees de la duree de suspension."""
+    now = timezone.now()
+    for event in case.sla_events.filter(state=SLAState.SUSPENDED):
+        if event.suspended_at:
+            event.due_at += now - event.suspended_at
+        event.state = SLAState.PENDING
+        event.suspended_at = None
+        event.save(update_fields=["due_at", "state", "suspended_at", "updated_at"])
+
+
+def _sla_side_effects(case, previous, new_status):
+    """Ouvre et solde les echeances au fil du workflow (une par etape)."""
     policy = resolve_sla_policy(case)
     now = timezone.now()
 
-    if new_status in (CaseStatus.RECEIVED, CaseStatus.ACKNOWLEDGED):
-        satisfy_sla(case, SLAKind.ACKNOWLEDGEMENT)
-    if new_status in (
-        CaseStatus.TRIAGE,
-        CaseStatus.VALIDATED,
-        CaseStatus.REJECTED,
-        CaseStatus.DUPLICATE,
-        CaseStatus.OUT_OF_SCOPE,
-        CaseStatus.NOT_APPLICABLE,
-        CaseStatus.INFORMATIVE,
-    ):
-        satisfy_sla(case, SLAKind.TRIAGE)
-    if policy is None:
+    if new_status == CaseStatus.NEEDS_INFORMATION:
+        suspend_sla(case)
         return
-    if new_status == CaseStatus.VENDOR_CONTACTED:
-        schedule_sla(
-            case,
-            SLAKind.VENDOR_RESPONSE,
-            now + timedelta(days=policy.vendor_response_days),
-        )
-    if new_status == CaseStatus.VENDOR_ACKNOWLEDGED:
+    if previous == CaseStatus.NEEDS_INFORMATION:
+        resume_sla(case)
+
+    if new_status == CaseStatus.ACKNOWLEDGED:
+        satisfy_sla(case, SLAKind.ACKNOWLEDGEMENT)
+    if new_status in (CaseStatus.VALIDATION_PENDING, *DISMISSED_STATES):
+        satisfy_sla(case, SLAKind.ACKNOWLEDGEMENT)
+        satisfy_sla(case, SLAKind.TRIAGE)
+    if previous == CaseStatus.VALIDATION_PENDING:
+        satisfy_sla(case, SLAKind.VALIDATION)
+    if new_status == CaseStatus.REMEDIATION_IN_PROGRESS:
         satisfy_sla(case, SLAKind.VENDOR_RESPONSE)
-    if new_status in (CaseStatus.VALIDATED, CaseStatus.REMEDIATION):
-        schedule_sla(
-            case,
-            SLAKind.REMEDIATION,
-            now + timedelta(days=policy.remediation_days_for(case.severity)),
-        )
-    if new_status in (CaseStatus.FIX_AVAILABLE, CaseStatus.FIX_VERIFIED):
+    if new_status == CaseStatus.FIX_AVAILABLE:
         satisfy_sla(case, SLAKind.REMEDIATION)
-    if new_status in (CaseStatus.PUBLISHED, CaseStatus.CLOSED):
-        case.sla_events.filter(state=SLAState.PENDING).update(state=SLAState.CANCELLED)
+    if previous == CaseStatus.FIX_AVAILABLE:
+        satisfy_sla(case, SLAKind.VERIFICATION)
+
+    if policy is not None:
+        if new_status == CaseStatus.VALIDATION_PENDING:
+            _restart_sla(
+                case, SLAKind.VALIDATION, now + timedelta(days=policy.validation_days)
+            )
+        if new_status == CaseStatus.VENDOR_NOTIFIED:
+            schedule_sla(
+                case,
+                SLAKind.VENDOR_RESPONSE,
+                now + timedelta(days=policy.vendor_response_days),
+            )
+        if new_status == CaseStatus.FIX_AVAILABLE:
+            _restart_sla(
+                case, SLAKind.VERIFICATION, now + timedelta(days=policy.verification_days)
+            )
+    if new_status == CaseStatus.REMEDIATION_IN_PROGRESS and case.remediation_due_date:
+        _restart_sla(case, SLAKind.REMEDIATION, _start_of_day(case.remediation_due_date))
+    if new_status in TERMINAL_STATES:
+        case.sla_events.filter(
+            state__in=[SLAState.PENDING, SLAState.APPROACHING, SLAState.SUSPENDED]
+        ).update(state=SLAState.CANCELLED)
+
+
+def _restart_sla(case, kind, due_at):
+    """(Re)ouvre une echeance, y compris apres un renvoi a l'etape precedente."""
+    policy = resolve_sla_policy(case)
+    event, created = SLAEvent.objects.get_or_create(
+        case=case, kind=kind, defaults={"due_at": due_at, "policy": policy}
+    )
+    if not created:
+        event.due_at = due_at
+        event.state = SLAState.PENDING
+        event.satisfied_at = None
+        event.warned_at = None
+        event.breached_at = None
+        event.save(
+            update_fields=[
+                "due_at",
+                "state",
+                "satisfied_at",
+                "warned_at",
+                "breached_at",
+                "updated_at",
+            ]
+        )
+    return event
+
+
+def remediation_deadline(case):
+    """Date cible maximale du correctif selon la severite validee."""
+    policy = resolve_sla_policy(case)
+    days = (
+        policy.remediation_days_for(case.severity)
+        if policy
+        else REMEDIATION_DAYS.get(case.severity, 90)
+    )
+    return timezone.localdate() + timedelta(days=days)
 
 
 # ---------------------------------------------------------------------------
 # Transition de statut
 # ---------------------------------------------------------------------------
-def transition_case(case, target_status, actor, comment="", request=None):
-    """Applique une transition de statut controlee et tracee.
+def transition_case(case, action, actor, comment="", request=None):
+    """Applique l'action `action` du workflow v2, controlee et tracee.
 
     La verification est faite HORS transaction : un refus doit laisser une
     trace d'audit persistante, or un rollback effacerait cette trace.
     """
     previous = case.status
     try:
-        check_transition(previous, target_status, case.workflow, user=actor)
+        transition = check_transition(case, actor, action, comment)
     except TransitionNotAllowed as exc:
         log_action(
             AuditAction.STATUS_CHANGED,
@@ -250,20 +329,35 @@ def transition_case(case, target_status, actor, comment="", request=None):
             obj=case,
             result=AuditResult.DENIED,
             request=request,
+            workflow_action=action,
             from_status=previous,
-            to_status=target_status,
             reason=str(exc),
+            code=exc.code,
         )
         raise
-    return _apply_transition(case, target_status, actor, comment, request, previous)
+    target = resolve_target(case, transition)
+    return _apply_transition(case, transition, target, actor, comment, request, previous)
 
 
 @transaction.atomic
-def _apply_transition(case, target_status, actor, comment, request, previous):
+def _apply_transition(case, transition, target_status, actor, comment, request, previous):
     """Applique effectivement la transition validee (atomique)."""
-    case.status = target_status
     now = timezone.now()
+    case.status = target_status
     updates = ["status", "updated_at"]
+
+    # Memorise l'etape d'origine a l'entree dans une exception, et l'oublie
+    # au retour sur le chemin principal.
+    if target_status in EXCEPTION_STATES:
+        if previous not in EXCEPTION_STATES:
+            case.status_before_exception = previous
+            updates.append("status_before_exception")
+    elif case.status_before_exception:
+        case.status_before_exception = ""
+        updates.append("status_before_exception")
+    if transition.action == "cancel_rejection" and case.duplicate_of_id:
+        case.duplicate_of = None
+        updates.append("duplicate_of")
 
     if target_status == CaseStatus.ACKNOWLEDGED and not case.acknowledged_at:
         case.acknowledged_at = now
@@ -276,14 +370,16 @@ def _apply_transition(case, target_status, actor, comment, request, previous):
                 now + timedelta(days=case.program.disclosure_delay_days)
             ).date()
             updates.append("disclosure_date")
-    if target_status in (CaseStatus.FIX_VERIFIED, CaseStatus.FIX_AVAILABLE):
-        if not case.remediated_at:
-            case.remediated_at = now
-            updates.append("remediated_at")
-    if target_status == CaseStatus.PUBLISHED:
+        if case.bounty_status == CaseBountyStatus.UNDETERMINED:
+            case.bounty_status = initial_bounty_status(case)
+            updates.append("bounty_status")
+    if target_status == CaseStatus.FIX_AVAILABLE and not case.remediated_at:
+        case.remediated_at = now
+        updates.append("remediated_at")
+    if target_status == CaseStatus.CLOSED:
         case.is_published = True
         updates.append("is_published")
-    if target_status == CaseStatus.CLOSED and not case.closed_at:
+    if target_status in TERMINAL_STATES and not case.closed_at:
         case.closed_at = now
         updates.append("closed_at")
 
@@ -296,13 +392,22 @@ def _apply_transition(case, target_status, actor, comment, request, previous):
         actor=actor,
         comment=comment,
     )
+    event_type = STATUS_TIMELINE_EVENTS.get(target_status, TimelineEventType.STATUS_CHANGED)
     add_timeline_event(
         case,
-        STATUS_TIMELINE_EVENTS.get(target_status, TimelineEventType.STATUS_CHANGED),
-        f"{case.get_status_display()}",
+        event_type,
+        # Un jalon public (repris par l'advisory, visible du declarant) porte
+        # un libelle neutre ; les autres gardent le detail interne.
+        (
+            event_type.label
+            if event_type in PUBLIC_TIMELINE_EVENTS
+            else f"{transition.label} -> {case.get_status_display()}"
+        ),
         actor=actor,
+        workflow_action=transition.action,
     )
-    _sla_side_effects(case, target_status)
+    _sla_side_effects(case, previous, target_status)
+    _action_side_effects(case, transition, target_status, actor, comment, request)
     case.refresh_priority()
 
     log_action(
@@ -310,22 +415,81 @@ def _apply_transition(case, target_status, actor, comment, request, previous):
         actor=actor,
         obj=case,
         request=request,
+        workflow_action=transition.action,
         from_status=previous,
         to_status=target_status,
     )
+    if target_status == CaseStatus.REJECTED:
+        log_action(AuditAction.REPORT_REJECTED, actor=actor, obj=case, request=request)
+    if target_status == CaseStatus.DUPLICATE:
+        log_action(
+            AuditAction.REPORT_DUPLICATED,
+            actor=actor,
+            obj=case,
+            request=request,
+            original_case=case.duplicate_of.case_id if case.duplicate_of_id else None,
+        )
+    if target_status == CaseStatus.VALIDATED:
+        log_action(AuditAction.REPORT_VALIDATED, actor=actor, obj=case, request=request)
 
     _notify_status_change(case, target_status, actor)
     _apply_reputation(case, target_status, actor)
     return case
 
 
+def initial_bounty_status(case):
+    """Branche prime ouverte a la validation, pour un programme eligible."""
+    from apps.programs.models import ProgramType
+
+    eligible = (
+        case.program_id is not None
+        and case.program.program_type == ProgramType.BUG_BOUNTY
+        and case.reporter_id is not None
+    )
+    return CaseBountyStatus.BOUNTY_ELIGIBLE if eligible else CaseBountyStatus.NOT_ELIGIBLE
+
+
+def _action_side_effects(case, transition, target_status, actor, comment, request):
+    """Effets propres a certaines actions (organisation, advisory, rejet)."""
+    if target_status == CaseStatus.VENDOR_NOTIFIED:
+        # L'organisation entre dans le dossier a l'etape 5, et seulement la.
+        ensure_default_participants(case)
+        notify_case_team(case, NotificationKind.STATUS_CHANGED, exclude=actor)
+    if transition.action in ("submit_advisory", "send_back_advisory", "publish_and_close"):
+        from apps.disclosures.services import advance_case_advisory
+
+        advance_case_advisory(case, transition.action, actor, request=request)
+    if transition.action == "confirm_rejection" and case.status == CaseStatus.REJECTED:
+        # Rien a ajouter : la notification dediee part via STATUS_NOTIFICATIONS.
+        pass
+    if transition.action in (
+        "send_back_qualification",
+        "send_back_advisory",
+        "cancel_rejection",
+        "reject_fix",
+    ):
+        add_timeline_event(
+            case,
+            TimelineEventType.SENT_BACK,
+            f"{transition.label} : {comment[:180]}",
+            actor=actor,
+        )
+
+
 def _notify_status_change(case, status, actor):
-    kind = STATUS_NOTIFICATIONS.get(status, NotificationKind.STATUS_CHANGED)
-    if case.reporter_id:
-        notify(case.reporter, kind, case=case)
-    elif getattr(case.report, "reporter_email", ""):
-        notify_external(case.report.reporter_email, kind, case=case)
-    notify_case_team(case, NotificationKind.STATUS_CHANGED, exclude=actor)
+    """Le declarant n'est notifie qu'aux changements de palier visibles."""
+    kind = STATUS_NOTIFICATIONS.get(status)
+    if kind is not None:
+        if case.reporter_id:
+            notify(case.reporter, kind, case=case)
+        elif getattr(case.report, "reporter_email", ""):
+            notify_external(case.report.reporter_email, kind, case=case)
+    notify_case_team(
+        case,
+        NotificationKind.STATUS_CHANGED,
+        exclude=actor,
+        include_reporter=False,
+    )
 
 
 def _apply_reputation(case, status, actor):
@@ -334,6 +498,202 @@ def _apply_reputation(case, status, actor):
 
     if status == CaseStatus.VALIDATED and case.reporter_id:
         award_reputation(case.reporter, case, granted_by=actor)
+
+
+# ---------------------------------------------------------------------------
+# Donnees des etapes (pre-requis des boutons)
+# ---------------------------------------------------------------------------
+def _require(actor, capability, case):
+    if not case.is_visible_to(actor):
+        raise PermissionDenied("Dossier introuvable.")
+    if getattr(actor, "is_read_only", False) or not actor.has_capability(capability):
+        raise PermissionDenied("Vous n'êtes pas le propriétaire de cette étape.")
+
+
+def _save_step(case, actor, fields, request, capability, **audit):
+    _require(actor, capability, case)
+    case.save(update_fields=fields + ["updated_at"])
+    log_action(
+        AuditAction.CASE_UPDATED,
+        actor=actor,
+        obj=case,
+        request=request,
+        fields=fields,
+        **audit,
+    )
+    return case
+
+
+@transaction.atomic
+def record_admissibility(case, actor, scope_ok, organization_ok, attachment_ok, request=None):
+    """Checklist de recevabilite (etape 2) : perimetre, organisation, PJ."""
+    case.admissibility_scope_ok = bool(scope_ok)
+    case.admissibility_organization_ok = bool(organization_ok)
+    case.admissibility_attachment_ok = bool(attachment_ok)
+    return _save_step(
+        case,
+        actor,
+        [
+            "admissibility_scope_ok",
+            "admissibility_organization_ok",
+            "admissibility_attachment_ok",
+        ],
+        request,
+        Capability.TRIAGE_CASE,
+    )
+
+
+def build_vendor_summary(case):
+    """Version « organisation » du rapport, identite du declarant protegee.
+
+    Reprend la substance technique utile a la correction (description,
+    impact, recommandations) sans jamais citer le declarant au-dela de ce
+    que son mode d'identite autorise.
+    """
+    from apps.disclosures.services import credit_for
+
+    report = case.report
+    parts = [
+        f"Dossier {case.case_id} - {case.title}",
+        f"Produit : {case.product or 'non précisé'}",
+        f"Sévérité validée : {case.get_severity_display()}"
+        + (f" (CVSS {case.cvss_score})" if case.cvss_score is not None else ""),
+    ]
+    if case.cwe_id:
+        parts.append(f"Faiblesse : {case.cwe.code} - {case.cwe.name}")
+    parts.append(f"Signalé par : {credit_for(case)}")
+    for title, body in (
+        ("Description", report.description),
+        ("Impact", report.impact),
+        ("Recommandations", getattr(report, "recommendations", "")),
+    ):
+        if (body or "").strip():
+            parts.append(f"## {title}\n\n{body.strip()}")
+    return "\n\n".join(parts)
+
+
+@transaction.atomic
+def record_vendor_summary(case, actor, summary, request=None):
+    """Version organisation du rapport (pre-requis de l'etape 5)."""
+    case.vendor_summary = (summary or "").strip()
+    return _save_step(case, actor, ["vendor_summary"], request, Capability.NOTIFY_VENDOR)
+
+
+@transaction.atomic
+def record_remediation_plan(case, actor, plan, due_date, request=None):
+    """Plan de remediation de l'organisation (pre-requis de l'etape 6).
+
+    La date cible ne peut depasser le delai de la severite validee
+    (Critique 30 j, Elevee 60 j, Moyenne et Faible 90 j par defaut).
+    """
+    if due_date is not None:
+        if due_date < timezone.localdate():
+            raise ValidationError({"remediation_due_date": "La date cible est dépassée."})
+        limit = remediation_deadline(case)
+        if due_date > limit:
+            raise ValidationError(
+                {
+                    "remediation_due_date": (
+                        f"Date au-delà du délai de remédiation pour une sévérité "
+                        f"{case.get_severity_display()} (au plus tard le {limit:%d/%m/%Y})."
+                    )
+                }
+            )
+    case.remediation_plan = (plan or "").strip()
+    case.remediation_due_date = due_date
+    _save_step(
+        case,
+        actor,
+        ["remediation_plan", "remediation_due_date"],
+        request,
+        Capability.MANAGE_REMEDIATION,
+    )
+    if case.status == CaseStatus.REMEDIATION_IN_PROGRESS and due_date:
+        _restart_sla(case, SLAKind.REMEDIATION, _start_of_day(due_date))
+    return case
+
+
+@transaction.atomic
+def record_fix(case, actor, description, version="", request=None):
+    """Description du correctif (pre-requis de l'etape 7)."""
+    case.fix_description = (description or "").strip()
+    case.fix_version = (version or "").strip()[:120]
+    return _save_step(
+        case,
+        actor,
+        ["fix_description", "fix_version"],
+        request,
+        Capability.MANAGE_REMEDIATION,
+    )
+
+
+@transaction.atomic
+def record_fix_verification(case, actor, notes, request=None):
+    """Compte rendu de contre-verification (pre-requis de l'etape 8)."""
+    case.fix_verification_notes = (notes or "").strip()
+    return _save_step(case, actor, ["fix_verification_notes"], request, Capability.VERIFY_FIX)
+
+
+def system_propose_rejection(case, reason):
+    """Proposition automatique de rejet (complements sans reponse sous 30 j).
+
+    Aucun humain n'agit ici : la transition est appliquee sans acteur, puis
+    le Coordinateur confirme ou renvoie comme pour toute proposition.
+    """
+    from .workflow import find_transition
+
+    transition = find_transition(case.status, "propose_rejection")
+    if transition is None:
+        return None
+    return _apply_transition(
+        case,
+        transition,
+        transition.target,
+        None,
+        reason,
+        None,
+        case.status,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Escalade
+# ---------------------------------------------------------------------------
+@transaction.atomic
+def escalate_case(case, actor=None, comment="", request=None, automatic=False):
+    """Escalade vers la coordination nationale (alerte rouge).
+
+    Automatique sur depassement de SLA, ou manuelle par le Coordinateur aux
+    etapes 6 et 7. Pas de changement de statut : le Coordinateur peut ensuite
+    decider une divulgation a echeance (voir schedule_disclosure).
+    """
+    from apps.accounts.models import User
+    from apps.accounts.roles import Role
+
+    if not automatic:
+        _require(actor, Capability.ESCALATE_CASE, case)
+        if case.status not in ESCALATION_STATES:
+            raise ValidationError("L'escalade manuelle concerne les étapes 6 et 7.")
+        if not (comment or "").strip():
+            raise ValidationError("Un commentaire est obligatoire.")
+    case.escalated_at = timezone.now()
+    case.save(update_fields=["escalated_at", "updated_at"])
+    add_timeline_event(
+        case,
+        TimelineEventType.ESCALATED,
+        "Escalade automatique (SLA dépassé)" if automatic else f"Escalade : {comment[:180]}",
+        actor=actor,
+    )
+    coordinators = User.objects.filter(role=Role.NATIONAL_COORDINATOR, is_active=True)
+    notify_many(coordinators, NotificationKind.CASE_ESCALATED, case=case)
+    log_action(
+        AuditAction.CASE_ESCALATED,
+        actor=actor,
+        obj=case,
+        request=request,
+        automatic=automatic,
+    )
+    return case
 
 
 # ---------------------------------------------------------------------------
@@ -382,12 +742,10 @@ def post_message(
     if not is_system:
         if not case.is_visible_to(author):
             raise PermissionDenied("Vous n'avez pas accès à ce dossier.")
-        if confidentiality != Confidentiality.PARTICIPANTS and not author.has_capability(
-            Capability.POST_INTERNAL_MESSAGE
-        ):
-            raise PermissionDenied("Vous n'êtes pas autorisé à publier un message interne.")
         if getattr(author, "is_read_only", False):
             raise PermissionDenied("Rôle en lecture seule.")
+        if confidentiality not in channels_writable_by(author, case):
+            raise PermissionDenied("Vous n'êtes pas autorisé à écrire dans ce canal.")
     if not (body or "").strip():
         raise ValidationError("Le message ne peut pas être vide.")
 
@@ -406,61 +764,83 @@ def post_message(
         message_id=str(message.pk),
         confidentiality=confidentiality,
     )
-    if confidentiality == Confidentiality.PARTICIPANTS:
-        notify_case_team(case, NotificationKind.NEW_MESSAGE, exclude=author)
+    if confidentiality in (Confidentiality.PARTICIPANTS, Confidentiality.ORGANIZATION):
+        notify_case_team(
+            case,
+            NotificationKind.NEW_MESSAGE,
+            exclude=author,
+            channel=confidentiality,
+        )
     return message
 
 
 def visible_messages(case, user):
-    """Fil de discussion filtre selon le niveau de confidentialite."""
+    """Fil de discussion filtre selon les canaux lisibles par l'utilisateur."""
     queryset = case.messages.select_related("author").prefetch_related("attachments")
-    if user.is_superuser or user.is_national:
-        from apps.accounts.roles import Role
-
-        if user.role in (Role.NATIONAL_COORDINATOR, Role.SUPER_ADMIN) or user.is_superuser:
-            return queryset
-        return queryset.exclude(confidentiality=Confidentiality.RESTRICTED)
-    return queryset.filter(confidentiality=Confidentiality.PARTICIPANTS)
+    return queryset.filter(confidentiality__in=channels_visible_to(user, case))
 
 
 # ---------------------------------------------------------------------------
 # Doublons
 # ---------------------------------------------------------------------------
-@transaction.atomic
-def mark_duplicate(case, original, actor, comment="", request=None):
-    """Marque un case comme doublon d'un autre.
+def propose_duplicate(case, original, actor, comment="", request=None):
+    """Propose de clore un case comme doublon d'un autre (action secondaire).
 
-    Le declarant est informe du doublon mais n'obtient AUCUNE information sur
-    le case original (identifiant, organisation, contenu).
+    Le Coordinateur confirme ensuite (DUPLICATE) ou renvoie a l'etape
+    d'origine. Le declarant n'obtient AUCUNE information sur le case
+    original (identifiant, organisation, contenu).
     """
-    if not actor.has_capability(Capability.TRIAGE_CASE):
-        raise PermissionDenied("Capacité de triage requise.")
+    if not actor.has_capability(Capability.PROPOSE_REJECTION):
+        raise PermissionDenied("Capacité requise pour proposer un doublon.")
     if original.pk == case.pk:
         raise ValidationError("Un case ne peut pas être le doublon de lui-même.")
     if original.duplicate_of_id == case.pk:
         raise ValidationError("Référence circulaire de doublon.")
 
+    previous = case.duplicate_of
     case.duplicate_of = original
-    case.save(update_fields=["duplicate_of", "updated_at"])
-    transition_case(case, CaseStatus.DUPLICATE, actor, comment=comment, request=request)
-    log_action(
-        AuditAction.REPORT_DUPLICATED,
-        actor=actor,
-        obj=case,
-        request=request,
-        original_case=original.case_id,
-    )
-    return case
+    try:
+        return transition_case(
+            case, "propose_duplicate", actor, comment=comment, request=request
+        )
+    except TransitionNotAllowed:
+        case.duplicate_of = previous
+        raise
+    finally:
+        if case.status == CaseStatus.REJECTION_PENDING:
+            case.save(update_fields=["duplicate_of", "updated_at"])
+
+
+#: Compatibilite : ancien nom du service.
+mark_duplicate = propose_duplicate
 
 
 # ---------------------------------------------------------------------------
-# Severite
+# Qualification
 # ---------------------------------------------------------------------------
+#: Statuts ou la qualification reste modifiable (avant sa soumission).
+QUALIFICATION_OPEN_STATES = frozenset(
+    {
+        CaseStatus.SUBMITTED,
+        CaseStatus.ACKNOWLEDGED,
+        CaseStatus.IN_ANALYSIS,
+        CaseStatus.NEEDS_INFORMATION,
+    }
+)
+
+
 @transaction.atomic
 def set_severity(case, actor, severity=None, cvss_vector="", request=None):
-    """Definit la severite retenue, eventuellement calculee depuis un CVSS."""
+    """Qualification : severite retenue, calculee depuis un CVSS v3.1 ou v4.0.
+
+    Seul l'analyste CSIRT saisit le CVSS (spec v2) ; l'auteur est memorise
+    pour la regle des quatre yeux de l'etape 4. Une qualification soumise
+    n'est plus modifiable, sauf renvoi par le valideur.
+    """
     if not actor.has_capability(Capability.SET_SEVERITY):
         raise PermissionDenied("Capacité requise pour définir la sévérité.")
+    if case.status not in QUALIFICATION_OPEN_STATES:
+        raise ValidationError("La qualification n'est plus modifiable à ce stade du dossier.")
     from apps.vulnerabilities.cvss import CVSSError, evaluate
 
     updates = ["severity", "updated_at"]
@@ -471,8 +851,9 @@ def set_severity(case, actor, severity=None, cvss_vector="", request=None):
             raise ValidationError({"cvss_vector": str(exc)}) from exc
         case.cvss_vector = cvss_vector
         case.cvss_score = score
+        case.cvss_set_by = actor
         severity = severity or computed
-        updates += ["cvss_vector", "cvss_score"]
+        updates += ["cvss_vector", "cvss_score", "cvss_set_by"]
     case.severity = severity or case.severity
     case.save(update_fields=updates)
     case.refresh_priority()
@@ -495,6 +876,7 @@ def set_severity(case, actor, severity=None, cvss_vector="", request=None):
 
 @transaction.atomic
 def schedule_disclosure(case, actor, disclosure_date, request=None):
+    """Date de divulgation coordonnee (divulgation a echeance comprise)."""
     if not actor.has_capability(Capability.CHANGE_CASE_STATUS):
         raise PermissionDenied("Capacité requise.")
     case.disclosure_date = disclosure_date
@@ -586,7 +968,14 @@ __all__ = [
     "post_message",
     "visible_messages",
     "mark_duplicate",
+    "propose_duplicate",
     "set_severity",
+    "escalate_case",
+    "record_admissibility",
+    "record_vendor_summary",
+    "record_remediation_plan",
+    "record_fix",
+    "record_fix_verification",
     "schedule_disclosure",
     "add_participant",
     "ensure_default_participants",

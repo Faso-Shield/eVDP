@@ -49,7 +49,14 @@ def _apply(modeladmin, request, queryset, service, success_label, **kwargs):
 
 @admin.action(description="Approuver la recompense (montant propose)")
 def action_approve(modeladmin, request, queryset):
-    _apply(modeladmin, request, queryset, approve_bounty, "approuvee(s)")
+    _apply(
+        modeladmin,
+        request,
+        queryset,
+        approve_bounty,
+        "approuvee(s)",
+        note="Approbation depuis l'administration.",
+    )
 
 
 @admin.action(description="Rejeter la recompense")

@@ -60,8 +60,24 @@ les rôles nationaux voient l'ensemble.
 ### Soumettre un rapport
 
 ```http
-POST /api/v1/reports/
+POST /api/v1/reports/          (multipart/form-data)
 ```
+
+Spec v2, étape 0 : **au moins une pièce jointe** est obligatoire (champ
+`attachments`, 5 fichiers au maximum), vérifiée côté serveur. Sans pièce
+jointe, la réponse est **400** `{"attachments": [...]}` et aucun dossier
+n'est créé. Les champs du rapport sont envoyés comme champs de formulaire :
+
+```bash
+curl -X POST http://localhost/api/v1/reports/ \
+  -H "X-EVDP-API-Key: $CLE" \
+  -F title="Injection SQL sur le portail e-Etat civil" \
+  -F vulnerability_type=SQLI \
+  -F description="Le paramètre numero n'est pas filtré…" \
+  -F attachments=@capture.png
+```
+
+Champs disponibles :
 
 ```json
 {
@@ -72,7 +88,7 @@ POST /api/v1/reports/
   "target_url": "https://exemple.gov.bf/recherche",
   "vulnerability_type": "SQLI",
   "cwe": "CWE-89",
-  "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+  "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H  (ou CVSS:4.0/…)",
   "description": "Le paramètre `numero` n'est pas filtré…",
   "steps_to_reproduce": "1. Ouvrir la page\n2. Soumettre `1' AND 1=1--`",
   "impact": "Extraction des données d'état civil.",
@@ -116,16 +132,26 @@ PATCH /api/v1/reports/EVDP-2026-000001/
 {"severity": "HIGH", "cvss_vector": "CVSS:3.1/...", "cwe": "CWE-89"}
 ```
 
-Capacité requise : `SET_SEVERITY`.
+Capacité requise : `SET_SEVERITY` (analyste CSIRT uniquement). Vecteurs
+CVSS v3.1 et v4.0 acceptés. La qualification n'est plus modifiable une fois
+soumise (étape 3), sauf renvoi par le valideur.
 
 ### Changer de statut
 
 ```http
+GET  /api/v1/reports/EVDP-2026-000001/transition/
+→ {"kind": "button", "action": "submit_qualification", "label": "Soumettre la qualification",
+   "enabled": false, "missing": ["CWE manquante"], "comment_required": false}
+
 POST /api/v1/reports/EVDP-2026-000001/transition/
-{"target_status": "VALIDATED", "comment": "Reproduite en préproduction"}
+{"action": "validate_qualification", "comment": "Reproduite en préproduction"}
 ```
 
-**400** si la transition est interdite par la machine à états.
+Workflow v2 : on envoie une **action** (et non plus un statut cible). Le
+serveur applique `check_transition()` : **404** hors périmètre, **403** si
+la capacité manque ou si la règle des quatre yeux s'applique, **400** si
+l'action n'existe pas depuis le statut courant, si des pré-requis manquent
+(`missing` les liste) ou si le commentaire obligatoire est absent.
 
 ### Messagerie
 

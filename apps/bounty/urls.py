@@ -12,4 +12,6 @@ urlpatterns = [
     path("<uuid:bounty_id>/approve/", views.approve, name="approve"),
     path("<uuid:bounty_id>/reject/", views.reject, name="reject"),
     path("<uuid:bounty_id>/payment/", views.payment, name="payment"),
+    path("<uuid:bounty_id>/send-back/", views.send_back, name="send_back"),
+    path("case/<str:case_id>/not-eligible/", views.not_eligible, name="not_eligible"),
 ]

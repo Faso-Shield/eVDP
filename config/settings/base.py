@@ -236,6 +236,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.coordination.tasks.sweep_sla",
         "schedule": crontab(minute="*/30"),
     },
+    "evdp-information-requests-sweep": {
+        "task": "apps.coordination.tasks.sweep_information_requests",
+        "schedule": crontab(minute=45, hour=6),
+    },
     "evdp-disclosure-sweep": {
         "task": "apps.coordination.tasks.sweep_disclosure_schedule",
         "schedule": crontab(minute=15),

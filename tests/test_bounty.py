@@ -18,16 +18,33 @@ from apps.bounty.services import (
     review_bounty,
     suggested_amount,
 )
-from apps.coordination.services import set_severity
+from apps.coordination.workflow import CaseStatus
 from apps.programs.models import Program, ProgramScope, RewardTier
 from apps.vulnerabilities.constants import Severity
 
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture
+def bounty_case(bounty_case, advance):
+    """Spec v2 : la branche prime s'ouvre a la validation (BOUNTY_ELIGIBLE)."""
+    # Vecteur de severite MEDIUM (6.5) : palier 100 000 - 300 000 XOF.
+    return advance(
+        bounty_case,
+        CaseStatus.VALIDATED,
+        cvss_vector="CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+    )
+
+
+def _set_severity(case, severity):
+    """Severite validee (la qualification est close apres l'etape 4)."""
+    case.severity = severity
+    case.save(update_fields=["severity"])
+
+
 # ------------------------------------------------------------------- matrice
 def test_suggested_amount_comes_from_program_matrix(bounty_case, coordinator):
-    set_severity(bounty_case, coordinator, severity=Severity.HIGH)
+    _set_severity(bounty_case, Severity.HIGH)
     amount, currency = suggested_amount(bounty_case)
     assert amount == Decimal("750000")
     assert currency == "XOF"
@@ -91,38 +108,46 @@ def test_coordinator_approves_bounty(bounty_case, analyst, coordinator):
     assert AuditLog.objects.filter(action=AuditAction.BOUNTY_APPROVED).exists()
 
 
-def test_proposer_cannot_approve_own_bounty(bounty_case, coordinator):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+def _promote(user):
+    """Le proposant recoit ensuite le role de Coordinateur : les quatre yeux
+    visent la personne, pas le role."""
+    user.role = "NATIONAL_COORDINATOR"
+    user.save(update_fields=["role"])
+    return user
+
+
+def test_proposer_cannot_approve_own_bounty(bounty_case, analyst):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     with pytest.raises(PermissionDenied):
-        approve_bounty(bounty, coordinator)
+        approve_bounty(bounty, _promote(analyst), note="Conforme")
 
 
-def test_approve_button_hidden_for_proposer(client_for, bounty_case, coordinator):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
-    client = client_for(coordinator)
+def test_approve_button_hidden_for_proposer(client_for, bounty_case, analyst):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    client = client_for(_promote(analyst))
     response = client.get(reverse("bounty:detail", args=[bounty.pk]))
     assert response.context["can_approve"] is False
 
 
 def test_approve_button_visible_for_other_coordinator(
-    client_for, bounty_case, coordinator, coordinator_b
+    client_for, bounty_case, analyst, coordinator_b
 ):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     client = client_for(coordinator_b)
     response = client.get(reverse("bounty:detail", args=[bounty.pk]))
     assert response.context["can_approve"] is True
 
 
-def test_proposer_cannot_reject_own_bounty(bounty_case, coordinator):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+def test_proposer_cannot_reject_own_bounty(bounty_case, analyst):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     with pytest.raises(PermissionDenied):
-        reject_bounty(bounty, coordinator)
+        reject_bounty(bounty, _promote(analyst), note="Refus")
 
 
-def test_another_coordinator_can_approve(bounty_case, coordinator, coordinator_b):
+def test_another_coordinator_can_approve(bounty_case, analyst, coordinator_b):
     """La separation vise le proposant, pas le role : un pair peut statuer."""
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator_b)
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator_b, note="Conforme")
     bounty.refresh_from_db()
 
     assert bounty.status == BountyStatus.APPROVED
@@ -144,8 +169,8 @@ def test_rejection_blocks_further_transitions(bounty_case, analyst, coordinator)
 # hors protection CSRF, qui ne couvre que les methodes non sures) suffisait
 # a declencher la decision. Meme classe de probleme que celle deja corrigee
 # sur le portefeuille (payout_method_remove/set_primary).
-def test_approve_via_get_is_rejected(client_for, bounty_case, coordinator, coordinator_b):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+def test_approve_via_get_is_rejected(client_for, bounty_case, analyst, coordinator_b):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     client = client_for(coordinator_b)
     response = client.get(reverse("bounty:approve", args=[bounty.pk]))
     assert response.status_code == 405
@@ -153,8 +178,8 @@ def test_approve_via_get_is_rejected(client_for, bounty_case, coordinator, coord
     assert bounty.status == BountyStatus.PENDING
 
 
-def test_reject_via_get_is_rejected(client_for, bounty_case, coordinator, coordinator_b):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+def test_reject_via_get_is_rejected(client_for, bounty_case, analyst, coordinator_b):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     client = client_for(coordinator_b)
     response = client.get(reverse("bounty:reject", args=[bounty.pk]))
     assert response.status_code == 405
@@ -171,20 +196,20 @@ def test_review_via_get_is_rejected(client_for, bounty_case, analyst):
 
 def test_payment_via_get_is_rejected(client_for, bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     client = client_for(coordinator)
     response = client.get(reverse("bounty:payment", args=[bounty.pk]))
     assert response.status_code == 405
     bounty.refresh_from_db()
     assert bounty.status == BountyStatus.APPROVED
     with pytest.raises(ValidationError):
-        approve_bounty(bounty, coordinator)
+        approve_bounty(bounty, coordinator, note="Conforme")
 
 
 def test_out_of_matrix_amount_is_flagged(bounty_case, analyst, coordinator):
-    set_severity(bounty_case, coordinator, severity=Severity.LOW)
+    _set_severity(bounty_case, Severity.LOW)
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("50000"))
-    approve_bounty(bounty, coordinator, amount=Decimal("5000000"))
+    approve_bounty(bounty, coordinator, amount=Decimal("5000000"), note="Conforme")
     bounty.refresh_from_db()
 
     assert bounty.within_policy() is False
@@ -215,7 +240,7 @@ def test_payment_requires_approval(bounty_case, analyst, coordinator):
 
 def test_payment_records_trace_without_real_transfer(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     payment = record_payment(bounty, coordinator, reference="VIR-2026-001")
     bounty.refresh_from_db()
 
@@ -227,14 +252,14 @@ def test_payment_records_trace_without_real_transfer(bounty_case, analyst, coord
 
 def test_analyst_cannot_record_payment(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     with pytest.raises(PermissionDenied):
         record_payment(bounty, analyst)
 
 
 def test_paid_bounty_updates_researcher_totals(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     record_payment(bounty, coordinator)
 
     profile = bounty_case.reporter.researcher_profile
@@ -283,7 +308,7 @@ def test_payment_snapshots_the_researchers_primary_method(bounty_case, analyst, 
     )
 
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     payment = record_payment(bounty, coordinator)
 
     assert "Orange Money" in payment.payout_snapshot
@@ -293,7 +318,7 @@ def test_payment_snapshots_the_researchers_primary_method(bounty_case, analyst, 
 
 def test_payment_warns_without_any_payout_profile(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     payment = record_payment(bounty, coordinator)
 
     assert payment.payout_snapshot == ""
@@ -326,7 +351,7 @@ def test_payment_warns_when_profile_incomplete_despite_a_method(
     )
 
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     payment = record_payment(bounty, coordinator)
 
     # Le moyen existe : la copie a titre indicatif reste utile...
@@ -339,7 +364,7 @@ def test_payment_view_flashes_the_payout_warning(
     client_for, bounty_case, analyst, coordinator
 ):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
 
     client = client_for(coordinator)
     response = client.post(
@@ -354,7 +379,7 @@ def test_researcher_cannot_see_other_bounty(
     client_for, bounty_case, analyst, coordinator, researcher_a
 ):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
 
     client = client_for(researcher_a)
     assert client.get(f"/bounties/{bounty.pk}/").status_code == 404
@@ -395,7 +420,7 @@ def test_budget_overrun_is_allowed_but_audited(
     policy.save(update_fields=["total_budget"])
 
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("250000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     bounty.refresh_from_db()
 
     assert bounty.status == BountyStatus.APPROVED
@@ -414,7 +439,7 @@ def test_approved_bounty_is_not_counted_twice(
     policy.save(update_fields=["total_budget"])
 
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     bounty.refresh_from_db()
 
     status = budget_status(bounty)
@@ -461,13 +486,13 @@ def test_admin_approval_goes_through_the_service(rf, bounty_case, analyst, coord
     assert AuditLog.objects.filter(action=AuditAction.BOUNTY_APPROVED).exists()
 
 
-def test_admin_approval_refuses_self_approval(rf, bounty_case, coordinator):
+def test_admin_approval_refuses_self_approval(rf, bounty_case, analyst):
     from apps.bounty.admin import action_approve
 
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     action_approve(
         _bounty_admin(),
-        _admin_request(rf, coordinator),
+        _admin_request(rf, _promote(analyst)),
         Bounty.objects.filter(pk=bounty.pk),
     )
     bounty.refresh_from_db()
@@ -479,7 +504,7 @@ def test_admin_payment_records_an_accounting_trace(rf, bounty_case, analyst, coo
     from apps.bounty.admin import action_record_payment
 
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
+    approve_bounty(bounty, coordinator, note="Conforme")
     action_record_payment(
         _bounty_admin(),
         _admin_request(rf, coordinator),
@@ -525,7 +550,7 @@ def test_suggestion_follows_the_case_asset(bounty_case, coordinator):
         min_amount=Decimal("900000"),
         max_amount=Decimal("1800000"),
     )
-    set_severity(bounty_case, coordinator, severity=Severity.HIGH)
+    _set_severity(bounty_case, Severity.HIGH)
 
     amount, _currency = suggested_amount(bounty_case)
     assert amount == Decimal("750000"), "sans actif, la grille par defaut s'applique"
@@ -571,9 +596,8 @@ def test_unverified_researcher_cannot_join_bounty_program(
     bounty_program, bounty_researcher, organization
 ):
     """Un Bug Bounty exigeant un email verifie refuse la soumission."""
-    from apps.reports.services import submit_report
-
     from .conftest import build_report
+    from .conftest import submit as submit_report
 
     bounty_researcher.email_verified = False
     bounty_researcher.save(update_fields=["email_verified"])
@@ -587,9 +611,8 @@ def test_unverified_researcher_cannot_join_bounty_program(
 
 def test_anonymous_report_refused_when_verification_required(bounty_program, organization):
     """Sans compte, aucune adresse n'est verifiee : le programme refuse."""
-    from apps.reports.services import submit_report
-
     from .conftest import build_report
+    from .conftest import submit as submit_report
 
     report = build_report(None, organization, bounty_program)
     report.reporter = None
@@ -600,9 +623,8 @@ def test_anonymous_report_refused_when_verification_required(bounty_program, org
 
 def test_verified_researcher_is_admitted(bounty_program, bounty_researcher, organization):
     """Le cas nominal reste inchange : un compte verifie passe."""
-    from apps.reports.services import submit_report
-
     from .conftest import build_report
+    from .conftest import submit as submit_report
 
     case = submit_report(
         build_report(bounty_researcher, organization, bounty_program),
@@ -613,9 +635,8 @@ def test_verified_researcher_is_admitted(bounty_program, bounty_researcher, orga
 
 def test_vdp_may_waive_the_verification_requirement(vdp_program, researcher_a, organization):
     """Hors Bug Bounty, l'exigence reste une politique propre au programme."""
-    from apps.reports.services import submit_report
-
     from .conftest import build_report
+    from .conftest import submit as submit_report
 
     vdp_program.requires_verified_email = False
     vdp_program.save(update_fields=["requires_verified_email"])
@@ -634,9 +655,8 @@ def test_anonymous_vdp_report_still_accepted(vdp_program, organization):
     C'est une promesse centrale de la plateforme : la verification d'adresse
     ne doit pas la supprimer par effet de bord.
     """
-    from apps.reports.services import submit_report
-
     from .conftest import build_report
+    from .conftest import submit as submit_report
 
     assert vdp_program.allows_anonymous_reports
     assert vdp_program.requires_verified_email, "defaut du modele"

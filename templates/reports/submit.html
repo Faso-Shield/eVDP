@@ -117,10 +117,11 @@
         <div class="card-header"><h2>Pièces jointes</h2></div>
         <div class="card-body">
           <div class="form-field">
-            <label for="attachments">Fichiers (5 maximum)</label>
-            <input type="file" name="attachments" id="attachments" multiple>
+            <label for="attachments">Fichiers (au moins 1, 5 maximum) <span class="required">*</span></label>
+            <input type="file" name="attachments" id="attachments" multiple required>
             <div class="help">
-              Captures, traces, PoC. Les exécutables et scripts sont refusés.
+              Au moins une pièce jointe est obligatoire : captures, traces, PoC.
+              Une fois soumises, vos pièces sont en lecture seule pour tous. Les exécutables et scripts sont refusés.
               Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier.
               Chaque fichier est stocké sous un nom aléatoire, hashé en SHA-256 et
               accessible uniquement aux personnes habilitées sur le dossier.

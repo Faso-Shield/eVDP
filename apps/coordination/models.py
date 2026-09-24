@@ -24,6 +24,7 @@ from .workflow import (
     DISMISSED_STATES,
     ORG_VISIBLE_STATES,
     TERMINAL_STATES,
+    CaseBountyStatus,
     CaseStatus,
     kanban_column_for,
 )
@@ -35,15 +36,25 @@ class SLAPolicy(TimeStampedModel):
     name = models.CharField(max_length=120, unique=True)
     is_default = models.BooleanField(default=False)
     acknowledgement_hours = models.PositiveIntegerField(default=72)
-    triage_days = models.PositiveIntegerField(default=5)
-    vendor_response_days = models.PositiveIntegerField(default=7)
+    triage_days = models.PositiveIntegerField(
+        default=5, help_text="Recevabilité et qualification (étapes 2 et 3)."
+    )
+    validation_days = models.PositiveIntegerField(
+        default=2, help_text="Validation de la qualification (étape 4)."
+    )
+    vendor_response_days = models.PositiveIntegerField(
+        default=5, help_text="Plan de remédiation de l'organisation (étape 6)."
+    )
     remediation_days_critical = models.PositiveIntegerField(default=30)
-    remediation_days_high = models.PositiveIntegerField(default=30)
-    remediation_days_medium = models.PositiveIntegerField(default=60)
+    remediation_days_high = models.PositiveIntegerField(default=60)
+    remediation_days_medium = models.PositiveIntegerField(default=90)
     remediation_days_low = models.PositiveIntegerField(default=90)
+    verification_days = models.PositiveIntegerField(
+        default=5, help_text="Contre-vérification du correctif (étape 8)."
+    )
     disclosure_delay_days = models.PositiveIntegerField(default=90)
     warning_ratio = models.PositiveSmallIntegerField(
-        default=80, help_text="Pourcentage du délai à partir duquel une alerte est levée."
+        default=75, help_text="Pourcentage du délai à partir duquel une alerte est levée."
     )
 
     class Meta:
@@ -85,18 +96,22 @@ class CaseQuerySet(models.QuerySet):
         """
         if not user or not user.is_authenticated:
             return self.none()
-        if user.is_national:
+        if user.can_view_all_cases:
             return self
-        filters = models.Q(participants__user=user, participants__is_active=True)
-        filters |= models.Q(reporter=user)
+        filters = models.Q(reporter=user)
         if user.is_organization_user:
+            # Une organisation ne voit un dossier qu'a partir de l'etape 5
+            # (ORG_VISIBLE_STATES), une fois le CSIRT l'ayant explicitement
+            # engagee -- jamais pendant le triage, pour proteger le declarant
+            # d'une reaction prematuree. La regle vaut aussi pour un membre
+            # ajoute nominativement comme participant.
+            org_scope = models.Q(participants__user=user, participants__is_active=True)
             org_ids = user.organization_ids()
             if org_ids:
-                # Une organisation ne voit un dossier qui la concerne qu'une
-                # fois le CSIRT l'ayant explicitement engagee (statut
-                # ORG_VISIBLE_STATES) -- jamais pendant le triage, pour
-                # proteger le declarant d'une reaction prematuree.
-                filters |= models.Q(organization_id__in=org_ids, status__in=ORG_VISIBLE_STATES)
+                org_scope |= models.Q(organization_id__in=org_ids)
+            filters |= org_scope & models.Q(status__in=ORG_VISIBLE_STATES)
+        else:
+            filters |= models.Q(participants__user=user, participants__is_active=True)
         return self.filter(filters).distinct()
 
     def sla_breached(self):
@@ -180,6 +195,49 @@ class Case(BaseModel):
         default=CaseStatus.SUBMITTED,
         db_index=True,
     )
+    status_before_exception = models.CharField(
+        max_length=24,
+        choices=CaseStatus.choices,
+        blank=True,
+        help_text="Étape d'origine à laquelle revient une sortie d'exception.",
+    )
+    bounty_status = models.CharField(
+        max_length=24,
+        choices=CaseBountyStatus.choices,
+        default=CaseBountyStatus.UNDETERMINED,
+        db_index=True,
+        help_text="Branche prime, indépendante du statut du dossier.",
+    )
+    # -- Pre-requis des etapes (workflow v2) ---------------------------------
+    admissibility_scope_ok = models.BooleanField("Périmètre vérifié", default=False)
+    admissibility_organization_ok = models.BooleanField(
+        "Organisation identifiée", default=False
+    )
+    admissibility_attachment_ok = models.BooleanField("Pièce jointe lisible", default=False)
+    cvss_set_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="qualified_cases",
+        help_text="Analyste auteur de la qualification (règle des quatre yeux).",
+    )
+    vendor_summary = models.TextField(
+        "Version « organisation » du rapport",
+        blank=True,
+        help_text="Transmise à l'organisation ; l'identité du déclarant y est "
+        "protégée selon le mode qu'il a choisi.",
+    )
+    remediation_plan = models.TextField("Plan de remédiation", blank=True)
+    remediation_due_date = models.DateField("Date cible du correctif", null=True, blank=True)
+    fix_description = models.TextField("Description du correctif", blank=True)
+    fix_version = models.CharField(
+        "Version ou date de déploiement du correctif", max_length=120, blank=True
+    )
+    fix_verification_notes = models.TextField(
+        "Compte rendu de contre-vérification", blank=True
+    )
+    escalated_at = models.DateTimeField(null=True, blank=True)
     assignee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -244,6 +302,46 @@ class Case(BaseModel):
     def is_bug_bounty(self):
         return self.workflow == WorkflowType.BUG_BOUNTY
 
+    @property
+    def admissibility_complete(self):
+        return (
+            self.admissibility_scope_ok
+            and self.admissibility_organization_ok
+            and self.admissibility_attachment_ok
+        )
+
+    def current_advisory(self):
+        """Advisory de travail du dossier (le plus recent non retire)."""
+        from apps.disclosures.models import AdvisoryStatus
+
+        return (
+            self.advisories.exclude(status=AdvisoryStatus.RETRACTED)
+            .order_by("-created_at")
+            .first()
+        )
+
+    def sla_badge(self):
+        """Couleur d'echeance de l'etape courante : green, orange ou red.
+
+        Orange a partir du seuil d'alerte de la politique (75 % par defaut),
+        rouge a echeance. None si aucune echeance n'est en cours.
+        """
+        now = timezone.now()
+        events = [
+            e
+            for e in self.sla_events.all()
+            if e.state in (SLAState.PENDING, SLAState.APPROACHING, SLAState.BREACHED)
+        ]
+        if not events:
+            return None
+        if any(e.state == SLAState.BREACHED or e.due_at <= now for e in events):
+            return "red"
+        if any(
+            e.state == SLAState.APPROACHING or now >= e.warning_threshold() for e in events
+        ):
+            return "orange"
+        return "green"
+
     def compute_priority(self):
         """Score de priorite 0-100 : severite, workflow, anciennete, SLA."""
         base = {
@@ -285,16 +383,17 @@ class Case(BaseModel):
         """Verification unitaire cote objet (complement du queryset)."""
         if not user or not user.is_authenticated:
             return False
-        if user.is_national:
+        if user.can_view_all_cases:
             return True
-        if self.is_participant(user):
+        if self.reporter_id == user.pk:
             return True
-        if user.is_organization_user and self.organization_id:
-            return (
-                self.organization_id in set(user.organization_ids())
-                and self.status in ORG_VISIBLE_STATES
-            )
-        return False
+        if user.is_organization_user:
+            if self.status not in ORG_VISIBLE_STATES:
+                return False
+            if self.organization_id and self.organization_id in set(user.organization_ids()):
+                return True
+            return self.participants.filter(user=user, is_active=True).exists()
+        return self.is_participant(user)
 
 
 class CaseStatusHistory(BaseModel):
@@ -418,22 +517,56 @@ class CaseMessage(BaseModel):
         return super().save(*args, **kwargs)
 
     def is_visible_to(self, user):
-        """Un message interne n'est jamais visible d'un chercheur ni d'une DSI."""
-        if not user or not user.is_authenticated:
+        """Canaux etanches : voir `channels_visible_to`."""
+        if not user or not user.is_authenticated or not self.case.is_visible_to(user):
             return False
-        if self.confidentiality == Confidentiality.RESTRICTED:
-            from apps.accounts.roles import Role
-
-            return user.is_superuser or user.role in (
-                Role.NATIONAL_COORDINATOR,
-                Role.SUPER_ADMIN,
-            )
-        if self.confidentiality == Confidentiality.INTERNAL:
-            return user.is_national
-        return self.case.is_visible_to(user)
+        return self.confidentiality in channels_visible_to(user, self.case)
 
     def integrity_ok(self):
         return self.content_hash == hash_text(self.body)
+
+
+def channels_visible_to(user, case):
+    """Canaux de messagerie lisibles par `user` sur `case`.
+
+    * declarant : le canal chercheur uniquement ;
+    * organisation : le canal CSIRT <-> organisation uniquement ;
+    * CSIRT : les deux canaux externes et les notes internes ;
+    * coordination nationale : en plus, le canal restreint ;
+    * auditeur et Super admin : aucun contenu (metadonnees seulement).
+    """
+    from apps.accounts.roles import Capability, Role
+
+    if not user or not user.is_authenticated:
+        return set()
+    if user.is_read_only or not (
+        user.can_view_all_cases or user.is_organization_user or case.reporter_id == user.pk
+    ):
+        return set()
+    if user.can_view_all_cases:
+        channels = {
+            Confidentiality.PARTICIPANTS,
+            Confidentiality.ORGANIZATION,
+            Confidentiality.INTERNAL,
+        }
+        if user.role == Role.NATIONAL_COORDINATOR:
+            channels.add(Confidentiality.RESTRICTED)
+        return channels
+    if case.reporter_id == user.pk:
+        return {Confidentiality.PARTICIPANTS}
+    if user.has_capability(Capability.VIEW_ORG_CASES):
+        return {Confidentiality.ORGANIZATION}
+    return set()
+
+
+def channels_writable_by(user, case):
+    """Canaux dans lesquels `user` peut ecrire sur `case`."""
+    from apps.accounts.roles import Capability
+
+    channels = channels_visible_to(user, case)
+    if not user.has_capability(Capability.POST_INTERNAL_MESSAGE):
+        channels -= {Confidentiality.INTERNAL, Confidentiality.RESTRICTED}
+    return channels
 
 
 class CaseTimelineEvent(BaseModel):
@@ -483,6 +616,7 @@ class SLAEvent(BaseModel):
     satisfied_at = models.DateTimeField(null=True, blank=True)
     warned_at = models.DateTimeField(null=True, blank=True)
     breached_at = models.DateTimeField(null=True, blank=True)
+    suspended_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "sla_events"
@@ -510,7 +644,7 @@ class SLAEvent(BaseModel):
 
     def warning_threshold(self):
         policy = self.policy or SLAPolicy.get_default()
-        ratio = (policy.warning_ratio if policy else 80) / 100
+        ratio = (policy.warning_ratio if policy else 75) / 100
         total = self.due_at - self.created_at
         return self.created_at + timedelta(seconds=total.total_seconds() * ratio)
 

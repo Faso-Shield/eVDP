@@ -58,16 +58,16 @@ def _draft(case, actor, cwe):
 
 
 @pytest.fixture
-def published_advisory(db, case_alpha, coordinator, cwe):
-    advisory = _draft(case_alpha, coordinator, cwe)
+def published_advisory(db, case_alpha, coordinator, cwe, analyst):
+    advisory = _draft(case_alpha, analyst, cwe)
     advisory.status = AdvisoryStatus.APPROVED
     advisory.save(update_fields=["status"])
     return publish_advisory(advisory, coordinator)
 
 
 # --------------------------------------------------------------- eligibilite
-def test_draft_advisory_cannot_be_exported(case_alpha, coordinator, cwe):
-    advisory = _draft(case_alpha, coordinator, cwe)
+def test_draft_advisory_cannot_be_exported(case_alpha, coordinator, cwe, analyst):
+    advisory = _draft(case_alpha, analyst, cwe)
     with pytest.raises(ValidationError):
         export_advisory_to_csaf(advisory)
 
@@ -189,8 +189,10 @@ def test_export_endpoint_accepts_lowercase_identifier(client, published_advisory
     assert response.status_code == 200
 
 
-def test_export_endpoint_hides_unpublished_advisory(client, case_alpha, coordinator, cwe):
-    advisory = _draft(case_alpha, coordinator, cwe)
+def test_export_endpoint_hides_unpublished_advisory(
+    client, case_alpha, coordinator, cwe, analyst
+):
+    advisory = _draft(case_alpha, analyst, cwe)
     response = client.get(f"/api/v1/export/csaf/{advisory.advisory_id}/")
     assert response.status_code == 404
 

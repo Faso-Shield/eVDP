@@ -21,18 +21,27 @@ Techniquement, ils partagent le modèle `Program`, discriminé par
 
 ## 2. Workflow Bug Bounty
 
+Workflow v2 (SPEC-eVDP-2026-V2) : un dossier Bug Bounty suit **le même
+chemin principal** que le VDP (11 étapes, voir `docs/cvd-workflow.md`). La
+prime avance sur une **branche parallèle**, ouverte dès la validation pour
+ne pas faire attendre le chercheur jusqu'à 90 jours :
+
 ```
-SUBMITTED → TRIAGE → [NEEDS_INFORMATION] → VALIDATED
-    → SEVERITY_ASSIGNED → BOUNTY_REVIEW → REWARD_APPROVED
-    → REMEDIATION → FIX_AVAILABLE → VERIFICATION → FIX_VERIFIED
-    → DISCLOSURE_SCHEDULED → PUBLISHED → CLOSED
+Case.bounty_status : BOUNTY_ELIGIBLE --(B1 Analyste : Proposer la prime)-->
+                     BOUNTY_PROPOSED --(B2 Coordinateur : Approuver et créditer le Wallet)-->
+                     BOUNTY_CREDITED
 ```
 
-Issues particulières : `DUPLICATE`, `OUT_OF_SCOPE`, `NOT_APPLICABLE`,
-`INFORMATIVE`, `REJECTED`.
-
-Les états `SEVERITY_ASSIGNED`, `BOUNTY_REVIEW` et `REWARD_APPROVED`
-**n'existent pas** dans le workflow VDP : la machine à états les refuse.
+- B2 applique les **quatre yeux** (approbateur ≠ proposeur) et exige un commentaire ;
+  le Coordinateur peut aussi renvoyer la proposition (retour en B1) ou la rejeter
+  (`NOT_ELIGIBLE`).
+- Un montant hors palier de la matrice exige une **justification écrite**.
+- L'approbation crédite le **Wallet** du chercheur : un grand livre
+  d'écritures (`WalletEntry` : crédit, ajustement, versement hors plateforme)
+  dont le solde est calculé, jamais stocké ni modifiable.
+- « Publier et clôturer » (étape 10) reste grisé tant que la prime n'est ni
+  créditée ni déclarée non éligible.
+- La DSI ne voit ni la prime ni le Wallet.
 
 ---
 

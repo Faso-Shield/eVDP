@@ -107,6 +107,23 @@ class Attachment(BaseModel):
             size /= 1024
         return f"{size:.1f} To"
 
+    @property
+    def is_reporter_evidence(self):
+        """Piece deposee par le declarant : une preuve, intouchable."""
+        case = self.owning_case()
+        return self.report_id is not None or (
+            case is not None and case.reporter_id and self.uploaded_by_id == case.reporter_id
+        )
+
+    def delete(self, *args, **kwargs):
+        if self.is_reporter_evidence:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError(
+                "Les pièces jointes du déclarant sont en lecture seule pour tous les rôles."
+            )
+        return super().delete(*args, **kwargs)
+
     def owning_case(self):
         if self.case_id:
             return self.case
@@ -117,7 +134,13 @@ class Attachment(BaseModel):
         return None
 
     def is_visible_to(self, user):
+        """Contenu d'une piece : l'auditeur et le Super admin n'y accedent pas
+        (metadonnees seulement), un message suit l'etancheite des canaux."""
+        if not user or not user.is_authenticated or user.is_read_only:
+            return False
         case = self.owning_case()
         if case is None:
-            return bool(user and user.is_authenticated and user.is_national)
+            return user.can_view_all_cases
+        if self.message_id:
+            return self.message.is_visible_to(user)
         return case.is_visible_to(user)

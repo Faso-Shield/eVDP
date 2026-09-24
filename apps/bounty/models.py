@@ -241,3 +241,77 @@ class BountyPayment(BaseModel):
         self.status = PaymentStatus.SETTLED
         self.settled_at = timezone.now()
         self.save(update_fields=["status", "settled_at", "updated_at"])
+
+
+class WalletEntryKind(models.TextChoices):
+    CREDIT = "CREDIT", "Crédit (prime approuvée)"
+    ADJUSTMENT = "ADJUSTMENT", "Ajustement"
+    PAYOUT = "PAYOUT", "Versement hors plateforme"
+
+
+class WalletEntryQuerySet(models.QuerySet):
+    def update(self, **kwargs):  # pragma: no cover - garde-fou
+        raise NotImplementedError("Le Wallet est un grand livre append-only.")
+
+    def delete(self):  # pragma: no cover - garde-fou
+        raise NotImplementedError("Le Wallet est un grand livre append-only.")
+
+    def balances(self):
+        """Solde par devise, calcule a la lecture : jamais stocke."""
+        rows = (
+            self.values("currency").annotate(total=models.Sum("amount")).order_by("currency")
+        )
+        return {row["currency"]: row["total"] or Decimal("0") for row in rows}
+
+
+class WalletEntry(BaseModel):
+    """Ecriture du Wallet d'un chercheur (spec v2, branche Bug Bounty).
+
+    Le Wallet est un grand livre : chaque credit, ajustement ou versement est
+    une ecriture immuable. Le solde est calcule (somme des ecritures), jamais
+    stocke ni modifiable. Aucun flux financier reel n'est declenche : le
+    versement effectif reste hors plateforme (MVP).
+    """
+
+    researcher = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="wallet_entries"
+    )
+    bounty = models.ForeignKey(
+        Bounty,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="wallet_entries",
+    )
+    kind = models.CharField(max_length=16, choices=WalletEntryKind.choices)
+    amount = models.DecimalField(
+        max_digits=12, decimal_places=2, help_text="Positif au crédit, négatif au débit."
+    )
+    currency = models.CharField(max_length=8, default="XOF")
+    note = models.CharField(max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="wallet_entries_recorded",
+    )
+
+    objects = WalletEntryQuerySet.as_manager()
+
+    class Meta:
+        db_table = "wallet_entries"
+        ordering = ["-created_at"]
+        verbose_name = "Écriture de Wallet"
+        verbose_name_plural = "Grand livre des Wallets"
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {self.amount} {self.currency}"
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Une écriture de Wallet ne peut pas être modifiée.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Une écriture de Wallet ne peut pas être supprimée.")

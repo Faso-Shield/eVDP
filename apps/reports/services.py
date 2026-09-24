@@ -48,14 +48,57 @@ def _severity_for(report):
     return report.reported_severity or Severity.MEDIUM, report.cvss_score
 
 
+#: Sources humaines : le declarant doit joindre au moins une piece (spec v2,
+#: etape 0). Un import CSAF est un document machine, sans preuve jointe.
+SOURCES_REQUIRING_ATTACHMENT = frozenset({ReportSource.WEB, ReportSource.API})
+
+#: Nombre maximal de pieces jointes transmises avec la soumission.
+MAX_SUBMISSION_ATTACHMENTS = 5
+
+
+def validate_submission_attachments(attachments, source=ReportSource.WEB):
+    """Controle serveur des pieces jointes d'une soumission.
+
+    Au moins une piece est exigee pour une soumission web ou API ; chaque
+    fichier est valide (taille, extension, MIME, signature) AVANT toute
+    ecriture, pour qu'un refus ne laisse ni rapport ni case orphelin.
+    """
+    from apps.attachments.services import validate_upload
+
+    attachments = list(attachments or [])
+    if source in SOURCES_REQUIRING_ATTACHMENT and not attachments:
+        raise ValidationError(
+            {
+                "attachments": "Au moins une pièce jointe est obligatoire pour soumettre un rapport."
+            }
+        )
+    if len(attachments) > MAX_SUBMISSION_ATTACHMENTS:
+        raise ValidationError(
+            {"attachments": f"{MAX_SUBMISSION_ATTACHMENTS} pièces jointes au maximum."}
+        )
+    for uploaded in attachments:
+        try:
+            validate_upload(uploaded)
+        except ValidationError as exc:
+            raise ValidationError(
+                {"attachments": f"« {uploaded.name} » refusé : {'; '.join(exc.messages)}"}
+            ) from exc
+    return attachments
+
+
 @transaction.atomic
-def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
+def submit_report(
+    report, request=None, source=ReportSource.WEB, reporter=None, attachments=None
+):
     """Enregistre un rapport soumis et cree le Case associe.
 
-    Le rapport reste prive : aucune donnee n'est rendue publique ici.
+    Le rapport reste prive : aucune donnee n'est rendue publique ici. Les
+    pieces jointes du declarant sont enregistrees dans la meme transaction :
+    elles sont ensuite en lecture seule pour tous les roles.
     """
     if reporter is not None and reporter.is_authenticated:
         report.reporter = reporter
+    attachments = validate_submission_attachments(attachments, source)
 
     # Conditions d'acces du programme. Controlees ici et non seulement dans le
     # formulaire : ce service est le point d'entree commun au web, a l'API et
@@ -114,6 +157,13 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
     ensure_default_participants(case)
     schedule_initial_sla(case)
     case.refresh_priority()
+
+    if attachments:
+        from apps.attachments.services import store_attachment
+
+        uploader = report.reporter if report.reporter_id else None
+        for uploaded in attachments:
+            store_attachment(uploaded, uploader, case=case, report=report, request=request)
 
     log_action(
         AuditAction.REPORT_SUBMITTED,
@@ -176,7 +226,7 @@ def reports_for(user):
     """Rapports visibles par l'utilisateur (isolation stricte)."""
     if not user or not user.is_authenticated:
         return VulnerabilityReport.objects.none()
-    if user.is_national:
+    if user.can_view_all_cases:
         return VulnerabilityReport.objects.all()
     case_ids = Case.objects.visible_to(user).values_list("report_id", flat=True)
     return VulnerabilityReport.objects.filter(

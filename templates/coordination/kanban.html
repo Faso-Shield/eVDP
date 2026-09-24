@@ -3,7 +3,7 @@
 {% block title %}Kanban{% endblock %}
 {% comment %}
 Le tableau vaut par sa vue d'ensemble : cette page seule prend toute la largeur
-de la fenetre, navbar et pied de page compris, pour que les sept colonnes du
+de la fenetre, navbar et pied de page compris, pour que les colonnes du
 workflow respirent au lieu de tenir dans la gouttiere commune de 1240px.
 {% endcomment %}
 {% block body_class %}page-pleine-largeur{% endblock %}
@@ -25,6 +25,7 @@ workflow respirent au lieu de tenir dans la gouttiere commune de 1240px.
         <div class="kc-tags">
           <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
           {% if case.organization %}<span class="pill">{% firstof case.organization.acronym case.organization.name %}</span>{% endif %}
+          {% with badge=case.sla_badge %}{% if badge %}<span class="sla-badge sla-{{ badge }}" title="Échéance : {% if badge == 'red' %}dépassée{% elif badge == 'orange' %}75 % du délai atteint{% else %}dans les temps{% endif %}">●</span>{% endif %}{% endwith %}
         </div>
       </a>
     {% empty %}

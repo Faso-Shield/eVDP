@@ -15,6 +15,8 @@ from apps.coordination.services import (
 )
 from apps.coordination.workflow import CaseStatus
 
+from .conftest import evidence
+
 pytestmark = pytest.mark.django_db
 
 
@@ -29,6 +31,7 @@ def form_payload(**overrides):
         "steps_to_reproduce": "1. Ouvrir la page\n2. Injecter le payload",
         "impact": "Vol de session utilisateur.",
         "accept_policy": "on",
+        "attachments": evidence(),
     }
     payload.update(overrides)
     return payload
@@ -70,7 +73,7 @@ def test_regenerating_token_invalidates_the_previous_one(case_alpha):
 
 # --------------------------------------------------------------- statut public
 def test_public_status_hides_internal_detail(case_alpha):
-    case_alpha.status = CaseStatus.TRIAGE
+    case_alpha.status = CaseStatus.VALIDATION_PENDING
     case_alpha.save(update_fields=["status"])
     status = public_status_for(case_alpha)
     assert status["key"] == "ANALYSIS"

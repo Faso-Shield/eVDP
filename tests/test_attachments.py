@@ -125,7 +125,9 @@ def test_upload_denied_outside_case_scope(case_beta, researcher_a):
 
 
 def test_attachment_limit_per_case(settings, case_alpha, researcher_a):
-    settings.EVDP = {**settings.EVDP, "MAX_ATTACHMENTS_PER_CASE": 2}
+    # La soumission a deja depose une piece (obligatoire depuis la spec v2).
+    settings.EVDP = {**settings.EVDP, "MAX_ATTACHMENTS_PER_CASE": 3}
+    assert case_alpha.attachments.count() == 1
     store_attachment(upload("a.txt"), researcher_a, case=case_alpha)
     store_attachment(upload("b.txt"), researcher_a, case=case_alpha)
     with pytest.raises(ValidationError, match="maximum"):

@@ -33,8 +33,7 @@ SORT_FIELDS = {
 #: Etats attestant qu'un dossier a au moins ete corrige (pas seulement soumis).
 _RESOLVED_STATUSES = [
     CaseStatus.FIX_VERIFIED,
-    CaseStatus.DISCLOSURE_SCHEDULED,
-    CaseStatus.PUBLISHED,
+    CaseStatus.ADVISORY_REVIEW,
     CaseStatus.CLOSED,
 ]
 

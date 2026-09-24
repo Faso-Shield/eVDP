@@ -15,6 +15,7 @@ from .roles import (
     NATIONAL_ROLES,
     ORGANIZATION_ROLES,
     RESEARCHER_ROLES,
+    SENIOR_ANALYST_CAPABILITIES,
     Capability,
     Role,
     capabilities_for,
@@ -68,6 +69,13 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         db_index=True,
         verbose_name="Rôle",
         help_text="Rôle RBAC. Jamais modifiable par l'utilisateur lui-même.",
+    )
+    is_senior_analyst = models.BooleanField(
+        default=False,
+        verbose_name="Analyste senior",
+        help_text="Permission individuelle : un analyste CSIRT senior peut valider "
+        "la qualification d'un autre analyste (étape 4). Sans effet sur les "
+        "autres rôles.",
     )
     is_active = models.BooleanField(default=True, verbose_name="Compte actif")
     is_staff = models.BooleanField(default=False, verbose_name="Accès à l'administration")
@@ -179,14 +187,29 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     # -- RBAC ---------------------------------------------------------------
     @property
     def capabilities(self):
-        return capabilities_for(self.role)
+        """Capacites effectives : celles du role, plus les permissions
+        individuelles.
+
+        Le drapeau `is_superuser` n'ouvre plus tout : il donne les capacites
+        d'administration technique du Super admin, jamais l'acces metier aux
+        dossiers (separation des taches, spec v2).
+        """
+        caps = set(capabilities_for(self.role))
+        if self.is_superuser:
+            caps |= capabilities_for(Role.SUPER_ADMIN)
+        if self.is_senior_analyst and self.role == Role.CSIRT_ANALYST:
+            caps |= SENIOR_ANALYST_CAPABILITIES
+        return caps
 
     def has_capability(self, capability):
         if not self.is_active:
             return False
-        if self.is_superuser:
-            return True
         return capability in self.capabilities
+
+    @property
+    def can_view_all_cases(self):
+        """Perimetre national sur les dossiers (le Super admin en est exclu)."""
+        return self.has_capability(Capability.VIEW_ALL_CASES)
 
     @property
     def is_national(self):

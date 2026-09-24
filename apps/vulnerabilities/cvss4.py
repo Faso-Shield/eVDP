@@ -19,7 +19,10 @@ BASE_METRICS = ["AV", "AC", "AT", "PR", "UI", "VC", "VI", "VA", "SC", "SI", "SA"
 _IMPACT = {"H": "Élevé", "L": "Faible", "N": "Aucun"}
 
 METRIC_LABELS = {
-    "AV": ("Vecteur d'attaque", {"N": "Réseau", "A": "Adjacent", "L": "Local", "P": "Physique"}),
+    "AV": (
+        "Vecteur d'attaque",
+        {"N": "Réseau", "A": "Adjacent", "L": "Local", "P": "Physique"},
+    ),
     "AC": ("Complexité d'attaque", {"L": "Faible", "H": "Élevée"}),
     "AT": ("Prérequis d'attaque", {"N": "Aucun", "P": "Présents"}),
     "PR": ("Privilèges requis", {"N": "Aucun", "L": "Faibles", "H": "Élevés"}),
@@ -62,8 +65,11 @@ OPTIONAL_VALUES = {
 
 # Vecteurs "maximaux" de chaque classe d'equivalence (spec, tableau 24-29).
 _MAX_COMPOSED = {
-    1: {0: ["AV:N/PR:N/UI:N"], 1: ["AV:A/PR:N/UI:N", "AV:N/PR:L/UI:N", "AV:N/PR:N/UI:P"],
-        2: ["AV:P/PR:N/UI:N", "AV:A/PR:L/UI:P"]},
+    1: {
+        0: ["AV:N/PR:N/UI:N"],
+        1: ["AV:A/PR:N/UI:N", "AV:N/PR:L/UI:N", "AV:N/PR:N/UI:P"],
+        2: ["AV:P/PR:N/UI:N", "AV:A/PR:L/UI:P"],
+    },
     2: {0: ["AC:L/AT:N"], 1: ["AC:H/AT:N", "AC:L/AT:P"]},
     # EQ3 et EQ6 sont indissociables : cle (eq3, eq6).
     36: {

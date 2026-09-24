@@ -5,7 +5,6 @@ from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.accounts.verification import grace_deadline
-from apps.attachments.services import store_attachment
 from apps.coordination.services import public_status_for, resolve_tracking_token
 from apps.core.markdown_utils import render_markdown
 from apps.core.models import SiteSetting
@@ -41,11 +40,16 @@ def submit(request):
                     request=request,
                     source=ReportSource.WEB,
                     reporter=request.user if request.user.is_authenticated else None,
+                    attachments=request.FILES.getlist("attachments"),
                 )
             except ValidationError as exc:
+                if hasattr(exc, "error_dict"):
+                    for field, errors in exc.message_dict.items():
+                        target = field if field in form.fields else None
+                        for error in errors:
+                            form.add_error(target, error)
                 messages.error(request, "; ".join(exc.messages))
             else:
-                _attach_files(request, case, report)
                 if request.user.is_authenticated:
                     messages.success(
                         request,
@@ -96,25 +100,6 @@ def submit(request):
             ),
         },
     )
-
-
-def _attach_files(request, case, report):
-    """Enregistre les pieces jointes fournies avec le formulaire."""
-    files = request.FILES.getlist("attachments")
-    for uploaded in files[:5]:
-        try:
-            store_attachment(
-                uploaded,
-                request.user if request.user.is_authenticated else None,
-                case=case,
-                report=report,
-                request=request,
-            )
-        except ValidationError as exc:
-            messages.warning(
-                request,
-                f"Pièce jointe « {uploaded.name} » refusée : {'; '.join(exc.messages)}",
-            )
 
 
 def submitted(request):

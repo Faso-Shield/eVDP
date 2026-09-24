@@ -12,6 +12,7 @@ doivent JAMAIS etre utilises en production (voir docs/installation.md).
 from datetime import timedelta
 from decimal import Decimal
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -20,12 +21,12 @@ from apps.accounts.models import User
 from apps.accounts.roles import Role
 from apps.bounty.services import approve_bounty, propose_bounty
 from apps.coordination.models import SLAPolicy
+from apps.coordination.scenarios import Team, advance_case
 from apps.coordination.services import transition_case
 from apps.coordination.workflow import CaseStatus
 from apps.core.models import SiteSetting
 from apps.core.views import DEFAULT_DISCLOSURE_POLICY
-from apps.disclosures.models import AdvisoryStatus
-from apps.disclosures.services import create_advisory_from_case, publish_advisory
+from apps.disclosures.services import create_advisory_from_case
 from apps.organizations.models import (
     MembershipRole,
     Organization,
@@ -609,7 +610,15 @@ class Command(BaseCommand):
                 accepted_policy=True,
                 wants_credit=True,
             )
-            cases.append(submit_report(report, reporter=spec["reporter"]))
+            # Spec v2 : au moins une piece jointe par soumission.
+            evidence = SimpleUploadedFile(
+                "preuve.txt",
+                f"Trace de reproduction - {spec['title']}".encode(),
+                content_type="text/plain",
+            )
+            cases.append(
+                submit_report(report, reporter=spec["reporter"], attachments=[evidence])
+            )
         return cases
 
     # ----------------------------------------------------------------- workflow
@@ -620,46 +629,33 @@ class Command(BaseCommand):
         if not cases:
             return
 
-        # Case 1 : parcours CVD complet jusqu'a la verification du correctif.
-        case = cases[0]
-        for target in [
-            CaseStatus.RECEIVED,
-            CaseStatus.ACKNOWLEDGED,
-            CaseStatus.TRIAGE,
-            CaseStatus.VALIDATED,
-            CaseStatus.VENDOR_CONTACTED,
-            CaseStatus.VENDOR_ACKNOWLEDGED,
-            CaseStatus.REMEDIATION,
-            CaseStatus.FIX_AVAILABLE,
-            CaseStatus.VERIFICATION,
-            CaseStatus.FIX_VERIFIED,
-        ]:
-            if case.status != target:
-                transition_case(case, target, coordinator, comment="Étape de démonstration")
+        team = Team(
+            triager=users["triage@csirt.bf"],
+            analyst=analyst,
+            validator=coordinator,
+            vendor=users["dsi@sante.gov.bf"],
+            publisher=coordinator,
+        )
 
-        # Case 2 : parcours Bug Bounty jusqu'a la revue de recompense.
+        # Case 1 : parcours CVD complet jusqu'a la verification du correctif
+        # (etape 8), chaque etape jouee par son proprietaire.
+        advance_case(cases[0], CaseStatus.FIX_VERIFIED, team)
+
+        # Case 2 : parcours Bug Bounty jusqu'a la validation ; la branche
+        # prime s'ouvre alors en parallele (voir _bounty).
         if len(cases) > 1:
-            case = cases[1]
-            for target in [
-                CaseStatus.TRIAGE,
-                CaseStatus.VALIDATED,
-                CaseStatus.SEVERITY_ASSIGNED,
-                CaseStatus.BOUNTY_REVIEW,
-            ]:
-                if case.status != target:
-                    transition_case(case, target, analyst, comment="Triage Bug Bounty")
+            advance_case(cases[1], CaseStatus.VALIDATED, team)
 
-        # Case 3 : reste en triage, avec une demande d'informations.
+        # Case 3 : en analyse, avec une demande de complements au declarant.
         if len(cases) > 2:
             case = cases[2]
-            for target in [CaseStatus.TRIAGE, CaseStatus.NEEDS_INFORMATION]:
-                if case.status != target:
-                    transition_case(
-                        case,
-                        target,
-                        analyst,
-                        comment="Merci de préciser le navigateur utilisé.",
-                    )
+            advance_case(case, CaseStatus.IN_ANALYSIS, team)
+            transition_case(
+                case,
+                "request_information",
+                analyst,
+                comment="Merci de préciser le navigateur utilisé.",
+            )
 
     # ------------------------------------------------------------------ bounty
     def _bounty(self, cases, users):
@@ -690,9 +686,12 @@ class Command(BaseCommand):
             return
         case = cases[0]
         coordinator = users["coordinateur@anssi.bf"]
-        advisory = create_advisory_from_case(
+        analyst = users["analyste@csirt.bf"]
+        # Etapes 9 et 10 : l'analyste redige et soumet, le Coordinateur relit
+        # puis publie et clot (quatre yeux).
+        create_advisory_from_case(
             case,
-            coordinator,
+            analyst,
             summary=(
                 "Une vulnérabilité d'injection SQL affectait le portail e-État civil "
                 "du ministère de démonstration. Elle permettait à un attaquant non "
@@ -713,6 +712,5 @@ class Command(BaseCommand):
             affected_versions="Portail e-Etat civil < 2.4.1",
             fixed_versions="Portail e-Etat civil 2.4.1",
         )
-        advisory.status = AdvisoryStatus.APPROVED
-        advisory.save(update_fields=["status", "updated_at"])
-        publish_advisory(advisory, coordinator)
+        transition_case(case, "submit_advisory", analyst)
+        transition_case(case, "publish_and_close", coordinator, comment="Relecture faite.")

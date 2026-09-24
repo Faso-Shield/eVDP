@@ -17,10 +17,12 @@ from .models import Bounty
 from .services import (
     approve_bounty,
     budget_status,
+    declare_not_eligible,
     propose_bounty,
     record_payment,
     reject_bounty,
     review_bounty,
+    send_back_bounty,
     suggested_amount,
 )
 
@@ -28,17 +30,17 @@ from .services import (
 def _visible_bounties(user):
     """Isolation : chaque profil ne voit que les recompenses de son perimetre."""
     queryset = Bounty.objects.select_related("case", "program", "researcher")
-    if user.is_national:
+    if user.can_view_all_cases:
         return queryset
-    case_ids = Case.objects.visible_to(user).values_list("id", flat=True)
-    return queryset.filter(case_id__in=case_ids)
+    # Spec v2 : la DSI ne voit pas le Wallet ; le chercheur voit le sien.
+    return queryset.filter(researcher=user)
 
 
 def _get_bounty(request, bounty_id):
     bounty = get_object_or_404(
         Bounty.objects.select_related("case", "program", "researcher"), pk=bounty_id
     )
-    if not bounty.case.is_visible_to(request.user):
+    if not _visible_bounties(request.user).filter(pk=bounty.pk).exists():
         raise Http404("Recompense introuvable.")
     return bounty
 
@@ -91,6 +93,11 @@ def bounty_detail(request, bounty_id):
             and bounty.proposed_by_id != request.user.pk
         ),
         "can_pay": can_pay,
+        "can_send_back": (
+            request.user.has_capability(Capability.SEND_BACK)
+            and bounty.case.bounty_status == "BOUNTY_PROPOSED"
+            and not bounty.is_final
+        ),
     }
     # Les elements d'instruction ne sont pas seulement masques par le gabarit :
     # ils ne quittent pas la base pour un compte qui n'a pas a les lire. Le
@@ -163,7 +170,7 @@ def propose(request, case_id):
 @require_POST
 @login_required
 @require_not_read_only
-@require_capability(Capability.PROPOSE_BOUNTY)
+@require_capability(Capability.PROPOSE_BOUNTY, Capability.APPROVE_BOUNTY)
 def review(request, bounty_id):
     bounty = _get_bounty(request, bounty_id)
     form = BountyReviewForm(request.POST)
@@ -263,3 +270,39 @@ def payment(request, bounty_id):
     else:
         messages.error(request, form.errors.as_text())
     return redirect("bounty:detail", bounty_id=bounty.pk)
+
+
+@require_POST
+@login_required
+@require_not_read_only
+@require_capability(Capability.SEND_BACK)
+def send_back(request, bounty_id):
+    """B2 -> B1 : la proposition repart a l'analyste, commentaire requis."""
+    bounty = _get_bounty(request, bounty_id)
+    try:
+        send_back_bounty(
+            bounty, request.user, comment=request.POST.get("note", ""), request=request
+        )
+        messages.success(request, "Proposition renvoyée à l'analyste.")
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    return redirect("bounty:detail", bounty_id=bounty.pk)
+
+
+@require_POST
+@login_required
+@require_not_read_only
+@require_capability(Capability.APPROVE_BOUNTY)
+def not_eligible(request, case_id):
+    """Ferme la branche prime d'un dossier (debloque « Publier et clôturer »)."""
+    case = get_object_or_404(Case, case_id=case_id.upper())
+    if not case.is_visible_to(request.user):
+        raise Http404("Dossier introuvable.")
+    try:
+        declare_not_eligible(
+            case, request.user, comment=request.POST.get("comment", ""), request=request
+        )
+        messages.success(request, "Dossier déclaré non éligible à une prime.")
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    return redirect("coordination:case_detail", case_id=case.case_id)

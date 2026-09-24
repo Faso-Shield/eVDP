@@ -9,6 +9,8 @@ from apps.coordination.models import Case
 from apps.vulnerabilities.constants import Severity
 from apps.vulnerabilities.cvss import CVSSError, base_score, build_vector, evaluate
 
+from .conftest import evidence
+
 pytestmark = pytest.mark.django_db
 
 
@@ -23,6 +25,7 @@ def form_payload(**overrides):
         "steps_to_reproduce": "1. Ouvrir la page\n2. Injecter le payload",
         "impact": "Vol de session utilisateur.",
         "accept_policy": "on",
+        "attachments": evidence(),
         "contact_email": "declarant@exemple.bf",
     }
     payload.update(overrides)

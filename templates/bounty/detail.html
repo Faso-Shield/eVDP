@@ -165,13 +165,23 @@ vue ne charge même pas les avis pour un bénéficiaire.
         <form method="post" action="{% url 'bounty:approve' bounty.id %}" class="mb-2">
           {% csrf_token %}
           {% for field in decision_form %}{% include "partials/form_field.html" %}{% endfor %}
-          <button class="btn btn-accent btn-block" type="submit">Approuver</button>
+          <button class="btn btn-accent btn-block" type="submit">Approuver et créditer le Wallet</button>
         </form>
-        <form method="post" action="{% url 'bounty:reject' bounty.id %}">
-          {% csrf_token %}
-          <input type="hidden" name="note" value="Rejet après revue">
-          <button class="btn btn-danger btn-block" type="submit">Rejeter</button>
-        </form>
+        <details class="workflow-secondary">
+          <summary class="btn btn-sm btn-outline">Autres actions</summary>
+          {% if can_send_back %}
+          <form method="post" action="{% url 'bounty:send_back' bounty.id %}" class="mt-1">
+            {% csrf_token %}
+            <textarea name="note" rows="2" placeholder="Commentaire obligatoire" required></textarea>
+            <button class="btn btn-sm btn-outline btn-block" type="submit">Renvoyer à l'analyste</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{% url 'bounty:reject' bounty.id %}" class="mt-1">
+            {% csrf_token %}
+            <textarea name="note" rows="2" placeholder="Motif obligatoire" required></textarea>
+            <button class="btn btn-sm btn-danger btn-block" type="submit">Rejeter (non éligible)</button>
+          </form>
+        </details>
       </div>
     </div>
     {% endif %}

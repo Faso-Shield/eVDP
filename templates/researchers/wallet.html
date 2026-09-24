@@ -12,6 +12,36 @@
   Elles ne sont jamais publiées ni partagées, et chaque modification est journalisée.
 </div>
 
+<div class="card">
+  <div class="card-header">
+    <h2>Grand livre du Wallet</h2>
+    <span class="pill">Solde :
+      {% for currency, total in balances.items %}{{ total|money }} {{ currency }}{% if not forloop.last %} · {% endif %}{% empty %}0{% endfor %}
+    </span>
+  </div>
+  <div class="card-body">
+    <p class="small muted">Le solde est calculé à partir des écritures ci-dessous ; il n'est jamais stocké ni modifiable. Aucun flux financier réel n'est déclenché par la plateforme : le versement effectif a lieu hors plateforme.</p>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Date</th><th>Écriture</th><th>Dossier</th><th>Montant</th><th>Libellé</th></tr></thead>
+        <tbody>
+        {% for entry in ledger %}
+          <tr>
+            <td class="small nowrap">{{ entry.created_at|date:"d/m/Y" }}</td>
+            <td>{{ entry.get_kind_display }}</td>
+            <td class="mono small">{{ entry.bounty.case.case_id|default:"—" }}</td>
+            <td class="nowrap">{{ entry.amount|money }} {{ entry.currency }}</td>
+            <td class="small">{{ entry.note }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="muted">Aucune écriture pour le moment.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 {% if not profile.is_complete %}
 <div class="notice">
   <strong>Portefeuille incomplet.</strong> Complétez vos informations personnelles

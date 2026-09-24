@@ -74,6 +74,11 @@ DEFAULT_TEMPLATES = {
         "[eVDP] Échéance dépassée sur le dossier {case_id}",
         "Une échéance de traitement est dépassée pour le dossier {case_id}.\n\n{link}",
     ),
+    NotificationKind.CASE_ESCALATED: (
+        "[eVDP] Alerte rouge : dossier {case_id} escaladé",
+        "Le dossier {case_id} a été escaladé à la coordination nationale "
+        "(échéance dépassée ou décision du Coordinateur).\n\n{link}",
+    ),
     NotificationKind.DISCLOSURE_UPCOMING: (
         "[eVDP] Divulgation planifiee",
         "La divulgation coordonnée du dossier {case_id} approche.\n\n{link}",
@@ -99,6 +104,11 @@ DEFAULT_TEMPLATES = {
     NotificationKind.BOUNTY_PAID: (
         "[eVDP] Recompense versee",
         "Le versement de la récompense du dossier {case_id} a été " "enregistre.\n\n{link}",
+    ),
+    NotificationKind.WALLET_CREDITED: (
+        "[eVDP] Votre Wallet a été crédité",
+        "Une prime a été créditée sur votre Wallet eVDP pour le dossier "
+        "{case_id}. Le versement effectif est réalisé hors plateforme.\n\n{link}",
     ),
     NotificationKind.ACCOUNT: (
         "[eVDP] Notification de compte",
@@ -205,18 +215,31 @@ def notify_many(recipients, kind, **kwargs):
     return created
 
 
-def notify_case_team(case, kind, exclude=None, **kwargs):
-    """Notifie les participants actifs d'un case, hors auteur de l'action."""
+def notify_case_team(case, kind, exclude=None, include_reporter=True, channel=None, **kwargs):
+    """Notifie les participants actifs d'un case, hors auteur de l'action.
+
+    Seuls ceux qui voient le dossier a ce stade sont notifies (une
+    organisation n'est jamais prevenue avant l'etape 5). `channel` restreint
+    aux lecteurs d'un canal de messagerie.
+    """
     from apps.accounts.models import User
+    from apps.coordination.models import channels_visible_to
 
     participant_ids = set(case.participant_user_ids())
     if case.assignee_id:
         participant_ids.add(case.assignee_id)
-    if case.reporter_id:
+    if case.reporter_id and include_reporter:
         participant_ids.add(case.reporter_id)
+    elif case.reporter_id:
+        participant_ids.discard(case.reporter_id)
     if exclude is not None and getattr(exclude, "pk", None):
         participant_ids.discard(exclude.pk)
-    recipients = User.objects.filter(id__in=participant_ids, is_active=True)
+    recipients = [
+        user
+        for user in User.objects.filter(id__in=participant_ids, is_active=True)
+        if case.is_visible_to(user)
+        and (channel is None or channel in channels_visible_to(user, case))
+    ]
     return notify_many(recipients, kind, case=case, **kwargs)
 
 

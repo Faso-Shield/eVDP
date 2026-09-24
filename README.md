@@ -39,7 +39,9 @@ Signaler  →  Analyser  →  Coordonner  →  Corriger  →  Publier
 - Formulaire public de signalement, avec ou sans compte, avec option **anonyme**
 - Chiffrement **PGP** optionnel du contenu sensible
 - Création automatique d'un dossier `EVDP-2026-000001`
-- Machine à états de 24 statuts, transitions strictement contrôlées
+- Workflow v2 (SPEC-eVDP-2026-V2) : 11 étapes, un bouton et un rôle par étape,
+  pré-requis bloquants, règle des quatre yeux, branche Bug Bounty et Wallet
+  (grand livre), sorties d'exception — voir `docs/cvd-workflow.md`
 - Messagerie sécurisée à 3 niveaux de confidentialité, avec hash d'intégrité
 - Pièces jointes validées, stockées sous nom opaque, jamais servies directement
 - Échéances **SLA** configurables surveillées par Celery Beat
@@ -287,7 +289,7 @@ curl -X POST http://localhost/api/v1/reports/ \
 | `GET` | `/api/v1/reports/` | Lister ses dossiers |
 | `GET` | `/api/v1/reports/{case_id}/` | Détail d'un dossier |
 | `PATCH` | `/api/v1/reports/{case_id}/` | Qualifier (analystes) |
-| `POST` | `/api/v1/reports/{case_id}/transition/` | Changer de statut |
+| `GET`/`POST` | `/api/v1/reports/{case_id}/transition/` | Bouton de l'étape / appliquer une action du workflow |
 | `GET/POST` | `/api/v1/reports/{case_id}/messages/` | Messagerie |
 | `GET/POST` | `/api/v1/reports/{case_id}/attachments/` | Pièces jointes |
 | `GET/POST` | `/api/v1/programs/` | Programmes |

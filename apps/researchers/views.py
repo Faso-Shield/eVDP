@@ -106,6 +106,9 @@ def wallet_home(request):
             "profile": profile,
             "profile_form": profile_form,
             "methods": profile.methods.filter(is_active=True),
+            # Grand livre (spec v2) : ecritures et solde calcule, jamais stocke.
+            "ledger": request.user.wallet_entries.select_related("bounty__case")[:50],
+            "balances": request.user.wallet_entries.balances(),
             "method_form": PayoutMethodForm(),
             "max_methods": settings.EVDP["MAX_PAYOUT_METHODS"],
         },

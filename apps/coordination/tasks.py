@@ -13,6 +13,7 @@ from apps.notifications.services import notify_case_team
 
 from .constants import SLAState
 from .models import Case, SLAEvent, SLAPolicy
+from .workflow import INFORMATION_TIMEOUT_DAYS, CaseStatus
 
 logger = logging.getLogger("evdp.sla")
 
@@ -22,7 +23,7 @@ def sweep_sla():
     """Detecte les echeances proches et les depassements de SLA."""
     now = timezone.now()
     default_policy = SLAPolicy.get_default()
-    warning_ratio = (default_policy.warning_ratio if default_policy else 80) / 100
+    warning_ratio = (default_policy.warning_ratio if default_policy else 75) / 100
 
     breached = 0
     warned = 0
@@ -44,6 +45,12 @@ def sweep_sla():
                 kind=event.kind,
                 due_at=event.due_at.isoformat(),
             )
+            # Spec v2 : un SLA depasse escalade automatiquement le dossier
+            # vers la coordination nationale (alerte rouge).
+            if event.case.is_open and event.case.escalated_at is None:
+                from .services import escalate_case
+
+                escalate_case(event.case, automatic=True)
             event.case.refresh_priority()
             continue
 
@@ -60,6 +67,28 @@ def sweep_sla():
 
     logger.info("sla_sweep", extra={"breached": breached, "warned": warned})
     return {"breached": breached, "warned": warned}
+
+
+@shared_task(name="apps.coordination.tasks.sweep_information_requests")
+def sweep_information_requests():
+    """Complements sans reponse sous 30 jours : rejet propose au Coordinateur."""
+    from .services import system_propose_rejection
+
+    limit = timezone.now() - timedelta(days=INFORMATION_TIMEOUT_DAYS)
+    proposed = 0
+    for case in Case.objects.filter(status=CaseStatus.NEEDS_INFORMATION):
+        entered = (
+            case.status_history.filter(to_status=CaseStatus.NEEDS_INFORMATION)
+            .order_by("-created_at")
+            .first()
+        )
+        if entered is not None and entered.created_at <= limit:
+            system_propose_rejection(
+                case,
+                f"Aucune réponse du déclarant sous {INFORMATION_TIMEOUT_DAYS} jours.",
+            )
+            proposed += 1
+    return proposed
 
 
 @shared_task(name="apps.coordination.tasks.sweep_disclosure_schedule")

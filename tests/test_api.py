@@ -10,6 +10,8 @@ from apps.coordination.models import Case
 from apps.coordination.workflow import CaseStatus
 from apps.programs.models import Program
 
+from .conftest import evidence
+
 pytestmark = pytest.mark.django_db
 
 REPORT_PAYLOAD = {
@@ -48,19 +50,34 @@ def test_schema_is_served(client):
 
 
 # --------------------------------------------------------------- soumission
+def with_evidence(payload):
+    """Soumission multipart : une piece jointe est obligatoire (spec v2)."""
+    return {**payload, "attachments": evidence()}
+
+
 def test_researcher_creates_report_and_case(client_for, researcher_a, organization):
     client = client_for(researcher_a)
-    response = client.post(
-        "/api/v1/reports/",
-        data=json.dumps(REPORT_PAYLOAD),
-        content_type="application/json",
-    )
+    response = client.post("/api/v1/reports/", with_evidence(REPORT_PAYLOAD))
     assert response.status_code == 201
     body = response.json()
     assert body["case_id"].startswith("EVDP-")
     case = Case.objects.get(case_id=body["case_id"])
     assert case.reporter == researcher_a
     assert case.status == CaseStatus.SUBMITTED
+    assert case.attachments.count() == 1
+
+
+def test_api_submission_without_attachment_is_refused(client_for, researcher_a):
+    """Spec v2, etape 0 : au moins une piece jointe, verifiee cote serveur."""
+    client = client_for(researcher_a)
+    response = client.post(
+        "/api/v1/reports/",
+        data=json.dumps(REPORT_PAYLOAD),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert "attachments" in response.json()
+    assert Case.objects.count() == 0
 
 
 def test_short_description_is_rejected(client_for, researcher_a):
@@ -85,10 +102,8 @@ def test_invalid_cvss_vector_is_rejected(client_for, researcher_a):
 def test_mass_assignment_of_status_is_ignored(client_for, researcher_a):
     """Un client ne doit pas pouvoir imposer un statut ou une severite retenue."""
     client = client_for(researcher_a)
-    payload = {**REPORT_PAYLOAD, "status": "PUBLISHED", "reporter": "autre"}
-    response = client.post(
-        "/api/v1/reports/", data=json.dumps(payload), content_type="application/json"
-    )
+    payload = {**REPORT_PAYLOAD, "status": "CLOSED", "reporter": "autre"}
+    response = client.post("/api/v1/reports/", with_evidence(payload))
     assert response.status_code == 201
     case = Case.objects.get(case_id=response.json()["case_id"])
     assert case.status == CaseStatus.SUBMITTED
@@ -171,16 +186,45 @@ def test_transition_endpoint_enforces_state_machine(client_for, coordinator, cas
     assert case_alpha.status == CaseStatus.SUBMITTED
 
 
-def test_transition_endpoint_applies_valid_transition(client_for, coordinator, case_alpha):
-    client = client_for(coordinator)
+def test_transition_endpoint_applies_valid_transition(client_for, triager, case_alpha):
+    client = client_for(triager)
+    # Pre-requis de l'accuse de reception : avoir ouvert le dossier.
+    assert client.get(f"/api/v1/reports/{case_alpha.case_id}/").status_code == 200
+    button = client.get(f"/api/v1/reports/{case_alpha.case_id}/transition/").json()
+    assert button["action"] == "acknowledge" and button["enabled"] is True
     response = client.post(
         f"/api/v1/reports/{case_alpha.case_id}/transition/",
-        data=json.dumps({"target_status": "TRIAGE"}),
+        data=json.dumps({"action": "acknowledge"}),
         content_type="application/json",
     )
     assert response.status_code == 200
     case_alpha.refresh_from_db()
-    assert case_alpha.status == CaseStatus.TRIAGE
+    assert case_alpha.status == CaseStatus.ACKNOWLEDGED
+
+
+def test_transition_endpoint_lists_missing_prerequisites(client_for, triager, case_alpha):
+    client = client_for(triager)
+    response = client.post(
+        f"/api/v1/reports/{case_alpha.case_id}/transition/",
+        data=json.dumps({"action": "acknowledge"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "prerequisites"
+    assert response.json()["missing"] == ["Ouvrir le dossier"]
+
+
+def test_transition_endpoint_refuses_wrong_owner(client_for, coordinator, case_alpha):
+    """Un bouton, un role : le Coordinateur n'accuse pas reception."""
+    client = client_for(coordinator)
+    response = client.post(
+        f"/api/v1/reports/{case_alpha.case_id}/transition/",
+        data=json.dumps({"action": "acknowledge"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+    case_alpha.refresh_from_db()
+    assert case_alpha.status == CaseStatus.SUBMITTED
 
 
 def test_researcher_cannot_create_program(client_for, researcher_a, organization):
@@ -207,8 +251,7 @@ def test_api_key_authentication(client, researcher_a, organization):
     )
     response = client.post(
         "/api/v1/reports/",
-        data=json.dumps(REPORT_PAYLOAD),
-        content_type="application/json",
+        with_evidence(REPORT_PAYLOAD),
         HTTP_X_EVDP_API_KEY=raw,
     )
     assert response.status_code == 201
@@ -342,9 +385,7 @@ def test_api_accepts_a_real_pgp_block(client_for, researcher_a):
     bloc = "-----BEGIN PGP MESSAGE-----\n\nhQIMA1234\n-----END PGP MESSAGE-----"
     client = client_for(researcher_a)
     response = client.post(
-        "/api/v1/reports/",
-        data=json.dumps({**REPORT_PAYLOAD, "pgp_payload": bloc}),
-        content_type="application/json",
+        "/api/v1/reports/", with_evidence({**REPORT_PAYLOAD, "pgp_payload": bloc})
     )
     assert response.status_code == 201
     assert Case.objects.get().report.is_pgp_encrypted

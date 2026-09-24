@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.utils import timezone
 
@@ -243,16 +244,24 @@ def build_report(reporter, organization=None, program=None, **overrides):
     return VulnerabilityReport(**data)
 
 
+def evidence(name="preuve.txt", content=b"Trace de reproduction de la vulnerabilite."):
+    """Piece jointe minimale : exigee a toute soumission web ou API (spec v2)."""
+    return SimpleUploadedFile(name, content, content_type="text/plain")
+
+
+def submit(report, reporter=None, **kwargs):
+    kwargs.setdefault("attachments", [evidence()])
+    return submit_report(report, reporter=reporter, **kwargs)
+
+
 @pytest.fixture
 def case_alpha(db, researcher_a, organization, vdp_program, sla_policy):
-    return submit_report(
-        build_report(researcher_a, organization, vdp_program), reporter=researcher_a
-    )
+    return submit(build_report(researcher_a, organization, vdp_program), reporter=researcher_a)
 
 
 @pytest.fixture
 def case_beta(db, researcher_b, other_organization, sla_policy):
-    return submit_report(
+    return submit(
         build_report(researcher_b, other_organization, title="Autre vulnerabilite"),
         reporter=researcher_b,
     )
@@ -260,7 +269,7 @@ def case_beta(db, researcher_b, other_organization, sla_policy):
 
 @pytest.fixture
 def bounty_case(db, bounty_researcher, organization, bounty_program, sla_policy):
-    return submit_report(
+    return submit(
         build_report(
             bounty_researcher,
             organization,
@@ -269,6 +278,35 @@ def bounty_case(db, bounty_researcher, organization, bounty_program, sla_policy)
         ),
         reporter=bounty_researcher,
     )
+
+
+# -------------------------------------------------------------- workflow v2
+@pytest.fixture
+def team(db, triager, analyst, coordinator, dsi_alpha):
+    """Proprietaires des etapes du workflow v2."""
+    from apps.coordination.scenarios import Team
+
+    return Team(
+        triager=triager,
+        analyst=analyst,
+        validator=coordinator,
+        vendor=dsi_alpha,
+        publisher=coordinator,
+    )
+
+
+@pytest.fixture
+def advance(team, cwe):
+    """advance(case, statut) : fait avancer un case sur le chemin principal."""
+    from apps.coordination.scenarios import advance_case
+
+    def _advance(case, until, **options):
+        options.setdefault("cwe", cwe)
+        advance_case(case, until, team, **options)
+        case.refresh_from_db()
+        return case
+
+    return _advance
 
 
 # ---------------------------------------------------------------------- client

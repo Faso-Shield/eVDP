@@ -22,14 +22,28 @@ class Role(models.TextChoices):
 
 
 class Capability(models.TextChoices):
-    """Actions elementaires controlees par le backend."""
+    """Actions elementaires controlees par le backend.
+
+    Workflow v2 (SPEC-eVDP-2026-V2) : chaque bouton du dossier est porte par
+    une capacite distincte, pour qu'une etape n'ait qu'un seul proprietaire.
+    """
 
     VIEW_ALL_CASES = "VIEW_ALL_CASES", "Voir tous les cases"
     VIEW_ORG_CASES = "VIEW_ORG_CASES", "Voir les cases de son organisation"
-    TRIAGE_CASE = "TRIAGE_CASE", "Trier un case"
-    CHANGE_CASE_STATUS = "CHANGE_CASE_STATUS", "Changer le statut d'un case"
+    TRIAGE_CASE = "TRIAGE_CASE", "Trier un case (accuser réception, recevabilité)"
+    CHANGE_CASE_STATUS = "CHANGE_CASE_STATUS", "Planifier la divulgation, associer un CVE"
     ASSIGN_CASE = "ASSIGN_CASE", "Assigner un case"
-    SET_SEVERITY = "SET_SEVERITY", "Définir la sévérité"
+    SET_SEVERITY = "SET_SEVERITY", "Qualifier un case (saisie CVSS, CWE)"
+    VALIDATE_SEVERITY = "VALIDATE_SEVERITY", "Valider une qualification"
+    REQUEST_INFORMATION = "REQUEST_INFORMATION", "Demander des compléments"
+    PROVIDE_INFORMATION = "PROVIDE_INFORMATION", "Envoyer des compléments"
+    PROPOSE_REJECTION = "PROPOSE_REJECTION", "Proposer un rejet ou un doublon"
+    CONFIRM_REJECTION = "CONFIRM_REJECTION", "Confirmer un rejet ou un doublon"
+    SEND_BACK = "SEND_BACK", "Renvoyer une étape à son auteur"
+    ESCALATE_CASE = "ESCALATE_CASE", "Escalader un case"
+    NOTIFY_VENDOR = "NOTIFY_VENDOR", "Transmettre à l'organisation"
+    MANAGE_REMEDIATION = "MANAGE_REMEDIATION", "Piloter la remédiation"
+    VERIFY_FIX = "VERIFY_FIX", "Vérifier un correctif"
     POST_INTERNAL_MESSAGE = "POST_INTERNAL_MESSAGE", "Publier un message interne"
     MANAGE_ORGANIZATION = "MANAGE_ORGANIZATION", "Gérer une organisation"
     MANAGE_ALL_ORGANIZATIONS = "MANAGE_ALL_ORGANIZATIONS", "Gérer les organisations"
@@ -50,23 +64,39 @@ class Capability(models.TextChoices):
 
 C = Capability
 
+#: Capacites de l'administration technique. Le Super admin n'a qu'elles :
+#: il gere comptes, roles, configuration, SLA et matrices de prime, mais ne
+#: lit aucun dossier et ne clique aucun bouton de workflow (ISO/IEC 27001
+#: A.5.3, separation des taches).
+ADMINISTRATION_CAPABILITIES = frozenset(
+    {
+        C.MANAGE_USERS,
+        C.MANAGE_ALL_ORGANIZATIONS,
+        C.MANAGE_ORGANIZATION,
+        C.MANAGE_PROGRAM,
+        C.VIEW_AUDIT_LOG,
+    }
+)
+
 #: Capacites accordees a chaque role. Aucune capacite n'est implicite.
 ROLE_CAPABILITIES = {
-    Role.SUPER_ADMIN: set(C.values),
+    Role.SUPER_ADMIN: set(ADMINISTRATION_CAPABILITIES),
+    # Vue nationale administrative et financiere : valide, confirme, publie,
+    # approuve. Ne saisit ni CVSS ni advisory : il relit le travail d'autrui.
     Role.NATIONAL_COORDINATOR: {
         C.VIEW_ALL_CASES,
-        C.TRIAGE_CASE,
         C.CHANGE_CASE_STATUS,
         C.ASSIGN_CASE,
-        C.SET_SEVERITY,
+        C.VALIDATE_SEVERITY,
+        C.CONFIRM_REJECTION,
+        C.SEND_BACK,
+        C.ESCALATE_CASE,
         C.POST_INTERNAL_MESSAGE,
         C.MANAGE_ALL_ORGANIZATIONS,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
-        C.PROPOSE_BOUNTY,
         C.APPROVE_BOUNTY,
         C.RECORD_PAYMENT,
-        C.DRAFT_ADVISORY,
         C.PUBLISH_ADVISORY,
         C.VIEW_AUDIT_LOG,
         C.VIEW_NATIONAL_DASHBOARD,
@@ -75,12 +105,16 @@ ROLE_CAPABILITIES = {
         C.IMPORT_CSAF,
         C.MANAGE_USERS,
     },
+    # Seul a saisir le CVSS ; echange avec le chercheur et l'organisation.
     Role.CSIRT_ANALYST: {
         C.VIEW_ALL_CASES,
-        C.TRIAGE_CASE,
         C.CHANGE_CASE_STATUS,
         C.ASSIGN_CASE,
         C.SET_SEVERITY,
+        C.REQUEST_INFORMATION,
+        C.PROPOSE_REJECTION,
+        C.NOTIFY_VENDOR,
+        C.VERIFY_FIX,
         C.POST_INTERNAL_MESSAGE,
         C.MANAGE_PROGRAM,
         C.PROPOSE_BOUNTY,
@@ -89,32 +123,33 @@ ROLE_CAPABILITIES = {
         C.EXPORT_DATA,
         C.IMPORT_CSAF,
     },
+    # Spec v2 : plus de saisie CVSS pour le triage.
     Role.TRIAGER: {
         C.VIEW_ALL_CASES,
         C.TRIAGE_CASE,
-        C.CHANGE_CASE_STATUS,
-        C.SET_SEVERITY,
+        C.REQUEST_INFORMATION,
+        C.PROPOSE_REJECTION,
         C.POST_INTERNAL_MESSAGE,
         C.VIEW_CSIRT_DASHBOARD,
     },
+    # La DSI pilote la remediation ; elle ne rejette pas, ne voit pas le
+    # Wallet et ne propose pas de prime.
     Role.DSI_ADMIN: {
         C.VIEW_ORG_CASES,
-        C.CHANGE_CASE_STATUS,
+        C.MANAGE_REMEDIATION,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
-        C.PROPOSE_BOUNTY,
         C.EXPORT_DATA,
     },
     Role.ORGANIZATION_MANAGER: {
         C.VIEW_ORG_CASES,
-        C.CHANGE_CASE_STATUS,
+        C.MANAGE_REMEDIATION,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
-        C.PROPOSE_BOUNTY,
         C.EXPORT_DATA,
     },
-    Role.SECURITY_RESEARCHER: {C.SUBMIT_REPORT},
-    Role.BUG_BOUNTY_RESEARCHER: {C.SUBMIT_REPORT},
+    Role.SECURITY_RESEARCHER: {C.SUBMIT_REPORT, C.PROVIDE_INFORMATION},
+    Role.BUG_BOUNTY_RESEARCHER: {C.SUBMIT_REPORT, C.PROVIDE_INFORMATION},
     Role.AUDITOR: {
         C.VIEW_ALL_CASES,
         C.VIEW_AUDIT_LOG,
@@ -122,8 +157,14 @@ ROLE_CAPABILITIES = {
         C.VIEW_CSIRT_DASHBOARD,
         C.EXPORT_DATA,
     },
-    Role.PUBLIC_USER: {C.SUBMIT_REPORT},
+    Role.PUBLIC_USER: {C.SUBMIT_REPORT, C.PROVIDE_INFORMATION},
 }
+
+#: Capacites attribuables individuellement, en plus du role, sans creer de
+#: role supplementaire. Un analyste senior recoit VALIDATE_SEVERITY pour
+#: l'etape 4 ; la regle des quatre yeux l'empeche toujours de valider sa
+#: propre qualification.
+SENIOR_ANALYST_CAPABILITIES = frozenset({C.VALIDATE_SEVERITY})
 
 #: Roles operant au niveau national (voient l'ensemble des cases).
 NATIONAL_ROLES = frozenset(

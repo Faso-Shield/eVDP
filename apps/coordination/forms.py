@@ -12,8 +12,8 @@ from apps.vulnerabilities.cvss import CVSSError, base_score
 from apps.vulnerabilities.models import CVE, CWE
 
 from .constants import Confidentiality
-from .models import Case
-from .workflow import CaseStatus, allowed_targets
+from .models import Case, channels_writable_by
+from .workflow import CaseStatus
 
 
 class CaseMessageForm(forms.Form):
@@ -23,25 +23,21 @@ class CaseMessageForm(forms.Form):
         max_length=20000,
     )
     confidentiality = forms.ChoiceField(
-        label="Confidentialité",
+        label="Canal",
         choices=Confidentiality.choices,
         initial=Confidentiality.PARTICIPANTS,
     )
 
-    def __init__(self, *args, user=None, **kwargs):
+    def __init__(self, *args, user=None, case=None, **kwargs):
         super().__init__(*args, **kwargs)
-        # Un chercheur ou une organisation ne peut pas publier en interne.
-        from apps.accounts.roles import Capability
-
-        if user is None or not user.has_capability(Capability.POST_INTERNAL_MESSAGE):
-            self.fields["confidentiality"].choices = [
-                (Confidentiality.PARTICIPANTS, Confidentiality.PARTICIPANTS.label)
-            ]
-        elif not (user.is_superuser or user.role == "NATIONAL_COORDINATOR"):
-            self.fields["confidentiality"].choices = [
-                (Confidentiality.PARTICIPANTS, Confidentiality.PARTICIPANTS.label),
-                (Confidentiality.INTERNAL, Confidentiality.INTERNAL.label),
-            ]
+        # Canaux etanches : chacun n'ecrit que la ou il peut lire.
+        allowed = channels_writable_by(user, case) if (user and case) else set()
+        choices = [
+            (value, label) for value, label in Confidentiality.choices if value in allowed
+        ]
+        self.fields["confidentiality"].choices = choices
+        if choices:
+            self.fields["confidentiality"].initial = choices[0][0]
 
     def clean_body(self):
         body = (self.cleaned_data.get("body") or "").strip()
@@ -50,18 +46,70 @@ class CaseMessageForm(forms.Form):
         return body
 
 
-class StatusTransitionForm(forms.Form):
-    target_status = forms.ChoiceField(label="Nouveau statut")
+class WorkflowActionForm(forms.Form):
+    """Un clic = une action du workflow v2, confirmee avec son commentaire."""
+
+    action = forms.CharField(max_length=40, widget=forms.HiddenInput)
     comment = forms.CharField(
         label="Commentaire", required=False, widget=forms.Textarea(attrs={"rows": 3})
     )
 
-    def __init__(self, *args, case=None, user=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.case = case
-        targets = allowed_targets(case.status, case.workflow) if case else []
-        labels = dict(CaseStatus.choices)
-        self.fields["target_status"].choices = [(t, labels[t]) for t in targets]
+
+class AdmissibilityForm(forms.ModelForm):
+    """Checklist de recevabilite (etape 2)."""
+
+    class Meta:
+        model = Case
+        fields = [
+            "admissibility_scope_ok",
+            "admissibility_organization_ok",
+            "admissibility_attachment_ok",
+        ]
+
+
+class VendorSummaryForm(forms.ModelForm):
+    """Version « organisation » du rapport (pre-requis de l'etape 5)."""
+
+    class Meta:
+        model = Case
+        fields = ["vendor_summary"]
+        widgets = {"vendor_summary": forms.Textarea(attrs={"rows": 10})}
+
+
+class RemediationPlanForm(forms.ModelForm):
+    """Plan de remediation de l'organisation (pre-requis de l'etape 6)."""
+
+    class Meta:
+        model = Case
+        fields = ["remediation_plan", "remediation_due_date"]
+        widgets = {
+            "remediation_plan": forms.Textarea(attrs={"rows": 5}),
+            "remediation_due_date": forms.DateInput(attrs={"type": "date"}),
+        }
+
+
+class FixForm(forms.ModelForm):
+    """Correctif declare par l'organisation (pre-requis de l'etape 7)."""
+
+    class Meta:
+        model = Case
+        fields = ["fix_description", "fix_version"]
+        widgets = {"fix_description": forms.Textarea(attrs={"rows": 4})}
+
+
+class FixVerificationForm(forms.ModelForm):
+    """Contre-verification par l'analyste (pre-requis de l'etape 8)."""
+
+    class Meta:
+        model = Case
+        fields = ["fix_verification_notes"]
+        widgets = {"fix_verification_notes": forms.Textarea(attrs={"rows": 4})}
+
+
+class EscalationForm(forms.Form):
+    comment = forms.CharField(
+        label="Motif de l'escalade", widget=forms.Textarea(attrs={"rows": 2})
+    )
 
 
 class TriageForm(forms.Form):
@@ -127,7 +175,7 @@ class AssignmentForm(forms.Form):
 class DuplicateForm(forms.Form):
     original_case_id = forms.CharField(label="Case original (EVDP-…)", max_length=32)
     comment = forms.CharField(
-        label="Commentaire interne", required=False, widget=forms.Textarea(attrs={"rows": 2})
+        label="Commentaire interne", widget=forms.Textarea(attrs={"rows": 2})
     )
 
     def clean_original_case_id(self):

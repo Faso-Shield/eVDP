@@ -515,3 +515,16 @@ table.table tbody tr:hover { background: var(--surface-alt); }
   border-radius: var(--radius); max-width: 100%; height: auto;
 }
 .mfa-fallback summary { cursor: pointer; font-size: .85rem; color: var(--text-muted); }
+
+/* ---- Workflow v2 : un bouton par etape, badge d'echeance ---------------- */
+.workflow-step .card-body { gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+.workflow-primary { display: flex; flex-direction: column; gap: .4rem; min-width: 16rem; }
+.workflow-primary textarea, .workflow-secondary textarea { width: 100%; }
+.workflow-primary button[disabled] { opacity: .5; cursor: not-allowed; }
+.workflow-primary .prerequisites { margin: 0; padding-left: 1.1rem; }
+.workflow-secondary summary { list-style: none; cursor: pointer; }
+.workflow-secondary[open] { max-width: 22rem; }
+.sla-badge { font-size: .9rem; line-height: 1; }
+.sla-green { color: #1a7f37; }
+.sla-orange { color: #d97706; }
+.sla-red { color: #cf222e; }

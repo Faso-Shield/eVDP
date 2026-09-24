@@ -1,48 +1,21 @@
 # Diagramme — Workflow Bug Bounty
 
+Workflow v2 : le dossier suit le chemin principal commun (voir
+`docs/diagrams/cvd-workflow.md`) ; la prime avance sur une branche
+parallèle, portée par `Case.bounty_status`.
+
 ```mermaid
 stateDiagram-v2
-    [*] --> SUBMITTED : soumission sur un programme Bug Bounty
-
-    SUBMITTED --> RECEIVED
-    SUBMITTED --> TRIAGE
-    RECEIVED --> ACKNOWLEDGED
-    ACKNOWLEDGED --> TRIAGE
-
-    TRIAGE --> NEEDS_INFORMATION
-    TRIAGE --> VALIDATED
-    TRIAGE --> DUPLICATE
-    TRIAGE --> OUT_OF_SCOPE
-    TRIAGE --> NOT_APPLICABLE
-    TRIAGE --> INFORMATIVE
-    TRIAGE --> REJECTED
-
-    NEEDS_INFORMATION --> TRIAGE
-
-    VALIDATED --> SEVERITY_ASSIGNED : capacité SET_SEVERITY
-    SEVERITY_ASSIGNED --> BOUNTY_REVIEW : capacité PROPOSE_BOUNTY
-    SEVERITY_ASSIGNED --> REMEDIATION
-    BOUNTY_REVIEW --> REWARD_APPROVED : capacité APPROVE_BOUNTY
-    BOUNTY_REVIEW --> REMEDIATION
-    REWARD_APPROVED --> REMEDIATION
-
-    REMEDIATION --> FIX_AVAILABLE
-    REMEDIATION --> VERIFICATION
-    FIX_AVAILABLE --> VERIFICATION
-    VERIFICATION --> FIX_VERIFIED
-    VERIFICATION --> REMEDIATION
-
-    FIX_VERIFIED --> DISCLOSURE_SCHEDULED
-    FIX_VERIFIED --> CLOSED
-    DISCLOSURE_SCHEDULED --> PUBLISHED
-    PUBLISHED --> CLOSED
-    INFORMATIVE --> CLOSED
-
-    DUPLICATE --> [*]
-    OUT_OF_SCOPE --> [*]
-    NOT_APPLICABLE --> [*]
-    REJECTED --> [*]
-    CLOSED --> [*]
+    [*] --> UNDETERMINED : soumission
+    UNDETERMINED --> BOUNTY_ELIGIBLE : étape 4 validée (programme Bug Bounty)
+    UNDETERMINED --> NOT_ELIGIBLE : étape 4 validée (VDP)
+    BOUNTY_ELIGIBLE --> BOUNTY_PROPOSED : B1 Analyste — Proposer la prime
+    BOUNTY_PROPOSED --> BOUNTY_CREDITED : B2 Coordinateur — Approuver et créditer le Wallet (4 yeux)
+    BOUNTY_PROPOSED --> BOUNTY_ELIGIBLE : Renvoyer (commentaire)
+    BOUNTY_PROPOSED --> NOT_ELIGIBLE : Rejeter
+    BOUNTY_ELIGIBLE --> NOT_ELIGIBLE : Déclarer non éligible
+    BOUNTY_CREDITED --> [*]
+    NOT_ELIGIBLE --> [*]
 ```
 
 ## Cycle de vie de la récompense
