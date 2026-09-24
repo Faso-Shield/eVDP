@@ -37,7 +37,7 @@ from .services import (
     set_severity,
     visible_messages,
 )
-from .visibility import case_view
+from .visibility import case_view, has_content_access
 from .workflow import (
     ADMISSIBILITY_CHECKLIST,
     MAIN_PATH,
@@ -50,6 +50,7 @@ from .workflow import (
     bounty_action,
     get_action,
     primary_action,
+    reporter_can_reply,
     step_number,
 )
 
@@ -80,11 +81,13 @@ def _get_case(request, case_id):
 
 def user_can_click(case, action, user):
     """L'utilisateur est-il le proprietaire de ce bouton ?"""
+    from .workflow import is_step_owner
+
     if getattr(user, "is_read_only", False):
         return False
     if action.reporter_only:
         return case.reporter_id == user.pk
-    return user.has_capability(action.capability)
+    return user.has_capability(action.capability) and is_step_owner(case, action, user)
 
 
 def action_panel(case, action, user):
@@ -110,6 +113,10 @@ def secondary_panels(case, user):
     panels = []
     for action in available_actions(case, kind=SECONDARY):
         if not user_can_click(case, action, user):
+            continue
+        if action.key == "request_information" and not reporter_can_reply(case):
+            # Declarant anonyme : l'action n'est pas proposee du tout (le
+            # moteur la refuse de toute facon, voir _pre_request_information).
             continue
         panels.append(action_panel(case, action, user))
     return panels
@@ -196,7 +203,11 @@ def case_detail(request, case_id):
         except CVSSError:
             cvss_breakdown = []
 
-    editable = case.status in QUALIFICATION_EDITABLE_STATES and not user.is_read_only
+    editable = (
+        case.status in QUALIFICATION_EDITABLE_STATES
+        and not user.is_read_only
+        and view["content"]
+    )
     triage_initial = {
         "severity": case.severity,
         "cvss_vector": case.cvss_vector,
@@ -237,11 +248,14 @@ def case_detail(request, case_id):
         "message_form": (
             CaseMessageForm(user=user, case=case) if view["writable_channels"] else None
         ),
-        "upload_form": AttachmentUploadForm() if not user.is_read_only else None,
+        "upload_form": (
+            AttachmentUploadForm() if view["content"] and not user.is_read_only else None
+        ),
         "primary_panel": action_panel(case, primary, user),
         "bounty_panel": action_panel(case, bounty_step, user),
         "secondary_panels": secondary_panels(case, user),
         "stepper": _stepper(case),
+        "reporter_is_anonymous": not reporter_can_reply(case),
         "public_steps": _public_steps(view["status_key"]),
         "admissibility_checklist": ADMISSIBILITY_CHECKLIST,
         "triage_form": triage_form,
@@ -309,6 +323,8 @@ def workflow_action(request, case_id, action_key):
 @require_capability(Capability.TRIAGE_CASE, Capability.SET_SEVERITY)
 def triage(request, case_id):
     case = _get_case(request, case_id)
+    if not has_content_access(case, request.user):
+        deny(request, "Réservé au responsable de l'étape en cours.", obj=case)
     if case.status not in QUALIFICATION_EDITABLE_STATES:
         messages.error(request, "La qualification n'est plus modifiable à cette étape.")
         return redirect("coordination:case_detail", case_id=case.case_id)
@@ -450,6 +466,8 @@ def link_cve(request, case_id):
 @require_not_read_only
 def upload_attachment(request, case_id):
     case = _get_case(request, case_id)
+    if not has_content_access(case, request.user):
+        deny(request, "Réservé au responsable de l'étape en cours.", obj=case)
     form = AttachmentUploadForm(request.POST, request.FILES)
     if form.is_valid():
         try:

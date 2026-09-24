@@ -46,12 +46,13 @@ from .workflow import (
     CaseStatus,
     TransitionNotAllowed,
     available_actions,
-    bounty_action,
     check_transition,
+    current_actions,
+    current_owner_ids,
     get_action,
-    primary_action,
     public_status_bucket,
     resolve_target,
+    step_owners,
     working_advisory,
 )
 
@@ -689,10 +690,14 @@ def _notify_status_change(case, previous, status, actor):
                 notify(case.reporter, kind, case=case)
         elif getattr(case.report, "reporter_email", ""):
             notify_external(case.report.reporter_email, kind, case=case)
-    notify_case_staff(case, NotificationKind.STATUS_CHANGED, exclude=actor)
+    # Les responsables de l'etape suivante recoivent leur propre avis
+    # (notify_step_owners) : pas de doublon « statut modifie ».
+    notify_case_staff(
+        case, NotificationKind.STATUS_CHANGED, exclude=actor, skip=current_owner_ids(case)
+    )
 
 
-def notify_case_staff(case, kind, exclude=None):
+def notify_case_staff(case, kind, exclude=None, skip=()):
     """Equipe du dossier hors declarant, limitee a qui voit le dossier."""
     from apps.accounts.models import User
 
@@ -700,6 +705,7 @@ def notify_case_staff(case, kind, exclude=None):
     if case.assignee_id:
         ids.add(case.assignee_id)
     ids.discard(case.reporter_id)
+    ids -= set(skip)
     if exclude is not None:
         ids.discard(exclude.pk)
     recipients = [
@@ -710,38 +716,36 @@ def notify_case_staff(case, kind, exclude=None):
 
 def owners_of(case, action):
     """Utilisateurs pouvant cliquer le bouton `action` sur ce dossier."""
-    from django.db.models import Q
+    return step_owners(case, action)
 
-    from apps.accounts.models import User
-    from apps.accounts.roles import ROLE_CAPABILITIES, Role
 
-    if action.reporter_only:
-        return [case.reporter] if case.reporter_id else []
-    roles = [role for role, caps in ROLE_CAPABILITIES.items() if action.capability in caps]
-    condition = Q(role__in=roles)
-    if action.capability == Capability.VALIDATE_SEVERITY:
-        condition |= Q(role=Role.CSIRT_ANALYST, is_senior_analyst=True)
-    users = [
-        user
-        for user in User.objects.filter(condition, is_active=True)
-        if case.is_visible_to(user)
-    ]
-    if case.assignee_id:
-        assigned = [user for user in users if user.pk == case.assignee_id]
-        if assigned:
-            return assigned
-    return users
+def notify_step_owners(case, actor=None):
+    """Notification et email au responsable de chaque etape en cours.
+
+    Appelee a chaque etape franchie (et a la soumission) : le responsable
+    du bouton attendu -- dossier et branche prime -- est avise dans la
+    plateforme et par email (« En attente de : … »). Le declarant, quand
+    l'etape lui revient, l'est par sa propre notification de statut.
+    """
+    notified = []
+    for action in current_actions(case):
+        if action.reporter_only:
+            continue
+        recipients = [
+            user for user in step_owners(case, action) if actor is None or user.pk != actor.pk
+        ]
+        notified += notify_many(
+            recipients,
+            NotificationKind.ACTION_REQUIRED,
+            case=case,
+            title=f"[{case.case_id}] {action.label}",
+            body=f"Étape {action.step or '—'} : {action.label}. Vous en êtes responsable.",
+        )
+    return notified
 
 
 def _notify_next_owner(case, actor):
-    """Avise le proprietaire de l'etape suivante (« En attente de : … »)."""
-    for action in (primary_action(case), bounty_action(case)):
-        if action is None or action.reporter_only:
-            continue
-        recipients = [
-            user for user in owners_of(case, action) if actor is None or user.pk != actor.pk
-        ]
-        notify_many(recipients, NotificationKind.ACTION_REQUIRED, case=case)
+    notify_step_owners(case, actor)
 
 
 def _apply_reputation(case, status, actor):

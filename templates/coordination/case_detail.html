@@ -82,7 +82,7 @@
             <pre>{{ report.pgp_payload }}</pre>
           {% endif %}
         {% else %}
-          <p class="muted">Contenu du rapport non communiqué à votre rôle : seules les métadonnées sont consultables.</p>
+          <p class="muted">Contenu réservé au responsable de l'étape en cours{% if view.kind != "auditor" %} (voir « Prochaine étape »){% endif %} : seules les métadonnées sont consultables.</p>
           <dl class="dl-inline">
             <dt>Type</dt><dd>{{ case.get_vulnerability_type_display }}</dd>
             <dt>Source</dt><dd>{{ report.get_source_display }}</dd>
@@ -92,7 +92,7 @@
       </div>
     </div>
 
-    {% if view.tracking and case.remediation_plan or view.tracking and case.fix_description or view.tracking and case.verification_report %}
+    {% if view.content and case.remediation_plan or view.content and case.fix_description or view.content and case.verification_report %}
     <div class="card">
       <div class="card-header"><h2>Remédiation</h2></div>
       <div class="card-body prose">
@@ -123,6 +123,14 @@
         <span class="pill">{{ messages_list|length }} message(s)</span>
       </div>
       <div class="card-body">
+        {% if not view.content %}
+          <p class="muted small">Messagerie réservée au responsable de l'étape en cours.</p>
+        {% elif reporter_is_anonymous and not view.is_reporter %}
+          <div class="notice small">
+            <strong>Déclarant anonyme.</strong> Il ne dispose d'aucun canal de réponse :
+            aucune demande de compléments ne peut lui être adressée.
+          </div>
+        {% endif %}
         {% for message in messages_list %}
           <div class="msg {% if message.confidentiality == 'INTERNAL' %}msg-internal{% elif message.confidentiality == 'ORGANIZATION' %}msg-restricted{% endif %} {% if message.is_system %}msg-system{% endif %}">
             <div class="msg-head">

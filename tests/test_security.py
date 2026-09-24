@@ -68,12 +68,10 @@ def test_stored_xss_in_report_is_neutralised(client_for, case_alpha, researcher_
     assert "Description reelle" in content
 
 
-def test_stored_xss_in_message_is_neutralised(
-    client_for, case_alpha, coordinator, researcher_a
-):
+def test_stored_xss_in_message_is_neutralised(client_for, case_alpha, triager, researcher_a):
     post_message(
         case_alpha,
-        coordinator,
+        triager,
         "<script>alert(1)</script>Message legitime",
         confidentiality=Confidentiality.RESEARCHER,
     )
@@ -123,9 +121,10 @@ def test_nonexistent_case_returns_same_404(client_for, researcher_a):
 
 
 # --------------------------------------------------- confidentialite messages
-def test_internal_message_hidden_from_reporter(case_alpha, analyst, researcher_a):
+def test_internal_message_hidden_from_reporter(case_alpha, triager, researcher_a):
+    # Etape 1 : l'agent de triage, responsable de l'etape, redige la note.
     post_message(
-        case_alpha, analyst, "Analyse interne", confidentiality=Confidentiality.INTERNAL
+        case_alpha, triager, "Analyse interne", confidentiality=Confidentiality.INTERNAL
     )
     bodies = [m.body for m in visible_messages(case_alpha, researcher_a)]
     assert "Analyse interne" not in bodies
@@ -136,10 +135,14 @@ def test_internal_message_hidden_from_organization(case_alpha, analyst, dsi_alph
 
     from .conftest import advance
 
-    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     post_message(
-        case_alpha, analyst, "Analyse interne", confidentiality=Confidentiality.INTERNAL
+        case_alpha,
+        None,
+        "Analyse interne",
+        confidentiality=Confidentiality.INTERNAL,
+        is_system=True,
     )
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     bodies = [m.body for m in visible_messages(case_alpha, dsi_alpha)]
     assert "Analyse interne" not in bodies
 
@@ -161,9 +164,9 @@ def test_researcher_cannot_post_internal_message(case_alpha, researcher_a):
         )
 
 
-def test_message_integrity_hash(case_alpha, coordinator):
+def test_message_integrity_hash(case_alpha, triager):
     message = post_message(
-        case_alpha, coordinator, "Contenu original", confidentiality=Confidentiality.RESEARCHER
+        case_alpha, triager, "Contenu original", confidentiality=Confidentiality.RESEARCHER
     )
     assert message.integrity_ok() is True
     message.body = "Contenu altere"

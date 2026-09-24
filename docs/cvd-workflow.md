@@ -32,6 +32,22 @@ Code de référence : `apps/coordination/workflow.py` (table des actions et
    append-only, refus compris (le refus est journalisé hors transaction).
 6. **Preuves intouchables** — les pièces jointes du déclarant sont en lecture
    seule pour tous les rôles (aucune vue ni admin ne les modifie).
+7. **Contenu au seul responsable de l'étape** — seul le compte responsable de
+   l'étape en cours (propriétaire du bouton attendu, dossier ou branche prime ;
+   l'assigné s'il y en a un) accède au contenu du dossier : rapport, pièces
+   jointes, messagerie, remédiation, export PDF. Les autres comptes qui voient
+   le dossier n'en lisent que les métadonnées (titre, statut, « En attente
+   de », échéances). Le déclarant garde toujours l'accès à son propre rapport.
+   Un dossier clos n'a plus de responsable : son contenu n'est plus lu par
+   personne côté métier. Les actions d'exception des étapes 1 à 3 et
+   « Correctif insuffisant » sont réservées à ce responsable.
+8. **Un avis par étape** — à chaque étape franchie (et dès la soumission), le
+   responsable de l'étape suivante reçoit une notification et un email
+   (« Action attendue »), sauf s'il est l'auteur de l'action.
+9. **Déclarant anonyme** — un déclarant sans compte ou ayant choisi
+   l'anonymat n'a aucun canal de réponse : « Demander des compléments »
+   n'est pas proposé (et refusé par le serveur), et le canal chercheur est
+   fermé en écriture aux comptes métiers.
 
 ---
 

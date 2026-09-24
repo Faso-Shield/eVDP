@@ -24,7 +24,7 @@ from apps.coordination.workflow import CaseStatus
 from apps.core.middleware import get_client_ip
 from apps.core.utils import hash_text
 from apps.notifications.models import NotificationKind
-from apps.notifications.services import notify_external, notify_many
+from apps.notifications.services import notify_external
 from apps.programs.models import ProgramType
 from apps.vulnerabilities.constants import ReportSource, Severity
 from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
@@ -192,14 +192,11 @@ def _notify_new_case(case, report):
     sur `case.tracking_token_raw` pour un affichage unique a l'ecran (voir
     apps.reports.views.submit).
     """
-    from apps.accounts.models import User
-    from apps.accounts.roles import Role
+    from apps.coordination.services import notify_step_owners
 
-    triage_team = User.objects.filter(
-        is_active=True,
-        role__in=[Role.CSIRT_ANALYST, Role.TRIAGER, Role.NATIONAL_COORDINATOR],
-    )
-    notify_many(triage_team, NotificationKind.REPORT_RECEIVED, case=case)
+    # Etape 1 : seuls les responsables (agents de triage) sont avises, dans
+    # la plateforme et par email -- pas toute l'equipe nationale.
+    notify_step_owners(case)
 
     if report.reporter_id:
         from apps.notifications.services import notify

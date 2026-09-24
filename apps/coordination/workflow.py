@@ -381,6 +381,22 @@ def _pre_propose_bounty(case, data):
     return missing
 
 
+def reporter_can_reply(case):
+    """Le declarant peut-il repondre sur la plateforme ?
+
+    Un declarant anonyme -- rapport anonyme, ou soumis sans compte -- n'a
+    aucun canal de reponse : son lien de suivi est en lecture seule. Lui
+    demander des complements bloquerait le dossier sans issue.
+    """
+    return case.reporter_id is not None and not case.report.is_anonymous
+
+
+def _pre_request_information(case, data):
+    if not reporter_can_reply(case):
+        return ["Déclarant anonyme : il ne peut pas répondre à une demande de compléments"]
+    return []
+
+
 def _pre_duplicate(case, data):
     if data is None:
         return []
@@ -440,6 +456,10 @@ class WorkflowAction:
     four_eyes: str | None = None
     prerequisites: object = None
     reporter_only: bool = False
+    #: Action secondaire reservee au responsable de l'etape en cours (seul a
+    #: acceder au contenu du dossier) : complements, rejet, doublon, correctif
+    #: insuffisant. Les actions principales le sont toujours.
+    owner_only: bool = False
     fields: tuple = field(default_factory=tuple)
 
     def missing(self, case, data=None):
@@ -594,6 +614,8 @@ ACTIONS = [
         CaseStatus.NEEDS_INFORMATION,
         kind=SECONDARY,
         comment_required=True,
+        prerequisites=_pre_request_information,
+        owner_only=True,
     ),
     WorkflowAction(
         "send_information",
@@ -614,6 +636,7 @@ ACTIONS = [
         CaseStatus.REJECTION_PENDING,
         kind=SECONDARY,
         comment_required=True,
+        owner_only=True,
     ),
     WorkflowAction(
         "propose_duplicate",
@@ -626,6 +649,7 @@ ACTIONS = [
         comment_required=True,
         prerequisites=_pre_duplicate,
         fields=("original_case_id",),
+        owner_only=True,
     ),
     WorkflowAction(
         "confirm_rejection",
@@ -677,6 +701,7 @@ ACTIONS = [
         CaseStatus.REMEDIATION_IN_PROGRESS,
         kind=SECONDARY,
         comment_required=True,
+        owner_only=True,
     ),
     WorkflowAction(
         "escalate",
@@ -831,6 +856,10 @@ def check_transition(case, action, user=None, data=None):
                 raise TransitionNotAllowed("Action réservée au déclarant du rapport.")
         elif not user.has_capability(action.capability):
             raise TransitionNotAllowed(f"Capacité requise pour cette action : {action.capability}.")
+        elif not is_step_owner(case, action, user):
+            raise TransitionNotAllowed(
+                "Action réservée au responsable de l'étape en cours du dossier."
+            )
     if action.comment_required and data is not None and not (data.get("comment") or "").strip():
         raise TransitionNotAllowed("Un commentaire est obligatoire.", ["Commentaire manquant"])
     missing = action.missing(case, data)
@@ -842,6 +871,78 @@ def check_transition(case, action, user=None, data=None):
             raise TransitionNotAllowed(
                 "Règle des quatre yeux : l'auteur de l'étape précédente ne peut pas la valider."
             )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Responsables d'etape
+# ---------------------------------------------------------------------------
+def step_owners(case, action):
+    """Comptes responsables du bouton `action` sur ce dossier.
+
+    Tous les comptes actifs portant la capacite et voyant le dossier, hors
+    auteur de l'etape precedente (quatre yeux) ; si le dossier est assigne a
+    l'un d'eux, l'assigne seul.
+    """
+    from django.db.models import Q
+
+    from apps.accounts.models import User
+    from apps.accounts.roles import ROLE_CAPABILITIES, Role
+
+    if action is None:
+        return []
+    if action.reporter_only:
+        return [case.reporter] if case.reporter_id else []
+    roles = [role for role, caps in ROLE_CAPABILITIES.items() if action.capability in caps]
+    condition = Q(role__in=roles)
+    if action.capability == Capability.VALIDATE_SEVERITY:
+        condition |= Q(role=Role.CSIRT_ANALYST, is_senior_analyst=True)
+    excluded = author_of(case, action) if action.four_eyes else None
+    users = [
+        user
+        for user in User.objects.filter(condition, is_active=True)
+        if user.pk != excluded and case.is_visible_to(user)
+    ]
+    if action.kind != PRIMARY and action.owner_only:
+        # Exception reservee au responsable de l'etape en cours.
+        owners = current_owner_ids(case)
+        return [user for user in users if user.pk in owners]
+    if case.assignee_id:
+        assigned = [user for user in users if user.pk == case.assignee_id]
+        if assigned:
+            return assigned
+    return users
+
+
+def current_actions(case):
+    """Boutons attendus a l'etape en cours : dossier et branche prime."""
+    return [action for action in (primary_action(case), bounty_action(case)) if action]
+
+
+def current_owner_ids(case):
+    """Identifiants des responsables de l'etape en cours du dossier."""
+    ids = set()
+    for action in current_actions(case):
+        ids.update(user.pk for user in step_owners(case, action))
+    return ids
+
+
+def is_step_owner(case, action, user):
+    """`user` est-il responsable de l'etape que l'action fait avancer ?
+
+    Bouton principal : proprietaire de ce bouton. Action secondaire marquee
+    `owner_only` : responsable de l'etape en cours. Les autres actions
+    secondaires (arbitrage, escalade) restent ouvertes a leur capacite.
+    """
+    if action.reporter_only:
+        return case.reporter_id == user.pk
+    if action.kind == PRIMARY:
+        if action.four_eyes and author_of(case, action) == user.pk:
+            # Le refus « quatre yeux » garde son propre message plus loin.
+            return True
+        return user.pk in {owner.pk for owner in step_owners(case, action)}
+    if action.owner_only:
+        return user.pk in current_owner_ids(case)
     return True
 
 

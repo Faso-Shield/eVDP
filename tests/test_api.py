@@ -169,15 +169,16 @@ def test_messages_endpoint_is_scoped(client_for, researcher_a, case_beta):
 
 
 def test_internal_messages_hidden_from_researcher(
-    client_for, case_alpha, coordinator, analyst, researcher_a
+    client_for, case_alpha, triager, researcher_a
 ):
     from apps.coordination.constants import Confidentiality
     from apps.coordination.services import post_message
 
+    # Etape 1 : l'agent de triage, responsable de l'etape, ecrit.
     post_message(
-        case_alpha, analyst, "Note interne CSIRT", confidentiality=Confidentiality.INTERNAL
+        case_alpha, triager, "Note interne CSIRT", confidentiality=Confidentiality.INTERNAL
     )
-    post_message(case_alpha, coordinator, "Message au declarant")
+    post_message(case_alpha, triager, "Message au declarant")
 
     client = client_for(researcher_a)
     bodies = [

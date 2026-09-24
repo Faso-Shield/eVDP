@@ -52,7 +52,7 @@ def _detail(client, case):
 def test_auditor_sees_report_metadata_only(client_for, auditor, case_alpha):
     content = _detail(client_for(auditor), case_alpha).content.decode()
     assert "Description suffisamment longue" not in content
-    assert "Contenu du rapport non communiqu" in content
+    assert "Contenu réservé au responsable" in content
 
 
 def test_auditor_cannot_download_attachment(client_for, auditor, case_alpha):
@@ -68,10 +68,16 @@ def test_auditor_cannot_export_case_pdf(client_for, auditor, case_alpha):
     assert response.status_code == 404
 
 
-def test_analyst_downloads_attachment(client_for, analyst, case_alpha):
+def test_only_the_step_owner_downloads_attachment(client_for, triager, analyst, case_alpha):
+    """Etape 1 : l'agent de triage ; etape 3 : l'analyste, plus le triage."""
     attachment = case_alpha.attachments.first()
-    response = client_for(analyst).get(reverse("attachments:download", args=[attachment.id]))
-    assert response.status_code == 200
+    url = reverse("attachments:download", args=[attachment.id])
+    assert client_for(triager).get(url).status_code == 200
+    assert client_for(analyst).get(url).status_code == 404
+
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)
+    assert client_for(analyst).get(url).status_code == 200
+    assert client_for(triager).get(url).status_code == 404
 
 
 def test_dsi_reads_report_only_from_step_5(client_for, dsi_alpha, case_alpha):
@@ -162,23 +168,27 @@ def test_analyst_writes_cvss_and_triager_reads(analyst, triager, case_alpha):
 def test_channel_matrix(
     researcher_a, triager, analyst, coordinator, auditor, dsi_alpha, case_alpha
 ):
-    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
+    """Seul le responsable de l'etape en cours (et le declarant) lit les canaux."""
     RES = Confidentiality.RESEARCHER
     ORG = Confidentiality.ORGANIZATION
     INT = Confidentiality.INTERNAL
-    assert readable_channels(case_alpha, researcher_a) == {RES}
-    assert readable_channels(case_alpha, triager) == {RES, INT}
-    assert readable_channels(case_alpha, analyst) == {RES, ORG, INT}
-    assert readable_channels(case_alpha, coordinator) == {RES, ORG, INT}
-    assert readable_channels(case_alpha, auditor) == {RES, ORG, INT}
-    assert readable_channels(case_alpha, dsi_alpha) == {ORG}
 
+    # Etape 6 : la DSI est responsable (plan de remediation).
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
+    assert readable_channels(case_alpha, researcher_a) == {RES}
+    assert readable_channels(case_alpha, dsi_alpha) == {ORG}
+    for other in (triager, analyst, coordinator, auditor):
+        assert readable_channels(case_alpha, other) == set()
+        assert writable_channels(case_alpha, other) == []
     assert set(writable_channels(case_alpha, researcher_a)) == {RES}
-    assert set(writable_channels(case_alpha, triager)) == {RES, INT}
-    assert set(writable_channels(case_alpha, analyst)) == {RES, ORG, INT}
-    assert set(writable_channels(case_alpha, coordinator)) == {RES, ORG}
-    assert writable_channels(case_alpha, auditor) == []
     assert set(writable_channels(case_alpha, dsi_alpha)) == {ORG}
+
+    # Etape 8 : l'analyste est responsable (confirmer le correctif).
+    advance(case_alpha, CaseStatus.FIX_AVAILABLE)
+    assert readable_channels(case_alpha, analyst) == {RES, ORG, INT}
+    assert set(writable_channels(case_alpha, analyst)) == {RES, ORG, INT}
+    for other in (triager, coordinator, auditor, dsi_alpha):
+        assert readable_channels(case_alpha, other) == set()
 
 
 def test_dsi_never_writes_to_researcher(dsi_alpha, notified_case):
@@ -188,41 +198,36 @@ def test_dsi_never_writes_to_researcher(dsi_alpha, notified_case):
         )
 
 
-def test_reporter_never_reads_organization_channel(analyst, researcher_a, notified_case):
-    post_message(
-        notified_case, analyst, "Canal org", confidentiality=Confidentiality.ORGANIZATION
-    )
+def _system_message(case, body, channel):
+    """Message depose par la plateforme, quel que soit le responsable d'etape."""
+    return post_message(case, None, body, confidentiality=channel, is_system=True)
+
+
+def test_reporter_never_reads_organization_channel(researcher_a, notified_case):
+    _system_message(notified_case, "Canal org", Confidentiality.ORGANIZATION)
     assert "Canal org" not in [m.body for m in visible_messages(notified_case, researcher_a)]
 
 
-def test_triager_never_reads_organization_channel(analyst, triager, notified_case):
-    post_message(
-        notified_case, analyst, "Canal org", confidentiality=Confidentiality.ORGANIZATION
-    )
+def test_triager_never_reads_organization_channel(triager, notified_case):
+    _system_message(notified_case, "Canal org", Confidentiality.ORGANIZATION)
     assert "Canal org" not in [m.body for m in visible_messages(notified_case, triager)]
 
 
-def test_dsi_never_reads_researcher_channel_or_notes(analyst, dsi_alpha, notified_case):
-    post_message(
-        notified_case, analyst, "Canal chercheur", confidentiality=Confidentiality.RESEARCHER
-    )
-    post_message(
-        notified_case, analyst, "Note interne", confidentiality=Confidentiality.INTERNAL
-    )
+def test_dsi_never_reads_researcher_channel_or_notes(dsi_alpha, notified_case):
+    _system_message(notified_case, "Canal chercheur", Confidentiality.RESEARCHER)
+    _system_message(notified_case, "Note interne", Confidentiality.INTERNAL)
+    _system_message(notified_case, "Canal org", Confidentiality.ORGANIZATION)
     bodies = [m.body for m in visible_messages(notified_case, dsi_alpha)]
     assert "Canal chercheur" not in bodies
     assert "Note interne" not in bodies
+    assert "Canal org" in bodies  # responsable de l'etape 6
 
 
-def test_auditor_reads_every_channel(analyst, auditor, notified_case):
-    post_message(
-        notified_case, analyst, "Note interne", confidentiality=Confidentiality.INTERNAL
-    )
-    post_message(
-        notified_case, analyst, "Canal org", confidentiality=Confidentiality.ORGANIZATION
-    )
-    bodies = [m.body for m in visible_messages(notified_case, auditor)]
-    assert {"Note interne", "Canal org"} <= set(bodies)
+def test_auditor_reads_no_channel(auditor, notified_case):
+    """L'auditeur n'est jamais responsable d'une etape : aucun contenu."""
+    _system_message(notified_case, "Note interne", Confidentiality.INTERNAL)
+    _system_message(notified_case, "Canal org", Confidentiality.ORGANIZATION)
+    assert list(visible_messages(notified_case, auditor)) == []
 
 
 # ---------------------------------------------------------------------- Wallet

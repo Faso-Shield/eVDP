@@ -201,6 +201,10 @@ class ReportViewSet(
         case = self.get_object()
         if request.method == "GET":
             return Response(AttachmentSerializer(case.attachments.all(), many=True).data)
+        from apps.coordination.visibility import has_content_access
+
+        if not has_content_access(case, request.user):
+            raise NotFound("Ressource introuvable.")
         uploaded = request.FILES.get("file")
         if uploaded is None:
             return Response(

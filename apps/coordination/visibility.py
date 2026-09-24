@@ -6,6 +6,12 @@ des pieces jointes et l'API s'y referent, afin qu'aucune vue ne decide seule.
 
 Legende de la matrice : WRITE = lecture et ecriture, READ = lecture seule,
 PARTIAL = voir la note de la donnee, None = aucun acces.
+
+Regle transverse (au-dessus de la matrice) : seul le **responsable de
+l'etape en cours** accede au contenu du dossier -- rapport, pieces jointes,
+messagerie, remediation, export. Les autres comptes qui voient le dossier
+n'en lisent que les metadonnees (titre, statut, « En attente de »,
+echeances). Le declarant garde toujours l'acces a son propre rapport.
 """
 
 import hashlib
@@ -102,31 +108,74 @@ MATRIX = {
 MATRIX[Confidentiality.INTERNAL] = MATRIX["notes"]
 
 
-def level(case, user, data, kind=None):
+#: Donnees qui constituent le contenu du dossier.
+CONTENT_DATA = frozenset(
+    {
+        "report",
+        "notes",
+        Confidentiality.RESEARCHER,
+        Confidentiality.ORGANIZATION,
+        Confidentiality.INTERNAL,
+    }
+)
+
+
+def has_content_access(case, user):
+    """Acces au contenu : declarant, ou responsable de l'etape en cours."""
+    from .workflow import current_owner_ids
+
+    if not user or not user.is_authenticated or not case.is_visible_to(user):
+        return False
+    if case.reporter_id == user.pk:
+        return True
+    return user.pk in current_owner_ids(case)
+
+
+def level(case, user, data, kind=None, content=None):
     kind = kind if kind is not None else viewer_kind(case, user)
     if kind is None:
         return None
-    return MATRIX.get(data, {}).get(kind)
+    granted = MATRIX.get(data, {}).get(kind)
+    if granted is None or data not in CONTENT_DATA or kind == REPORTER:
+        return granted
+    content = has_content_access(case, user) if content is None else content
+    if content:
+        return granted
+    # Hors etape : le rapport reste reperable par ses metadonnees, le reste
+    # du contenu (canaux, notes) est ferme.
+    return PARTIAL if data == "report" else None
 
 
 def readable_channels(case, user):
     kind = viewer_kind(case, user)
+    content = has_content_access(case, user) if kind not in (None, REPORTER) else None
     return {
         channel
         for channel in Confidentiality.values
-        if level(case, user, channel, kind) in (READ, WRITE)
+        if level(case, user, channel, kind, content) in (READ, WRITE)
     }
 
 
 def writable_channels(case, user):
+    from .workflow import reporter_can_reply
+
     if getattr(user, "is_read_only", False):
         return []
     kind = viewer_kind(case, user)
     if kind == VENDOR and case.status not in ORG_VISIBLE_STATES:
         return []
-    return [
-        channel for channel in Confidentiality.values if level(case, user, channel, kind) == WRITE
+    content = has_content_access(case, user) if kind not in (None, REPORTER) else None
+    channels = [
+        channel
+        for channel in Confidentiality.values
+        if level(case, user, channel, kind, content) == WRITE
     ]
+    # Declarant anonyme : aucun compte pour lire ni repondre. Ecrire dans le
+    # canal chercheur reviendrait a lui demander des informations qu'il ne
+    # pourra jamais fournir.
+    if kind != REPORTER and not reporter_can_reply(case):
+        channels = [c for c in channels if c != Confidentiality.RESEARCHER]
+    return channels
 
 
 def pseudonymize(case):
@@ -163,12 +212,14 @@ def reporter_label(case, user, kind=None):
 def case_view(case, user):
     """Ce que la fiche du dossier doit montrer a cet utilisateur."""
     kind = viewer_kind(case, user)
-    get = lambda data: level(case, user, data, kind)  # noqa: E731
+    content = has_content_access(case, user) if kind is not None else False
+    get = lambda data: level(case, user, data, kind, content)  # noqa: E731
     simplified = kind == REPORTER
     bucket_key, bucket_label = public_status_bucket(case.status)
     return {
         "kind": kind,
         "is_reporter": kind == REPORTER,
+        "content": content,
         "report_body": get("report") == READ,
         "attachments_download": get("report") == READ,
         "attachments_listed": get("report") is not None,
