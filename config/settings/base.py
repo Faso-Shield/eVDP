@@ -240,6 +240,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.coordination.tasks.sweep_disclosure_schedule",
         "schedule": crontab(minute=15),
     },
+    "evdp-needs-information-sweep": {
+        "task": "apps.coordination.tasks.sweep_needs_information",
+        "schedule": crontab(minute=45, hour=6),
+    },
     "evdp-purge-expired-tokens": {
         "task": "apps.accounts.tasks.purge_expired_tokens",
         "schedule": crontab(minute=0, hour=3),

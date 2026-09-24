@@ -1,48 +1,33 @@
-# Diagramme — Workflow Bug Bounty
+# Diagramme — Branche Bug Bounty et Wallet (workflow v2)
+
+Le dossier Bug Bounty suit le **même chemin principal** que le VDP (voir
+`cvd-workflow.md`). La prime se décide en parallèle, sur un champ distinct du
+statut du dossier (`Case.bounty_stage`), ouvert dès la validation (étape 4).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> SUBMITTED : soumission sur un programme Bug Bounty
+    [*] --> VALIDATED : étape 4 — qualification validée
+    VALIDATED --> BOUNTY_ELIGIBLE : programme Bug Bounty, chercheur identifié
+    VALIDATED --> NOT_ELIGIBLE : programme non éligible
+    BOUNTY_ELIGIBLE --> BOUNTY_PROPOSED : B1 Analyste — Proposer la prime (matrice ; hors palier = justification)
+    BOUNTY_PROPOSED --> BOUNTY_ELIGIBLE : Coordinateur — Renvoyer
+    BOUNTY_PROPOSED --> BOUNTY_CREDITED : B2 Coordinateur — Approuver et créditer le Wallet (4 yeux)
+    BOUNTY_PROPOSED --> NOT_ELIGIBLE : Coordinateur — Refuser la prime
+    BOUNTY_CREDITED --> [*]
+    NOT_ELIGIBLE --> [*]
+```
 
-    SUBMITTED --> RECEIVED
-    SUBMITTED --> TRIAGE
-    RECEIVED --> ACKNOWLEDGED
-    ACKNOWLEDGED --> TRIAGE
+« Publier et clôturer » (étape 10) reste grisé tant que la prime n'est pas en
+`BOUNTY_CREDITED` ou `NOT_ELIGIBLE`.
 
-    TRIAGE --> NEEDS_INFORMATION
-    TRIAGE --> VALIDATED
-    TRIAGE --> DUPLICATE
-    TRIAGE --> OUT_OF_SCOPE
-    TRIAGE --> NOT_APPLICABLE
-    TRIAGE --> INFORMATIVE
-    TRIAGE --> REJECTED
+## Wallet : grand livre d'écritures
 
-    NEEDS_INFORMATION --> TRIAGE
-
-    VALIDATED --> SEVERITY_ASSIGNED : capacité SET_SEVERITY
-    SEVERITY_ASSIGNED --> BOUNTY_REVIEW : capacité PROPOSE_BOUNTY
-    SEVERITY_ASSIGNED --> REMEDIATION
-    BOUNTY_REVIEW --> REWARD_APPROVED : capacité APPROVE_BOUNTY
-    BOUNTY_REVIEW --> REMEDIATION
-    REWARD_APPROVED --> REMEDIATION
-
-    REMEDIATION --> FIX_AVAILABLE
-    REMEDIATION --> VERIFICATION
-    FIX_AVAILABLE --> VERIFICATION
-    VERIFICATION --> FIX_VERIFIED
-    VERIFICATION --> REMEDIATION
-
-    FIX_VERIFIED --> DISCLOSURE_SCHEDULED
-    FIX_VERIFIED --> CLOSED
-    DISCLOSURE_SCHEDULED --> PUBLISHED
-    PUBLISHED --> CLOSED
-    INFORMATIVE --> CLOSED
-
-    DUPLICATE --> [*]
-    OUT_OF_SCOPE --> [*]
-    NOT_APPLICABLE --> [*]
-    REJECTED --> [*]
-    CLOSED --> [*]
+```mermaid
+flowchart LR
+    B2["B2 — prime approuvée"] -->|CREDIT +montant| L[("WalletEntry<br/>append-only")]
+    ADJ["Ajustement motivé<br/>(APPROVE_BOUNTY)"] -->|ADJUSTMENT ±| L
+    PAY["Versement hors plateforme<br/>(RECORD_PAYMENT)"] -->|PAYOUT −montant| L
+    L --> SOLDE["Solde = somme des écritures<br/>(calculé, jamais stocké)"]
 ```
 
 ## Cycle de vie de la récompense

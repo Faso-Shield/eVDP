@@ -12,15 +12,17 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from apps.audit.models import AuditAction, AuditLog
+from apps.coordination.workflow import CaseStatus
 from apps.csaf.services import export_advisory_to_csaf
-from apps.disclosures.models import AdvisoryReference, AdvisoryStatus
+from apps.disclosures.models import AdvisoryReference
 from apps.disclosures.services import (
     create_advisory_from_case,
-    publish_advisory,
     retract_advisory,
 )
 from apps.vulnerabilities.constants import Severity
 from apps.vulnerabilities.models import CVE
+
+from .conftest import advance
 
 pytestmark = pytest.mark.django_db
 
@@ -58,16 +60,23 @@ def _draft(case, actor, cwe):
 
 
 @pytest.fixture
-def published_advisory(db, case_alpha, coordinator, cwe):
-    advisory = _draft(case_alpha, coordinator, cwe)
-    advisory.status = AdvisoryStatus.APPROVED
-    advisory.save(update_fields=["status"])
-    return publish_advisory(advisory, coordinator)
+def published_advisory(db, case_alpha, analyst, coordinator, cwe):
+    """Advisory publie par l'etape 10 du workflow v2.
+
+    L'analyste redige une fois le correctif verifie ; « Publier et
+    cloturer » (Coordinateur) le publie : un advisory issu d'un dossier ne se
+    publie pas a cote du workflow.
+    """
+    advance(case_alpha, CaseStatus.FIX_VERIFIED)
+    advisory = _draft(case_alpha, analyst, cwe)
+    advance(case_alpha, CaseStatus.CLOSED)
+    advisory.refresh_from_db()
+    return advisory
 
 
 # --------------------------------------------------------------- eligibilite
-def test_draft_advisory_cannot_be_exported(case_alpha, coordinator, cwe):
-    advisory = _draft(case_alpha, coordinator, cwe)
+def test_draft_advisory_cannot_be_exported(case_alpha, analyst, cwe):
+    advisory = _draft(case_alpha, analyst, cwe)
     with pytest.raises(ValidationError):
         export_advisory_to_csaf(advisory)
 
@@ -189,8 +198,8 @@ def test_export_endpoint_accepts_lowercase_identifier(client, published_advisory
     assert response.status_code == 200
 
 
-def test_export_endpoint_hides_unpublished_advisory(client, case_alpha, coordinator, cwe):
-    advisory = _draft(case_alpha, coordinator, cwe)
+def test_export_endpoint_hides_unpublished_advisory(client, case_alpha, analyst, cwe):
+    advisory = _draft(case_alpha, analyst, cwe)
     response = client.get(f"/api/v1/export/csaf/{advisory.advisory_id}/")
     assert response.status_code == 404
 

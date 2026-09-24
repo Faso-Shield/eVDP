@@ -7,6 +7,7 @@ import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.urls import reverse
 
+from apps.accounts.roles import Role
 from apps.audit.models import AuditAction, AuditLog
 from apps.bounty.models import Bounty, BountyStatus, PaymentStatus, ReviewDecision
 from apps.bounty.services import (
@@ -18,16 +19,56 @@ from apps.bounty.services import (
     review_bounty,
     suggested_amount,
 )
-from apps.coordination.services import set_severity
+from apps.coordination.models import Case
+from apps.coordination.services import perform_action
+from apps.coordination.workflow import BountyStage, CaseStatus, TransitionNotAllowed
 from apps.programs.models import Program, ProgramScope, RewardTier
 from apps.vulnerabilities.constants import Severity
 
+from .conftest import advance, make_user
+
 pytestmark = pytest.mark.django_db
+
+#: Vecteur de severite MOYENNE : garde les montants de test dans le palier
+#: 100 000 - 300 000 XOF de la matrice du programme.
+MEDIUM_VECTOR = "CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:U/C:L/I:L/A:N"
+
+
+@pytest.fixture
+def bounty_case(submitted_bounty_case):
+    """Dossier Bug Bounty valide (branche prime ouverte), severite moyenne.
+
+    Surcharge locale de la fixture de conftest : la qualification est faite
+    avec un vecteur moyen, pour que les montants des tests restent dans le
+    palier et n'exigent pas de justification hors palier.
+    """
+    case = submitted_bounty_case
+    case.cvss_vector = MEDIUM_VECTOR
+    case.save(update_fields=["cvss_vector", "updated_at"])
+    return advance(case, CaseStatus.VALIDATED)
+
+
+@pytest.fixture
+def analyst_b(db):
+    return make_user("analyste-b@test.bf", Role.CSIRT_ANALYST)
+
+
+def _force_severity(case, severity):
+    """Arrangement de test : la qualification est verrouillee apres validation."""
+    Case.objects.filter(pk=case.pk).update(severity=severity)
+    case.refresh_from_db()
+
+
+def _proposed_by(bounty, user):
+    """Arrangement : fait porter la proposition par `user` (quatre yeux)."""
+    Bounty.objects.filter(pk=bounty.pk).update(proposed_by=user)
+    bounty.refresh_from_db()
+    return bounty
 
 
 # ------------------------------------------------------------------- matrice
-def test_suggested_amount_comes_from_program_matrix(bounty_case, coordinator):
-    set_severity(bounty_case, coordinator, severity=Severity.HIGH)
+def test_suggested_amount_comes_from_program_matrix(bounty_case):
+    _force_severity(bounty_case, Severity.HIGH)
     amount, currency = suggested_amount(bounty_case)
     assert amount == Decimal("750000")
     assert currency == "XOF"
@@ -49,17 +90,58 @@ def test_reward_amounts_are_configurable(bounty_program):
 
 # --------------------------------------------------------------- proposition
 def test_propose_bounty_creates_pending_reward(bounty_case, analyst):
+    assert bounty_case.bounty_stage == BountyStage.ELIGIBLE
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     assert bounty.status == BountyStatus.PENDING
     assert bounty.proposed_amount == Decimal("200000")
     assert bounty.researcher_id == bounty_case.reporter_id
     assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PROPOSED).exists()
+    bounty_case.refresh_from_db()
+    assert bounty_case.bounty_stage == BountyStage.PROPOSED
+
+
+def test_bounty_refused_before_validation(submitted_bounty_case, analyst):
+    """La branche prime ne s'ouvre qu'a la validation de la qualification."""
+    with pytest.raises(ValidationError, match="branche prime"):
+        propose_bounty(submitted_bounty_case, analyst, amount=Decimal("100000"))
 
 
 def test_bounty_refused_on_vdp_program(case_alpha, analyst):
-    """Un VDP n'ouvre pas droit a recompense : les deux workflows sont distincts."""
-    with pytest.raises(ValidationError, match="Bug Bounty"):
-        propose_bounty(case_alpha, analyst, amount=Decimal("100000"))
+    """Un VDP n'ouvre pas droit a recompense : la branche passe en NOT_ELIGIBLE."""
+    case = advance(case_alpha, CaseStatus.VALIDATED)
+    assert case.bounty_stage == BountyStage.NOT_ELIGIBLE
+    with pytest.raises(ValidationError, match="branche prime"):
+        propose_bounty(case, analyst, amount=Decimal("100000"))
+
+
+def test_coordinator_no_longer_proposes(bounty_case, coordinator):
+    """Workflow v2 : proposer (B1) appartient a l'analyste, approuver (B2) au Coordinateur."""
+    with pytest.raises(PermissionDenied):
+        propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+
+
+def test_dsi_cannot_propose(bounty_case, dsi_alpha):
+    with pytest.raises(PermissionDenied):
+        propose_bounty(bounty_case, dsi_alpha, amount=Decimal("200000"))
+
+
+def test_out_of_tier_amount_requires_justification(bounty_case, analyst):
+    with pytest.raises(ValidationError, match="hors palier"):
+        propose_bounty(bounty_case, analyst, amount=Decimal("900000"))
+
+    bounty = propose_bounty(
+        bounty_case, analyst, amount=Decimal("900000"), justification="Chaine d'exploitation"
+    )
+    assert bounty.proposed_amount == Decimal("900000")
+
+
+def test_out_of_tier_prerequisite_is_listed_by_the_engine(bounty_case, analyst):
+    """Le bouton B1 liste le pre-requis manquant, meme message que le service."""
+    with pytest.raises(TransitionNotAllowed) as exc:
+        perform_action(
+            bounty_case, "propose_bounty", analyst, data={"amount": Decimal("900000")}
+        )
+    assert any("hors palier" in item for item in exc.value.missing)
 
 
 def test_researcher_cannot_propose_own_bounty(bounty_case, bounty_researcher):
@@ -83,45 +165,97 @@ def test_coordinator_approves_bounty(bounty_case, analyst, coordinator):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     approve_bounty(bounty, coordinator, amount=Decimal("250000"), note="Impact confirme")
     bounty.refresh_from_db()
+    bounty_case.refresh_from_db()
 
     assert bounty.status == BountyStatus.APPROVED
     assert bounty.approved_amount == Decimal("250000")
     assert bounty.decided_by == coordinator
     assert bounty.decided_at is not None
     assert AuditLog.objects.filter(action=AuditAction.BOUNTY_APPROVED).exists()
+    assert bounty_case.bounty_stage == BountyStage.CREDITED
 
 
-def test_proposer_cannot_approve_own_bounty(bounty_case, coordinator):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+def test_approval_credits_the_wallet(bounty_case, analyst, coordinator):
+    from apps.bounty.models import WalletEntry, WalletEntryKind
+    from apps.bounty.services import wallet_balance
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+
+    entry = WalletEntry.objects.get(bounty=bounty)
+    assert entry.kind == WalletEntryKind.CREDIT
+    assert entry.amount == Decimal("200000")
+    assert wallet_balance(bounty_case.reporter) == {"XOF": Decimal("200000")}
+
+
+def test_approval_requires_a_proposed_bounty(bounty_case, analyst, coordinator):
+    """B2 exige une prime au stade BOUNTY_PROPOSED."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    Case.objects.filter(pk=bounty_case.pk).update(bounty_stage=BountyStage.ELIGIBLE)
+    bounty.case.refresh_from_db()
+    with pytest.raises(ValidationError, match="Aucune prime proposée"):
+        approve_bounty(bounty, coordinator)
+
+
+def test_proposer_cannot_approve_own_bounty(bounty_case, analyst, coordinator):
+    """Quatre yeux sur l'utilisateur : le proposant ne statue pas."""
+    bounty = _proposed_by(
+        propose_bounty(bounty_case, analyst, amount=Decimal("200000")), coordinator
+    )
     with pytest.raises(PermissionDenied):
         approve_bounty(bounty, coordinator)
 
 
-def test_approve_button_hidden_for_proposer(client_for, bounty_case, coordinator):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+def test_proposer_cannot_approve_through_the_workflow_button(
+    bounty_case, analyst, coordinator
+):
+    """Meme regle via le bouton B2 : l'auteur de B1 est refuse (quatre yeux)."""
+    from apps.coordination.workflow import author_of, get_action
+
+    bounty = _proposed_by(
+        propose_bounty(bounty_case, analyst, amount=Decimal("200000")), coordinator
+    )
+    bounty_case.refresh_from_db()
+    assert author_of(bounty_case, get_action("approve_bounty")) == coordinator.pk
+    with pytest.raises(TransitionNotAllowed, match="quatre yeux"):
+        perform_action(bounty_case, "approve_bounty", coordinator, data={"comment": "Ok"})
+    bounty.refresh_from_db()
+    assert bounty.status == BountyStatus.PENDING
+
+
+def test_approve_button_hidden_for_proposer(client_for, bounty_case, analyst, coordinator):
+    bounty = _proposed_by(
+        propose_bounty(bounty_case, analyst, amount=Decimal("200000")), coordinator
+    )
     client = client_for(coordinator)
     response = client.get(reverse("bounty:detail", args=[bounty.pk]))
     assert response.context["can_approve"] is False
 
 
 def test_approve_button_visible_for_other_coordinator(
-    client_for, bounty_case, coordinator, coordinator_b
+    client_for, bounty_case, analyst, coordinator, coordinator_b
 ):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    bounty = _proposed_by(
+        propose_bounty(bounty_case, analyst, amount=Decimal("200000")), coordinator
+    )
     client = client_for(coordinator_b)
     response = client.get(reverse("bounty:detail", args=[bounty.pk]))
     assert response.context["can_approve"] is True
 
 
-def test_proposer_cannot_reject_own_bounty(bounty_case, coordinator):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+def test_proposer_cannot_reject_own_bounty(bounty_case, analyst, coordinator):
+    bounty = _proposed_by(
+        propose_bounty(bounty_case, analyst, amount=Decimal("200000")), coordinator
+    )
     with pytest.raises(PermissionDenied):
         reject_bounty(bounty, coordinator)
 
 
-def test_another_coordinator_can_approve(bounty_case, coordinator, coordinator_b):
+def test_another_coordinator_can_approve(bounty_case, analyst, coordinator, coordinator_b):
     """La separation vise le proposant, pas le role : un pair peut statuer."""
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+    bounty = _proposed_by(
+        propose_bounty(bounty_case, analyst, amount=Decimal("200000")), coordinator
+    )
     approve_bounty(bounty, coordinator_b)
     bounty.refresh_from_db()
 
@@ -133,9 +267,54 @@ def test_rejection_blocks_further_transitions(bounty_case, analyst, coordinator)
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     reject_bounty(bounty, coordinator, note="Hors perimetre")
     bounty.refresh_from_db()
+    bounty_case.refresh_from_db()
 
     assert bounty.status == BountyStatus.REJECTED
     assert bounty.is_final is True
+    # Une prime refusee termine la branche : le dossier peut se clore.
+    assert bounty_case.bounty_stage == BountyStage.NOT_ELIGIBLE
+
+
+def test_coordinator_returns_bounty_to_proposer(bounty_case, analyst, coordinator):
+    """Renvoi (B2 -> B1) : la prime redevient proposable, meme objet mis a jour."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    bounty_case.refresh_from_db()
+    perform_action(
+        bounty_case, "return_bounty", coordinator, data={"comment": "Revoir le palier"}
+    )
+    bounty_case.refresh_from_db()
+    assert bounty_case.bounty_stage == BountyStage.ELIGIBLE
+
+    again = propose_bounty(bounty_case, analyst, amount=Decimal("250000"))
+    assert again.pk == bounty.pk
+    assert again.proposed_amount == Decimal("250000")
+
+
+# ------------------------------------------------------ vues du workflow B1/B2
+def test_propose_view_goes_through_the_workflow(client_for, bounty_case, analyst):
+    client = client_for(analyst)
+    response = client.post(
+        reverse("bounty:propose", args=[bounty_case.case_id]),
+        {"amount": "200000", "justification": ""},
+    )
+    assert response.status_code == 302
+    bounty_case.refresh_from_db()
+    assert bounty_case.bounty_stage == BountyStage.PROPOSED
+    assert bounty_case.bounty.proposed_by == analyst
+
+
+def test_approve_view_credits_the_wallet(client_for, bounty_case, analyst, coordinator):
+    from apps.bounty.services import wallet_balance
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    client = client_for(coordinator)
+    client.post(reverse("bounty:approve", args=[bounty.pk]), {"note": "Conforme"})
+    bounty.refresh_from_db()
+    bounty_case.refresh_from_db()
+
+    assert bounty.status == BountyStatus.APPROVED
+    assert bounty_case.bounty_stage == BountyStage.CREDITED
+    assert wallet_balance(bounty_case.reporter) == {"XOF": Decimal("200000")}
 
 
 # --------------------------------------------------------- mutations en GET
@@ -144,8 +323,8 @@ def test_rejection_blocks_further_transitions(bounty_case, analyst, coordinator)
 # hors protection CSRF, qui ne couvre que les methodes non sures) suffisait
 # a declencher la decision. Meme classe de probleme que celle deja corrigee
 # sur le portefeuille (payout_method_remove/set_primary).
-def test_approve_via_get_is_rejected(client_for, bounty_case, coordinator, coordinator_b):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+def test_approve_via_get_is_rejected(client_for, bounty_case, analyst, coordinator_b):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     client = client_for(coordinator_b)
     response = client.get(reverse("bounty:approve", args=[bounty.pk]))
     assert response.status_code == 405
@@ -153,8 +332,8 @@ def test_approve_via_get_is_rejected(client_for, bounty_case, coordinator, coord
     assert bounty.status == BountyStatus.PENDING
 
 
-def test_reject_via_get_is_rejected(client_for, bounty_case, coordinator, coordinator_b):
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
+def test_reject_via_get_is_rejected(client_for, bounty_case, analyst, coordinator_b):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     client = client_for(coordinator_b)
     response = client.get(reverse("bounty:reject", args=[bounty.pk]))
     assert response.status_code == 405
@@ -182,7 +361,7 @@ def test_payment_via_get_is_rejected(client_for, bounty_case, analyst, coordinat
 
 
 def test_out_of_matrix_amount_is_flagged(bounty_case, analyst, coordinator):
-    set_severity(bounty_case, coordinator, severity=Severity.LOW)
+    _force_severity(bounty_case, Severity.LOW)
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("50000"))
     approve_bounty(bounty, coordinator, amount=Decimal("5000000"))
     bounty.refresh_from_db()
@@ -197,9 +376,9 @@ def test_out_of_matrix_amount_is_flagged(bounty_case, analyst, coordinator):
 
 
 # ------------------------------------------------------------------- revue
-def test_review_moves_bounty_under_review(bounty_case, analyst, coordinator):
+def test_review_moves_bounty_under_review(bounty_case, analyst, analyst_b):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    review_bounty(bounty, coordinator, "APPROVE", comment="Favorable")
+    review_bounty(bounty, analyst_b, "APPROVE", comment="Favorable")
     bounty.refresh_from_db()
 
     assert bounty.status == BountyStatus.UNDER_REVIEW
@@ -223,6 +402,20 @@ def test_payment_records_trace_without_real_transfer(bounty_case, analyst, coord
     assert payment.status == PaymentStatus.RECORDED
     assert payment.settled_at is None  # aucun versement reel n'est execute
     assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAID).exists()
+
+
+def test_payment_debits_the_wallet(bounty_case, analyst, coordinator):
+    """Le versement (hors plateforme) laisse une ecriture PAYOUT negative."""
+    from apps.bounty.models import WalletEntry, WalletEntryKind
+    from apps.bounty.services import wallet_balance
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    record_payment(bounty, coordinator, reference="VIR-1")
+
+    payout = WalletEntry.objects.get(bounty=bounty, kind=WalletEntryKind.PAYOUT)
+    assert payout.amount == Decimal("-200000")
+    assert wallet_balance(bounty_case.reporter) == {"XOF": Decimal("0")}
 
 
 def test_analyst_cannot_record_payment(bounty_case, analyst, coordinator):
@@ -366,6 +559,37 @@ def test_researcher_sees_own_bounty(client_for, bounty_case, analyst, bounty_res
     assert client.get(f"/bounties/{bounty.pk}/").status_code == 200
 
 
+def test_wallet_data_hidden_from_triager_and_dsi(
+    client_for, bounty_case, analyst, triager, dsi_alpha
+):
+    """Matrice v2 : ni l'agent de triage ni la DSI ne voient le Wallet."""
+    from apps.bounty.services import visible_bounties
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    for user in (triager, dsi_alpha):
+        assert not visible_bounties(user).exists()
+        assert client_for(user).get(f"/bounties/{bounty.pk}/").status_code == 404
+
+
+def test_wallet_data_visible_to_coordinator_analyst_and_auditor(
+    bounty_case, analyst, coordinator, auditor
+):
+    from apps.bounty.services import visible_bounties
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    for user in (analyst, coordinator, auditor):
+        assert visible_bounties(user).filter(pk=bounty.pk).exists()
+
+
+def test_super_admin_sees_no_bounty(bounty_case, analyst):
+    from apps.accounts.models import User
+    from apps.bounty.services import visible_bounties
+
+    propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    admin = User.objects.create_superuser(email="root@test.bf", password="RootPassword2026!")
+    assert not visible_bounties(admin).exists()
+
+
 # ------------------------------------------------------------------- budget
 def test_no_budget_status_without_declared_budget(bounty_case, analyst):
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
@@ -423,73 +647,44 @@ def test_approved_bounty_is_not_counted_twice(
 
 
 # ------------------------------------------------------------ administration
-def _admin_request(rf, user):
-    """Requete d'administration minimale (le framework messages est requis)."""
-    from django.contrib.messages.storage.fallback import FallbackStorage
-
-    request = rf.post("/admin/bounty/bounty/")
-    request.user = user
-    request.session = {}
-    request._messages = FallbackStorage(request)
-    return request
-
-
-def _bounty_admin():
+# Workflow v2 : le Wallet ne regarde pas l'administration technique. Les vues
+# d'administration des primes sont fermees (CaseContentAdminMixin) ; une prime
+# se traite depuis le dossier, par les boutons B1/B2.
+def test_bounty_admin_is_closed_even_to_a_superuser(rf):
     from django.contrib.admin.sites import AdminSite
 
-    from apps.bounty.admin import BountyAdmin
+    from apps.accounts.models import User
+    from apps.bounty.admin import BountyAdmin, BountyPaymentAdmin
+    from apps.bounty.models import BountyPayment
 
-    return BountyAdmin(Bounty, AdminSite())
-
-
-def test_admin_approval_goes_through_the_service(rf, bounty_case, analyst, coordinator):
-    """L'admin ne doit pas reimplementer le cycle de vie : montant, audit,
-    notification et profil doivent etre traites comme via l'interface web."""
-    from apps.bounty.admin import action_approve
-
-    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    action_approve(
-        _bounty_admin(),
-        _admin_request(rf, coordinator),
-        Bounty.objects.filter(pk=bounty.pk),
+    admin_user = User.objects.create_superuser(
+        email="root@test.bf", password="RootPassword2026!"
     )
-    bounty.refresh_from_db()
-
-    assert bounty.status == BountyStatus.APPROVED
-    assert bounty.approved_amount == Decimal("200000")
-    assert bounty.decided_by == coordinator
-    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_APPROVED).exists()
-
-
-def test_admin_approval_refuses_self_approval(rf, bounty_case, coordinator):
-    from apps.bounty.admin import action_approve
-
-    bounty = propose_bounty(bounty_case, coordinator, amount=Decimal("200000"))
-    action_approve(
-        _bounty_admin(),
-        _admin_request(rf, coordinator),
-        Bounty.objects.filter(pk=bounty.pk),
-    )
-    bounty.refresh_from_db()
-
-    assert bounty.status == BountyStatus.PENDING
+    request = rf.get("/admin/bounty/bounty/")
+    request.user = admin_user
+    for model_admin in (
+        BountyAdmin(Bounty, AdminSite()),
+        BountyPaymentAdmin(BountyPayment, AdminSite()),
+    ):
+        assert model_admin.has_module_permission(request) is False
+        assert model_admin.has_view_permission(request) is False
+        assert model_admin.has_change_permission(request) is False
+        assert model_admin.has_add_permission(request) is False
+        assert model_admin.has_delete_permission(request) is False
 
 
-def test_admin_payment_records_an_accounting_trace(rf, bounty_case, analyst, coordinator):
-    from apps.bounty.admin import action_record_payment
+def test_bounty_admin_changelist_is_refused(client, bounty_case, analyst):
+    from apps.accounts.models import User
 
-    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    approve_bounty(bounty, coordinator)
-    action_record_payment(
-        _bounty_admin(),
-        _admin_request(rf, coordinator),
-        Bounty.objects.filter(pk=bounty.pk),
-    )
-    bounty.refresh_from_db()
+    propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    User.objects.create_superuser(email="root@test.bf", password="RootPassword2026!")
+    client.force_login(User.objects.get(email="root@test.bf"))
+    session = client.session
+    from apps.accounts.middleware import SESSION_KEY
 
-    assert bounty.status == BountyStatus.PAID
-    assert bounty.payments.count() == 1
-    assert bounty.payments.first().status == PaymentStatus.RECORDED
+    session[SESSION_KEY] = True
+    session.save()
+    assert client.get("/admin/bounty/bounty/").status_code in (403, 404)
 
 
 # -------------------------------------------------- recompense variable par actif
@@ -515,7 +710,7 @@ def test_asset_without_tier_falls_back_to_default(bounty_program):
     assert policy.suggested_amount(Severity.HIGH, vitrine) == Decimal("750000")
 
 
-def test_suggestion_follows_the_case_asset(bounty_case, coordinator):
+def test_suggestion_follows_the_case_asset(bounty_case):
     """Le montant propose suit l'actif retenu au triage."""
     api = bounty_case.program.scopes.get(identifier="api.exemple.bf")
     RewardTier.objects.create(
@@ -525,7 +720,7 @@ def test_suggestion_follows_the_case_asset(bounty_case, coordinator):
         min_amount=Decimal("900000"),
         max_amount=Decimal("1800000"),
     )
-    set_severity(bounty_case, coordinator, severity=Severity.HIGH)
+    _force_severity(bounty_case, Severity.HIGH)
 
     amount, _currency = suggested_amount(bounty_case)
     assert amount == Decimal("750000"), "sans actif, la grille par defaut s'applique"
@@ -571,15 +766,13 @@ def test_unverified_researcher_cannot_join_bounty_program(
     bounty_program, bounty_researcher, organization
 ):
     """Un Bug Bounty exigeant un email verifie refuse la soumission."""
-    from apps.reports.services import submit_report
-
-    from .conftest import build_report
+    from .conftest import build_report, submit
 
     bounty_researcher.email_verified = False
     bounty_researcher.save(update_fields=["email_verified"])
 
     with pytest.raises(ValidationError, match="adresse email vérifiée"):
-        submit_report(
+        submit(
             build_report(bounty_researcher, organization, bounty_program),
             reporter=bounty_researcher,
         )
@@ -587,24 +780,20 @@ def test_unverified_researcher_cannot_join_bounty_program(
 
 def test_anonymous_report_refused_when_verification_required(bounty_program, organization):
     """Sans compte, aucune adresse n'est verifiee : le programme refuse."""
-    from apps.reports.services import submit_report
-
-    from .conftest import build_report
+    from .conftest import build_report, submit
 
     report = build_report(None, organization, bounty_program)
     report.reporter = None
     report.is_anonymous = True
     with pytest.raises(ValidationError, match="chercheur identifié"):
-        submit_report(report)
+        submit(report)
 
 
 def test_verified_researcher_is_admitted(bounty_program, bounty_researcher, organization):
     """Le cas nominal reste inchange : un compte verifie passe."""
-    from apps.reports.services import submit_report
+    from .conftest import build_report, submit
 
-    from .conftest import build_report
-
-    case = submit_report(
+    case = submit(
         build_report(bounty_researcher, organization, bounty_program),
         reporter=bounty_researcher,
     )
@@ -613,18 +802,14 @@ def test_verified_researcher_is_admitted(bounty_program, bounty_researcher, orga
 
 def test_vdp_may_waive_the_verification_requirement(vdp_program, researcher_a, organization):
     """Hors Bug Bounty, l'exigence reste une politique propre au programme."""
-    from apps.reports.services import submit_report
-
-    from .conftest import build_report
+    from .conftest import build_report, submit
 
     vdp_program.requires_verified_email = False
     vdp_program.save(update_fields=["requires_verified_email"])
     researcher_a.email_verified = False
     researcher_a.save(update_fields=["email_verified"])
 
-    case = submit_report(
-        build_report(researcher_a, organization, vdp_program), reporter=researcher_a
-    )
+    case = submit(build_report(researcher_a, organization, vdp_program), reporter=researcher_a)
     assert case.program_id == vdp_program.id
 
 
@@ -634,9 +819,7 @@ def test_anonymous_vdp_report_still_accepted(vdp_program, organization):
     C'est une promesse centrale de la plateforme : la verification d'adresse
     ne doit pas la supprimer par effet de bord.
     """
-    from apps.reports.services import submit_report
-
-    from .conftest import build_report
+    from .conftest import build_report, submit
 
     assert vdp_program.allows_anonymous_reports
     assert vdp_program.requires_verified_email, "defaut du modele"
@@ -644,7 +827,7 @@ def test_anonymous_vdp_report_still_accepted(vdp_program, organization):
     report = build_report(None, organization, vdp_program)
     report.reporter = None
     report.is_anonymous = True
-    case = submit_report(report)
+    case = submit(report)
     assert case.program_id == vdp_program.id
 
 
@@ -714,7 +897,7 @@ def test_program_page_sends_a_visitor_without_account_to_the_login(client, bount
 
 # ------------------------------------------------------- vue du beneficiaire
 def test_researcher_sees_his_reward_without_the_deciders(
-    client_for, bounty_case, analyst, coordinator, bounty_researcher
+    client_for, bounty_case, analyst, analyst_b, bounty_researcher
 ):
     """Le beneficiaire voit ce qui le concerne, jamais qui a tranche.
 
@@ -724,14 +907,14 @@ def test_researcher_sees_his_reward_without_the_deciders(
     bounty = propose_bounty(
         bounty_case, analyst, amount=Decimal("200000"), justification="Impact confirme"
     )
-    review_bounty(bounty, coordinator, ReviewDecision.APPROVE, comment="Avis favorable")
+    review_bounty(bounty, analyst_b, ReviewDecision.APPROVE, comment="Avis favorable")
 
     page = client_for(bounty_researcher).get(f"/bounties/{bounty.pk}/").content.decode()
 
     assert "200 000" in page or "200000" in page
     assert bounty_case.case_id in page
     assert analyst.display_name not in page
-    assert coordinator.display_name not in page
+    assert analyst_b.display_name not in page
     assert "Proposé par" not in page
     assert "Décidé par" not in page
     assert "Revues" not in page
@@ -760,10 +943,10 @@ def test_researcher_gets_no_lever_on_his_reward(
         assert client.post(chemin, {}).status_code == 403, chemin
 
 
-def test_analyst_still_sees_the_deciders(client_for, bounty_case, analyst, coordinator):
+def test_analyst_still_sees_the_deciders(client_for, bounty_case, analyst, analyst_b):
     """La restriction vise le beneficiaire, pas ceux qui instruisent."""
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
-    review_bounty(bounty, coordinator, ReviewDecision.APPROVE, comment="Avis favorable")
+    review_bounty(bounty, analyst_b, ReviewDecision.APPROVE, comment="Avis favorable")
 
     page = client_for(analyst).get(f"/bounties/{bounty.pk}/").content.decode()
 

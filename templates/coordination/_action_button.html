@@ -1,0 +1,40 @@
+{% comment %}
+Bouton de workflow (principal, prime ou secondaire).
+
+Un seul proprietaire par etape : les autres lisent « En attente de : <role> ».
+Le bouton reste grise tant qu'un pre-requis manque, avec la liste de ce qui
+manque ; le clic ouvre une fenetre de confirmation (commentaire et champs de
+l'etape). Le serveur refait tous ces controles.
+{% endcomment %}
+{% with action=panel.action %}
+{% if panel.owner %}
+  <button type="button" class="btn btn-block {% if secondary %}btn-outline{% else %}btn-accent{% endif %}"
+          data-open-dialog="dlg-{{ action.key }}"
+          {% if not panel.enabled %}disabled aria-disabled="true"{% endif %}>
+    {% if action.step and not secondary %}<span class="muted small">Étape {{ action.step }} · </span>{% endif %}{{ action.label }}
+  </button>
+  {% if panel.four_eyes_blocked %}
+    <p class="small muted mt-1">Règle des quatre yeux : vous êtes l'auteur de l'étape précédente, une autre personne doit valider.</p>
+  {% endif %}
+  {% if panel.missing %}
+    <ul class="wf-missing">{% for item in panel.missing %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+  <dialog class="wf-dialog" id="dlg-{{ action.key }}">
+    <form method="post" action="{% url 'coordination:workflow_action' case.case_id action.key %}">
+      {% csrf_token %}
+      <h3 class="mt-0">{{ action.label }}</h3>
+      <p class="small muted">Dossier {{ case.case_id }}. Cette action est tracée dans le journal d'audit.</p>
+      {% for field in panel.form %}{% include "partials/form_field.html" %}{% endfor %}
+      <div class="btn-row mt-2">
+        <button class="btn btn-accent" type="submit">Confirmer</button>
+        <button class="btn btn-outline" type="button" data-close-dialog>Annuler</button>
+      </div>
+    </form>
+  </dialog>
+{% elif not secondary %}
+  <div class="wf-waiting">
+    {% if action.step %}<span class="small">Étape {{ action.step }} · {{ action.label }}</span><br>{% endif %}
+    En attente de : <strong>{{ action.owner }}</strong>
+  </div>
+{% endif %}
+{% endwith %}

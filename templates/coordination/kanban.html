@@ -3,7 +3,7 @@
 {% block title %}Kanban{% endblock %}
 {% comment %}
 Le tableau vaut par sa vue d'ensemble : cette page seule prend toute la largeur
-de la fenetre, navbar et pied de page compris, pour que les sept colonnes du
+de la fenetre, navbar et pied de page compris, pour que les six colonnes du
 workflow respirent au lieu de tenir dans la gouttiere commune de 1240px.
 {% endcomment %}
 {% block body_class %}page-pleine-largeur{% endblock %}
@@ -20,7 +20,8 @@ workflow respirent au lieu de tenir dans la gouttiere commune de 1240px.
     <h3>{{ column.label }} <span class="pill">{{ column.count }}</span></h3>
     {% for case in column.cases %}
       <a class="kanban-card {{ case.severity|severity_class }}-border" href="{{ case.get_absolute_url }}">
-        <span class="kc-id">{{ case.case_id }}</span>
+        <span class="kc-id">{{ case.case_id }}{% with badge=case|sla_badge %}{% if badge %} <span class="sla-dot {{ badge }}" title="Échéance de l'étape en cours"></span>{% endif %}{% endwith %}</span>
+        <div class="small muted">{{ case.get_status_display }}{% if case.escalated_at %} · <strong class="sla-text-breached">Escaladé</strong>{% endif %}</div>
         <div class="kc-title">{{ case.title|truncatechars:90 }}</div>
         <div class="kc-tags">
           <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>

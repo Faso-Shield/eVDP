@@ -74,6 +74,15 @@ DEFAULT_TEMPLATES = {
         "[eVDP] Échéance dépassée sur le dossier {case_id}",
         "Une échéance de traitement est dépassée pour le dossier {case_id}.\n\n{link}",
     ),
+    NotificationKind.ESCALATED: (
+        "[eVDP] Dossier {case_id} escaladé",
+        "Le dossier {case_id} a été escaladé : l'organisation n'a pas tenu "
+        "l'échéance de remédiation. Une décision de coordination est attendue.\n\n{link}",
+    ),
+    NotificationKind.ACTION_REQUIRED: (
+        "[eVDP] Action attendue sur le dossier {case_id}",
+        "Le dossier {case_id} attend une action de votre part.\n\n{link}",
+    ),
     NotificationKind.DISCLOSURE_UPCOMING: (
         "[eVDP] Divulgation planifiee",
         "La divulgation coordonnée du dossier {case_id} approche.\n\n{link}",

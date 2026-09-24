@@ -1,198 +1,218 @@
-# Processus de divulgation coordonnée (CVD) — eVDP
+# Processus de divulgation coordonnée (CVD) — eVDP · Workflow v2
 
-Ce document décrit le cycle de vie complet d'un signalement, de sa réception
-à la publication de l'advisory.
+Ce document décrit le cycle de vie d'un signalement, de sa soumission à la
+clôture, tel qu'implémenté d'après le document **« Workflow v2 & Matrice
+RBAC »** (aligné sur SPEC-eVDP-2026-V2, 23 septembre 2026). Il remplace les
+24 statuts historiques par **11 étapes principales**, une **branche Bug Bounty
+de 2 étapes** et **6 sorties d'exception**.
+
+Code de référence : `apps/coordination/workflow.py` (table des actions et
+`check_transition()`), `apps/coordination/services.py` (`perform_action()`),
+`apps/coordination/visibility.py` (matrice de visibilité),
+`apps/accounts/roles.py` (capacités). Diagrammes :
+[`docs/diagrams/cvd-workflow.md`](diagrams/cvd-workflow.md),
+[`docs/diagrams/bug-bounty-workflow.md`](diagrams/bug-bounty-workflow.md),
+[`docs/diagrams/rbac.md`](diagrams/rbac.md).
 
 ---
 
-## 1. Principes
+## 1. Principes directeurs
 
-1. **Privé par défaut** — un rapport n'est jamais publié automatiquement.
-2. **Coordination avant publication** — l'organisation affectée est toujours contactée.
-3. **Délai raisonnable** — divulgation coordonnée à 90 jours par défaut.
-4. **Crédit au chercheur** — selon son choix d'identité.
-5. **Tout est tracé** — chaque décision figure dans le journal d'audit.
+1. **Un bouton, un rôle** — chaque étape n'a qu'un bouton principal, affiché
+   au seul rôle propriétaire ; les autres lisent « En attente de : &lt;rôle&gt; ».
+2. **Pré-requis bloquants** — le bouton reste grisé tant qu'un champ exigé
+   manque, avec la liste de ce qui manque (« Vecteur CVSS manquant »).
+3. **Quatre yeux** — qualification, prime, rejet et publication sont validés
+   par une personne différente de l'auteur de l'étape précédente. Le contrôle
+   porte sur **l'utilisateur**, pas seulement sur le rôle.
+4. **Exceptions à part** — compléments, rejet, doublon, renvoi et escalade sont
+   des actions secondaires (menu « Autres actions »), jamais des boutons de
+   validation. Toutes exigent un commentaire.
+5. **Tout est audité** — chaque clic produit une entrée dans le journal
+   append-only, refus compris (le refus est journalisé hors transaction).
+6. **Preuves intouchables** — les pièces jointes du déclarant sont en lecture
+   seule pour tous les rôles (aucune vue ni admin ne les modifie).
 
 ---
 
-## 2. États du workflow
-
-| État | Signification |
-|------|---------------|
-| `DRAFT` | Brouillon non soumis |
-| `SUBMITTED` | Rapport soumis, en attente de prise en charge |
-| `RECEIVED` | Réception enregistrée par l'équipe |
-| `ACKNOWLEDGED` | Accusé de réception envoyé au déclarant |
-| `TRIAGE` | Qualification technique en cours |
-| `NEEDS_INFORMATION` | Informations complémentaires demandées |
-| `VALIDATED` | Vulnérabilité confirmée |
-| `DUPLICATE` | Doublon d'un dossier existant |
-| `REJECTED` | Non retenue |
-| `OUT_OF_SCOPE` | Hors périmètre du programme |
-| `NOT_APPLICABLE` | Sans objet |
-| `INFORMATIVE` | Information utile sans vulnérabilité exploitable |
-| `IN_PROGRESS` | Prise en charge engagée |
-| `VENDOR_CONTACTED` | Organisation affectée contactée |
-| `VENDOR_ACKNOWLEDGED` | Organisation a accusé réception |
-| `REMEDIATION` | Correction en cours |
-| `FIX_AVAILABLE` | Correctif disponible |
-| `VERIFICATION` | Vérification du correctif |
-| `FIX_VERIFIED` | Correctif vérifié |
-| `DISCLOSURE_SCHEDULED` | Date de divulgation fixée |
-| `PUBLISHED` | Advisory publié |
-| `CLOSED` | Dossier clos |
-
-### Parcours nominal
+## 2. Chemin principal
 
 ```
-SUBMITTED → TRIAGE → VALIDATED → VENDOR_CONTACTED → REMEDIATION
-    → FIX_AVAILABLE → VERIFICATION → FIX_VERIFIED
-    → DISCLOSURE_SCHEDULED → PUBLISHED → CLOSED
+SUBMITTED → ACKNOWLEDGED → IN_ANALYSIS → VALIDATION_PENDING → VALIDATED
+  → VENDOR_NOTIFIED → REMEDIATION_IN_PROGRESS → FIX_AVAILABLE
+  → FIX_VERIFIED → ADVISORY_REVIEW → CLOSED
 ```
 
-Toute transition non déclarée dans `apps/coordination/workflow.py` est
-**interdite** et retourne une erreur explicite. Voir le diagramme
-`docs/diagrams/cvd-workflow.md`.
+| # | Départ | Rôle | Bouton (clé d'action) | Pré-requis bloquants | Arrivée | SLA |
+|---|--------|------|-----------------------|----------------------|---------|-----|
+| 0 | — | Déclarant | Soumettre le rapport | Formulaire complet, **≥ 1 pièce jointe** (vérifié côté serveur, web et API) | `SUBMITTED` | — |
+| 1 | `SUBMITTED` | Agent de triage | Accuser réception (`acknowledge`) | Dossier ouvert au moins une fois | `ACKNOWLEDGED` | 72 h |
+| 2 | `ACKNOWLEDGED` | Agent de triage | Déclarer recevable (`declare_admissible`) | Checklist : périmètre, organisation identifiée, PJ lisible | `IN_ANALYSIS` | 5 j avec l'étape 3 |
+| 3 | `IN_ANALYSIS` | Analyste CSIRT | Soumettre la qualification (`submit_qualification`) | Vecteur CVSS v3.1 ou v4.0, CWE, organisation confirmée | `VALIDATION_PENDING` | 5 j |
+| 4 | `VALIDATION_PENDING` | Coordinateur ou analyste senior | Valider la qualification (`validate_qualification`) | Valideur ≠ auteur, commentaire | `VALIDATED` | 2 j |
+| 5 | `VALIDATED` | Analyste CSIRT | Transmettre à l'organisation (`notify_vendor`) | Organisation renseignée ; identité protégée selon le mode | `VENDOR_NOTIFIED` | — |
+| 6 | `VENDOR_NOTIFIED` | Responsable DSI | Accepter et soumettre le plan de remédiation (`submit_remediation_plan`) | Plan + date cible ≤ 30/60/90 j selon sévérité | `REMEDIATION_IN_PROGRESS` | 5 j |
+| 7 | `REMEDIATION_IN_PROGRESS` | Responsable DSI | Déclarer le correctif disponible (`declare_fix`) | Description + version ou date de déploiement | `FIX_AVAILABLE` | date cible |
+| 8 | `FIX_AVAILABLE` | Analyste CSIRT | Confirmer le correctif (`confirm_fix`) | Compte rendu de contre-vérification | `FIX_VERIFIED` | 5 j |
+| 9 | `FIX_VERIFIED` | Analyste CSIRT | Soumettre l'advisory (`submit_advisory`) | Brouillon assaini : aucun PoC, aucune IP, aucune URL sensible | `ADVISORY_REVIEW` | — |
+| 10 | `ADVISORY_REVIEW` | Coordinateur | Publier et clôturer (`publish_and_close`) | Relecture faite, crédit conforme au choix du chercheur, branche prime terminée, publieur ≠ auteur, commentaire | `CLOSED` | — |
+
+Délai de remédiation par sévérité : **Critique 30 j, Élevée 60 j, Moyenne et
+Faible 90 j**. `RECEIVED` disparaît : l'assignation automatique suffit à
+marquer le dossier comme reçu.
 
 ---
 
-## 3. Étapes détaillées
+## 3. Branche Bug Bounty et Wallet
 
-### 3.1 Réception
+La prime se décide dès la validation, en parallèle de la remédiation. Le
+statut de prime (`Case.bounty_stage`) est **distinct** du statut du dossier.
 
-Le signalement arrive par le formulaire public, l'API ou un import CSAF.
-`reports.services.submit_report()` crée le rapport, ouvre le Case
-`EVDP-AAAA-NNNNNN`, initialise la chronologie, rattache les participants,
-planifie les SLA, journalise et notifie.
+| # | Statut prime | Rôle | Bouton | Pré-requis | Arrivée |
+|---|--------------|------|--------|------------|---------|
+| B1 | `BOUNTY_ELIGIBLE` | Analyste CSIRT | Proposer la prime (`propose_bounty`) | Montant issu de la matrice ; hors palier = justification écrite | `BOUNTY_PROPOSED` |
+| B2 | `BOUNTY_PROPOSED` | Coordinateur | Approuver et créditer le Wallet (`approve_bounty`) | Approbateur ≠ proposeur, commentaire | `BOUNTY_CREDITED` |
 
-Le déclarant reçoit immédiatement une référence de suivi.
-
-### 3.2 Accusé de réception — SLA 72 h
-
-Un analyste passe le dossier en `RECEIVED` puis `ACKNOWLEDGED`. L'échéance
-`ACKNOWLEDGEMENT` est automatiquement soldée.
-
-### 3.3 Triage — SLA 5 jours
-
-L'analyste qualifie :
-
-- sévérité retenue (éventuellement calculée depuis un vecteur CVSS v3.1) ;
-- CWE ;
-- organisation affectée ;
-- étiquettes.
-
-Issues possibles : `VALIDATED`, `NEEDS_INFORMATION`, `DUPLICATE`, `REJECTED`,
-`OUT_OF_SCOPE`, `NOT_APPLICABLE`, `INFORMATIVE`.
-
-Capacité requise : `TRIAGE_CASE`.
-
-### 3.4 Validation
-
-À la validation :
-
-- l'horodatage `validated_at` est posé ;
-- la date de divulgation est calculée (délai du programme) ;
-- l'échéance de remédiation est ouverte selon la sévérité ;
-- le chercheur reçoit ses points de réputation.
-
-### 3.5 Coordination — SLA 7 jours
-
-L'organisation affectée est contactée (`VENDOR_CONTACTED`). Les échanges
-passent par la messagerie du dossier. Les analystes disposent d'un niveau
-`INTERNAL` invisible du déclarant et de l'organisation.
-
-### 3.6 Remédiation
-
-SLA selon la sévérité : 30 jours (Critical/High), 60 (Medium), 90 (Low).
-Le correctif est déclaré (`FIX_AVAILABLE`) puis vérifié (`VERIFICATION` →
-`FIX_VERIFIED`), idéalement avec le chercheur.
-
-### 3.7 Divulgation
-
-Une date est fixée (`DISCLOSURE_SCHEDULED`). Un analyste rédige l'advisory à
-partir du dossier — **sans preuve de concept ni étape de reproduction**. Après
-relecture et approbation, un coordinateur national publie.
-
-Capacité requise pour publier : `PUBLISHED` → `PUBLISH_ADVISORY`.
-
-### 3.8 Clôture
-
-Le dossier passe en `CLOSED`. Les échéances restantes sont annulées.
+- Un programme non éligible (VDP, déclarant non identifié) passe directement en
+  `NOT_ELIGIBLE` à l'étape 4. Une prime refusée ramène aussi à `NOT_ELIGIBLE`.
+- Le **Wallet** est un grand livre d'écritures (`bounty.WalletEntry` : crédit,
+  ajustement, versement hors plateforme). Le solde est **calculé**
+  (`bounty.services.wallet_balance`), jamais stocké ni modifiable ; une écriture
+  ne se modifie ni ne se supprime.
+- Aucun flux financier réel n'est déclenché : le versement effectif reste hors
+  plateforme (MVP).
+- « Publier et clôturer » reste grisé tant que la prime n'est pas en
+  `BOUNTY_CREDITED` ou `NOT_ELIGIBLE`.
 
 ---
 
-## 4. SLA
+## 4. Sorties d'exception
 
-| Échéance | Délai par défaut | Ouverte à | Soldée par |
-|----------|------------------|-----------|------------|
-| Accusé de réception | 72 h | Soumission | `RECEIVED` / `ACKNOWLEDGED` |
-| Premier triage | 5 jours | Soumission | `TRIAGE` ou issue de triage |
-| Réponse organisation | 7 jours | `VENDOR_CONTACTED` | `VENDOR_ACKNOWLEDGED` |
-| Remédiation | 30 / 60 / 90 j | `VALIDATED` ou `REMEDIATION` | `FIX_AVAILABLE` / `FIX_VERIFIED` |
-| Divulgation | Date planifiée | Planification | Publication |
+| Action (clé) | Déclenchée par | Étapes | Effet | Retour |
+|--------------|----------------|--------|-------|--------|
+| Demander des compléments (`request_information`) | Triage, Analyste | 1 à 3 | `NEEDS_INFORMATION`, SLA suspendu | Déclarant : « Envoyer les compléments » (`send_information`) → étape d'origine, SLA reporté ; sans réponse sous 30 j → rejet proposé automatiquement (`tasks.sweep_needs_information`) |
+| Proposer le rejet (`propose_rejection`) | Triage, Analyste | 1 à 3 | `REJECTION_PENDING` | Coordinateur : « Confirmer le rejet » (`confirm_rejection`) → `REJECTED`, ou renvoi (`return_rejection`) à l'étape d'origine |
+| Marquer comme doublon (`propose_duplicate`) | Triage, Analyste | 1 à 3 | `REJECTION_PENDING` (motif doublon) | Coordinateur confirme → `DUPLICATE`, rattaché à l'original sans fuite |
+| Renvoyer à l'auteur (`return_to_author`, `return_bounty`) | Coordinateur | 4, 10, B2 | Retour à l'étape précédente | — |
+| Correctif insuffisant (`insufficient_fix`) | Analyste | 8 | Retour en `REMEDIATION_IN_PROGRESS` | — |
+| Escalader (`escalate`) | Automatique (SLA 6 ou 7 dépassé) ou Coordinateur | 6, 7 | Alerte rouge, notification du Coordinateur | Le Coordinateur peut décider une divulgation à échéance (`decide_deadline_disclosure`) après 90 j : l'advisory peut alors être soumis sans correctif |
 
-`apps.coordination.tasks.sweep_sla` s'exécute toutes les 30 minutes :
-il marque `APPROACHING` à 80 % du délai, puis `BREACHED` au dépassement, et
-notifie les participants. Un dépassement augmente le score de priorité du
-dossier.
-
-Les délais sont modifiables via **Administration → Politiques SLA**.
+La DSI ne peut ni rejeter ni marquer un doublon : si elle conteste, elle
+l'écrit dans le canal CSIRT ↔ organisation et le CSIRT décide.
 
 ---
 
-## 5. Doublons
+## 5. Contrôles serveur (`check_transition`)
 
-Un analyste rattache le dossier à l'original :
+L'interface guide, le serveur décide. Pour chaque action :
 
-```python
-mark_duplicate(case, original, actor, comment="Même vulnérabilité")
-```
+1. la transition existe pour le statut courant (`VDP_TRANSITIONS`) ;
+2. l'utilisateur possède la capacité requise ;
+3. le dossier est dans son périmètre (sinon **404**, jamais 403) ;
+4. les pré-requis de l'étape sont remplis (la réponse liste ce qui manque) ;
+5. règle des quatre yeux : l'utilisateur n'est pas l'auteur de l'étape
+   précédente pour les actions concernées ;
+6. le refus est audité hors transaction ; l'application est atomique et auditée.
 
-Le déclarant voit uniquement : « Votre rapport a été identifié comme
-doublon. » L'identifiant et le contenu du dossier original ne lui sont
-**jamais** révélés — seule la coordination nationale voit le lien.
-
----
-
-## 6. Réputation
-
-| Évènement | Points (configurable) |
-|-----------|----------------------|
-| Rapport validé | +10 |
-| Sévérité High | +25 |
-| Sévérité Critical | +50 |
-| Doublon | 0 |
-| Rapport abusif | −20 |
-
-Barème pilotable par les variables `EVDP_REP_*`. L'attribution est
-idempotente par dossier et **jamais modifiable par le chercheur**.
+Points d'entrée : bouton web `POST /cases/<id>/actions/<clé>/`, API
+`POST /api/v1/reports/<id>/actions/` (`{"action": "<clé>", "comment": "…"}`),
+et `/transition/` conservé pour compatibilité.
 
 ---
 
-## 7. Rôles impliqués
+## 6. Interface
 
-| Étape | Rôles habilités |
-|-------|-----------------|
-| Soumission | Chercheur, citoyen, professionnel (compte optionnel) |
-| Accusé de réception, triage | `TRIAGER`, `CSIRT_ANALYST`, `NATIONAL_COORDINATOR` |
-| Coordination | `CSIRT_ANALYST`, `NATIONAL_COORDINATOR`, `DSI_ADMIN` |
-| Remédiation | `DSI_ADMIN`, `ORGANIZATION_MANAGER` |
-| Rédaction d'advisory | `CSIRT_ANALYST`, `NATIONAL_COORDINATOR` |
-| Publication | `NATIONAL_COORDINATOR`, `SUPER_ADMIN` |
-| Consultation | `AUDITOR` (lecture seule) |
+- Un seul bouton principal par dossier, visible du seul propriétaire de
+  l'étape ; les autres voient « En attente de : &lt;rôle&gt; ».
+- Bouton grisé tant qu'un pré-requis manque, avec la liste explicite.
+- Clic = fenêtre de confirmation (`<dialog>`) ; commentaire obligatoire aux
+  étapes 4, 10 et B2 et pour toute action d'exception.
+- Actions d'exception dans un menu secondaire.
+- Badge d'échéance sur chaque carte Kanban : vert, **orange à 75 %** du SLA,
+  rouge à échéance ; mention « Escaladé ».
+- Le déclarant voit un statut simplifié à 5 paliers (Reçu, En analyse,
+  Validé, En correction, Publié — ou « Clôturé sans suite »).
 
 ---
 
-## 8. Chronologie type
+## 7. Matrice de visibilité
 
-| Date | Évènement |
-|------|-----------|
-| J+0 | Rapport reçu |
-| J+1 | Accusé de réception |
-| J+3 | Vulnérabilité validée |
-| J+4 | Organisation contactée |
-| J+16 | Correctif fourni |
-| J+21 | Correctif vérifié |
-| J+26 | Advisory publié |
+Légende : Complet = lecture et écriture · Lecture = lecture seule ·
+Partiel = voir la note · — = aucun accès.
 
-Seuls les jalons marqués publics alimentent la chronologie de l'advisory.
+| Donnée | Déclarant | Triage | Analyste | Coordinateur | DSI / Resp. org | Auditeur | Super admin |
+|--------|-----------|--------|----------|--------------|-----------------|----------|-------------|
+| Rapport et pièces jointes | Lecture (les siens) | Lecture | Lecture | Lecture | À partir de l'étape 5, son organisation | Métadonnées | — |
+| Identité du chercheur | Complet (la sienne) | Lecture | Lecture | Lecture | Pseudonyme ou rien selon le mode | Pseudonymisée | Compte seulement |
+| Score et vecteur CVSS | — | Lecture | Complet | Lecture | Score final | Lecture | — |
+| Notes de triage et d'analyse (canal `INTERNAL`) | — | Complet | Complet | Lecture | — | Lecture | — |
+| Canal chercheur (`RESEARCHER`) | Complet | Complet | Complet | Complet | — | Lecture | — |
+| Canal CSIRT ↔ organisation (`ORGANIZATION`) | — | — | Complet | Complet | Complet | Lecture | — |
+| Wallet | Lecture (le sien) | — | Montant proposé | Complet | — | Lecture | — |
+| Brouillon d'advisory | — | — | Complet | Complet | Lecture | Lecture | — |
+| Journal d'audit | — | — | — | Lecture | — | Complet | Logs techniques |
+
+Le super admin perd l'accès au contenu des dossiers, y compris dans
+l'administration Django (`core.admin.CaseContentAdminMixin`) : l'administration
+technique est séparée du métier (ISO/IEC 27001 A.5.3).
+
+---
+
+## 8. Rôles
+
+| Rôle spec v2 | Rôle(s) dans le code | Boutons de workflow | Actions secondaires |
+|--------------|----------------------|---------------------|---------------------|
+| CHERCHEUR_VDP | `SECURITY_RESEARCHER`, `BUG_BOUNTY_RESEARCHER`, `PUBLIC_USER` | Soumettre le rapport | Envoyer les compléments |
+| TRIAGER | `TRIAGER` | Accuser réception, Déclarer recevable | Compléments, rejet, doublon |
+| CSIRT_ANALYST | `CSIRT_ANALYST` | Soumettre la qualification, Transmettre, Confirmer le correctif, Soumettre l'advisory, Proposer la prime | Compléments, rejet, doublon, correctif insuffisant |
+| NAT_COORDINATOR | `NATIONAL_COORDINATOR` (+ analyste senior : `User.is_senior_analyst` → `VALIDATE_SEVERITY`) | Valider la qualification, Approuver et créditer, Publier et clôturer | Confirmer rejet/doublon, renvoyer, escalader, divulgation à échéance |
+| VENDOR_ADMIN | `DSI_ADMIN` (et `ORGANIZATION_MANAGER`, mêmes boutons) | Plan de remédiation, Correctif disponible | — |
+| (hors spec) | `AUDITOR` | Aucun | — |
+| (hors spec) | `SUPER_ADMIN` | Aucun | — |
+
+---
+
+## 9. SLA
+
+| Échéance (`SLAKind`) | Délai par défaut | Ouverte à | Soldée à |
+|----------------------|------------------|-----------|----------|
+| `ACKNOWLEDGEMENT` | 72 h | Soumission | Étape 1 |
+| `TRIAGE` | 5 j | `ACKNOWLEDGED` | Étape 3 (soumission de la qualification) |
+| `VALIDATION` | 2 j | `VALIDATION_PENDING` | Étape 4 |
+| `VENDOR_RESPONSE` | 5 j | `VENDOR_NOTIFIED` | Étape 6 |
+| `REMEDIATION` | Date cible du plan | `REMEDIATION_IN_PROGRESS` | Étape 7 |
+| `VERIFICATION` | 5 j | `FIX_AVAILABLE` | Étape 8 |
+
+`apps.coordination.tasks.sweep_sla` (toutes les 30 min) passe une échéance en
+`APPROACHING` à **75 %** du délai puis en `BREACHED` à l'échéance ; un
+dépassement de `VENDOR_RESPONSE` ou `REMEDIATION` escalade le dossier. Une
+demande de compléments suspend les SLA en cours ; ils sont reportés de la durée
+de la suspension au retour.
+
+---
+
+## 10. Migration des 24 statuts historiques
+
+Migration de données `coordination.0008_workflow_v2_donnees` (**mapping à
+valider par la coordination**) :
+
+| Anciens statuts | Nouveau statut |
+|-----------------|----------------|
+| `DRAFT`, `SUBMITTED`, `RECEIVED` | `SUBMITTED` |
+| `ACKNOWLEDGED`, `TRIAGE` | `ACKNOWLEDGED` (recevabilité à reconfirmer) |
+| `NEEDS_INFORMATION` | `NEEDS_INFORMATION` (origine : `ACKNOWLEDGED`) |
+| `VALIDATED`, `SEVERITY_ASSIGNED`, `BOUNTY_REVIEW`, `REWARD_APPROVED`, `IN_PROGRESS` | `VALIDATED` |
+| `VENDOR_CONTACTED` | `VENDOR_NOTIFIED` |
+| `VENDOR_ACKNOWLEDGED`, `REMEDIATION` | `REMEDIATION_IN_PROGRESS` |
+| `FIX_AVAILABLE`, `VERIFICATION` | `FIX_AVAILABLE` |
+| `FIX_VERIFIED`, `DISCLOSURE_SCHEDULED` | `FIX_VERIFIED` |
+| `PUBLISHED`, `CLOSED` | `CLOSED` |
+| `REJECTED`, `OUT_OF_SCOPE`, `NOT_APPLICABLE`, `INFORMATIVE` | `REJECTED` |
+| `DUPLICATE` | `DUPLICATE` |
+
+La même migration range les messages dans les nouveaux canaux (ancien fil
+« participants » → canal chercheur, ou canal organisation si l'auteur est un
+compte d'organisation ; « restreint » → notes internes), calcule le statut de
+prime, reprend dans le Wallet les primes déjà approuvées ou versées, et aligne
+la politique SLA par défaut (délais v2, seuil 75 %). L'historique des statuts
+n'est pas réécrit : c'est une trace d'audit.

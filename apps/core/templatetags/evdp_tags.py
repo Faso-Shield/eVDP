@@ -64,3 +64,26 @@ def query_replace(context, **kwargs):
         else:
             params[key] = value
     return params.urlencode()
+
+
+@register.simple_tag(takes_context=True)
+def case_status(context, case):
+    """Statut affiche : simplifie (5 paliers) pour le declarant du dossier.
+
+    Le declarant ne voit jamais l'avancement interne (rejet seulement
+    propose, qualification en attente de validation, etc.).
+    """
+    from apps.coordination.workflow import public_status_bucket
+
+    user = context.get("user")
+    if user is not None and getattr(user, "pk", None) and case.reporter_id == user.pk:
+        return public_status_bucket(case.status)[1]
+    return case.get_status_display()
+
+
+@register.filter(name="sla_badge")
+def sla_badge(case):
+    """Badge d'echeance d'une carte Kanban : vert, orange a 75 %, rouge a echeance."""
+    from apps.coordination.selectors import sla_color
+
+    return sla_color(case)

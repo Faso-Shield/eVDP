@@ -125,11 +125,34 @@ def test_upload_denied_outside_case_scope(case_beta, researcher_a):
 
 
 def test_attachment_limit_per_case(settings, case_alpha, researcher_a):
-    settings.EVDP = {**settings.EVDP, "MAX_ATTACHMENTS_PER_CASE": 2}
+    """La preuve jointe a la soumission compte dans la limite du dossier."""
+    assert case_alpha.attachments.count() == 1
+    settings.EVDP = {**settings.EVDP, "MAX_ATTACHMENTS_PER_CASE": 3}
     store_attachment(upload("a.txt"), researcher_a, case=case_alpha)
     store_attachment(upload("b.txt"), researcher_a, case=case_alpha)
     with pytest.raises(ValidationError, match="maximum"):
         store_attachment(upload("c.txt"), researcher_a, case=case_alpha)
+
+
+def test_auditor_sees_metadata_but_cannot_download(client_for, case_alpha, auditor):
+    """Matrice v2 : l'auditeur ne lit que les metadonnees des preuves."""
+    attachment = case_alpha.attachments.get()
+    response = client_for(auditor).get(reverse("attachments:download", args=[attachment.id]))
+    assert response.status_code == 404
+
+
+def test_dsi_downloads_only_from_step_five(client_for, case_alpha, dsi_alpha):
+    from apps.coordination.workflow import CaseStatus
+
+    from .conftest import advance
+
+    attachment = case_alpha.attachments.get()
+    url = reverse("attachments:download", args=[attachment.id])
+    client = client_for(dsi_alpha)
+    advance(case_alpha, CaseStatus.VALIDATED)
+    assert client.get(url).status_code == 404
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
+    assert client.get(url).status_code == 200
 
 
 # ---------------------------------------------------------------- telechargement

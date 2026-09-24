@@ -12,20 +12,21 @@ doivent JAMAIS etre utilises en production (voir docs/installation.md).
 from datetime import timedelta
 from decimal import Decimal
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.accounts.roles import Role
-from apps.bounty.services import approve_bounty, propose_bounty
+from apps.audit.models import AuditAction
+from apps.audit.services import log_action
 from apps.coordination.models import SLAPolicy
-from apps.coordination.services import transition_case
-from apps.coordination.workflow import CaseStatus
+from apps.coordination.services import owners_of, perform_action, set_severity
+from apps.coordination.workflow import BountyStage, CaseStatus, author_of, get_action
 from apps.core.models import SiteSetting
 from apps.core.views import DEFAULT_DISCLOSURE_POLICY
-from apps.disclosures.models import AdvisoryStatus
-from apps.disclosures.services import create_advisory_from_case, publish_advisory
+from apps.disclosures.services import create_advisory_from_case
 from apps.organizations.models import (
     MembershipRole,
     Organization,
@@ -609,77 +610,118 @@ class Command(BaseCommand):
                 accepted_policy=True,
                 wants_credit=True,
             )
-            cases.append(submit_report(report, reporter=spec["reporter"]))
+            evidence = SimpleUploadedFile(
+                "preuve.txt",
+                f"Preuve de demonstration pour : {spec['title']}\n".encode(),
+                content_type="text/plain",
+            )
+            cases.append(
+                submit_report(report, reporter=spec["reporter"], attachments=[evidence])
+            )
         return cases
 
     # ----------------------------------------------------------------- workflow
+    def _act(self, case, action_key, comment="Étape de démonstration", **data):
+        """Clique le bouton `action_key` avec un proprietaire legitime.
+
+        Le jeu de demonstration passe par le meme moteur que l'interface :
+        un bouton, un role, quatre yeux. L'acteur est choisi parmi les
+        proprietaires de l'etape, en excluant l'auteur de l'etape precedente.
+        """
+        action = get_action(action_key)
+        author_id = author_of(case, action)
+        actor = next(
+            user for user in owners_of(case, action) if user.pk != author_id
+        )
+        if action_key == "acknowledge":
+            log_action(AuditAction.CASE_VIEWED, actor=actor, obj=case)
+        data["comment"] = comment
+        perform_action(case, action_key, actor, data=data)
+        case.refresh_from_db()
+        return case
+
+    def _qualify(self, case, analyst):
+        """Etapes 1 a 3 : reception, recevabilite, qualification CVSS."""
+        self._act(case, "acknowledge")
+        self._act(
+            case,
+            "declare_admissible",
+            in_scope=True,
+            organization_identified=True,
+            attachment_readable=True,
+        )
+        if not case.cvss_vector:
+            set_severity(
+                case, analyst, cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+            )
+        if case.cwe_id is None:
+            case.cwe = CWE.objects.first()
+            case.save(update_fields=["cwe", "updated_at"])
+        self._act(case, "submit_qualification")
+        self._act(case, "validate_qualification", comment="Qualification relue et validée.")
+
     def _workflow(self, cases, users):
         analyst = users["analyste@csirt.bf"]
-        coordinator = users["coordinateur@anssi.bf"]
-
-        if not cases:
+        if not cases or cases[0].status != CaseStatus.SUBMITTED:
             return
 
         # Case 1 : parcours CVD complet jusqu'a la verification du correctif.
         case = cases[0]
-        for target in [
-            CaseStatus.RECEIVED,
-            CaseStatus.ACKNOWLEDGED,
-            CaseStatus.TRIAGE,
-            CaseStatus.VALIDATED,
-            CaseStatus.VENDOR_CONTACTED,
-            CaseStatus.VENDOR_ACKNOWLEDGED,
-            CaseStatus.REMEDIATION,
-            CaseStatus.FIX_AVAILABLE,
-            CaseStatus.VERIFICATION,
-            CaseStatus.FIX_VERIFIED,
-        ]:
-            if case.status != target:
-                transition_case(case, target, coordinator, comment="Étape de démonstration")
+        self._qualify(case, analyst)
+        self._act(case, "notify_vendor")
+        self._act(
+            case,
+            "submit_remediation_plan",
+            remediation_plan="Paramétrer les requêtes et valider les entrées du portail.",
+            remediation_target_date=timezone.localdate() + timedelta(days=20),
+        )
+        self._act(
+            case,
+            "declare_fix",
+            fix_description="Requêtes paramétrées et validation stricte des entrées.",
+            fix_version="2.4.1",
+        )
+        self._act(
+            case,
+            "confirm_fix",
+            verification_report="Contre-vérification : l'injection n'est plus reproductible.",
+        )
 
-        # Case 2 : parcours Bug Bounty jusqu'a la revue de recompense.
+        # Case 2 : parcours Bug Bounty, la branche prime s'ouvre a la validation.
         if len(cases) > 1:
-            case = cases[1]
-            for target in [
-                CaseStatus.TRIAGE,
-                CaseStatus.VALIDATED,
-                CaseStatus.SEVERITY_ASSIGNED,
-                CaseStatus.BOUNTY_REVIEW,
-            ]:
-                if case.status != target:
-                    transition_case(case, target, analyst, comment="Triage Bug Bounty")
+            self._qualify(cases[1], analyst)
 
-        # Case 3 : reste en triage, avec une demande d'informations.
+        # Case 3 : reste a la reception, avec une demande de complements.
         if len(cases) > 2:
             case = cases[2]
-            for target in [CaseStatus.TRIAGE, CaseStatus.NEEDS_INFORMATION]:
-                if case.status != target:
-                    transition_case(
-                        case,
-                        target,
-                        analyst,
-                        comment="Merci de préciser le navigateur utilisé.",
-                    )
+            self._act(case, "acknowledge")
+            self._act(
+                case,
+                "request_information",
+                comment="Merci de préciser le navigateur utilisé.",
+            )
 
     # ------------------------------------------------------------------ bounty
     def _bounty(self, cases, users):
         if len(cases) < 2:
             return
         case = cases[1]
-        if getattr(case, "bounty", None) is not None:
+        case.refresh_from_db()
+        if case.bounty_stage != BountyStage.ELIGIBLE:
             return
-        bounty = propose_bounty(
+        self._act(
             case,
-            users["analyste@csirt.bf"],
+            "propose_bounty",
+            comment="",
             justification=(
                 "Vulnérabilité IDOR permettant l'accès aux dossiers de tous les "
                 "usagers. Impact élevé sur la confidentialité."
             ),
         )
-        approve_bounty(
-            bounty,
-            users["coordinateur@anssi.bf"],
-            note="Montant conforme au palier HIGH du programme.",
+        self._act(
+            case,
+            "approve_bounty",
+            comment="Montant conforme au palier du programme.",
         )
 
     # ---------------------------------------------------------------- advisory
@@ -689,10 +731,10 @@ class Command(BaseCommand):
         if not cases or Advisory.objects.exists():
             return
         case = cases[0]
-        coordinator = users["coordinateur@anssi.bf"]
-        advisory = create_advisory_from_case(
+        # Redige par l'analyste : seul role a porter DRAFT_ADVISORY.
+        create_advisory_from_case(
             case,
-            coordinator,
+            users["analyste@csirt.bf"],
             summary=(
                 "Une vulnérabilité d'injection SQL affectait le portail e-État civil "
                 "du ministère de démonstration. Elle permettait à un attaquant non "
@@ -713,6 +755,14 @@ class Command(BaseCommand):
             affected_versions="Portail e-Etat civil < 2.4.1",
             fixed_versions="Portail e-Etat civil 2.4.1",
         )
-        advisory.status = AdvisoryStatus.APPROVED
-        advisory.save(update_fields=["status", "updated_at"])
-        publish_advisory(advisory, coordinator)
+        # Etapes 9 et 10 : l'analyste soumet l'advisory assaini, le
+        # Coordinateur le relit, le publie et clot le dossier.
+        case.refresh_from_db()
+        if case.status == CaseStatus.FIX_VERIFIED:
+            self._act(case, "submit_advisory")
+            self._act(
+                case,
+                "publish_and_close",
+                comment="Advisory relu, crédit conforme.",
+                review_done=True,
+            )

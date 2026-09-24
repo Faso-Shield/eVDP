@@ -31,6 +31,14 @@ from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
 
 from .models import ReportStatus, VulnerabilityReport
 
+#: Canaux de soumission d'un declarant : une piece jointe y est exigee
+#: (workflow v2, etape 0). L'import CSAF et la saisie interne en sont exemptes :
+#: ils reprennent un avis deja publie, pas une preuve de declarant.
+ATTACHMENT_REQUIRED_SOURCES = (ReportSource.WEB, ReportSource.API)
+
+#: Nombre maximal de fichiers joints a la soumission.
+MAX_SUBMISSION_FILES = 5
+
 
 def _workflow_for(program):
     if program and program.program_type == ProgramType.BUG_BOUNTY:
@@ -48,12 +56,44 @@ def _severity_for(report):
     return report.reported_severity or Severity.MEDIUM, report.cvss_score
 
 
+def _check_attachments(files, source):
+    """Controle serveur : au moins une piece jointe valide (web et API)."""
+    from apps.attachments.services import validate_upload
+
+    files = list(files or [])
+    if source in ATTACHMENT_REQUIRED_SOURCES and not files:
+        raise ValidationError(
+            {"attachments": "Au moins une pièce jointe est obligatoire pour soumettre un rapport."}
+        )
+    if len(files) > MAX_SUBMISSION_FILES:
+        raise ValidationError(
+            {"attachments": f"{MAX_SUBMISSION_FILES} pièces jointes au maximum à la soumission."}
+        )
+    # Tous les fichiers sont valides avant d'ecrire quoi que ce soit : un
+    # rapport n'est jamais cree avec une partie seulement de ses preuves.
+    for uploaded in files:
+        try:
+            validate_upload(uploaded)
+        except ValidationError as exc:
+            raise ValidationError(
+                {"attachments": f"Pièce jointe « {uploaded.name} » refusée : "
+                 + "; ".join(exc.messages)}
+            ) from exc
+        uploaded.seek(0)
+    return files
+
+
 @transaction.atomic
-def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
+def submit_report(
+    report, request=None, source=ReportSource.WEB, reporter=None, attachments=None
+):
     """Enregistre un rapport soumis et cree le Case associe.
 
     Le rapport reste prive : aucune donnee n'est rendue publique ici.
+    `attachments` : fichiers televerses avec le rapport. Au moins un est exige
+    pour le formulaire web et l'API (controle serveur, pas seulement HTML).
     """
+    files = _check_attachments(attachments, source)
     if reporter is not None and reporter.is_authenticated:
         report.reporter = reporter
 
@@ -114,6 +154,12 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
     ensure_default_participants(case)
     schedule_initial_sla(case)
     case.refresh_priority()
+
+    from apps.attachments.services import store_attachment
+
+    uploader = reporter if reporter is not None and reporter.is_authenticated else None
+    for uploaded in files:
+        store_attachment(uploaded, uploader, case=case, report=report, request=request)
 
     log_action(
         AuditAction.REPORT_SUBMITTED,

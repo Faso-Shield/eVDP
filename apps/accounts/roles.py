@@ -22,21 +22,31 @@ class Role(models.TextChoices):
 
 
 class Capability(models.TextChoices):
-    """Actions elementaires controlees par le backend."""
+    """Actions elementaires controlees par le backend.
+
+    Les capacites de workflow suivent le document « Workflow v2 & Matrice
+    RBAC » : chaque etape du dossier a un seul proprietaire, et donc une seule
+    capacite qui l'autorise (voir apps.coordination.workflow.ACTIONS).
+    """
 
     VIEW_ALL_CASES = "VIEW_ALL_CASES", "Voir tous les cases"
     VIEW_ORG_CASES = "VIEW_ORG_CASES", "Voir les cases de son organisation"
-    TRIAGE_CASE = "TRIAGE_CASE", "Trier un case"
-    CHANGE_CASE_STATUS = "CHANGE_CASE_STATUS", "Changer le statut d'un case"
+    TRIAGE_CASE = "TRIAGE_CASE", "Accuser réception et déclarer recevable"
     ASSIGN_CASE = "ASSIGN_CASE", "Assigner un case"
-    SET_SEVERITY = "SET_SEVERITY", "Définir la sévérité"
+    SET_SEVERITY = "SET_SEVERITY", "Saisir le CVSS et soumettre la qualification"
+    VALIDATE_SEVERITY = "VALIDATE_SEVERITY", "Valider une qualification"
+    REQUEST_INFORMATION = "REQUEST_INFORMATION", "Demander des compléments"
+    PROPOSE_REJECTION = "PROPOSE_REJECTION", "Proposer un rejet ou un doublon"
+    ARBITRATE_CASE = "ARBITRATE_CASE", "Arbitrer (rejet, doublon, renvoi, escalade)"
+    COORDINATE_VENDOR = "COORDINATE_VENDOR", "Transmettre à l'organisation et vérifier le correctif"
+    MANAGE_REMEDIATION = "MANAGE_REMEDIATION", "Soumettre le plan et déclarer le correctif"
     POST_INTERNAL_MESSAGE = "POST_INTERNAL_MESSAGE", "Publier un message interne"
     MANAGE_ORGANIZATION = "MANAGE_ORGANIZATION", "Gérer une organisation"
     MANAGE_ALL_ORGANIZATIONS = "MANAGE_ALL_ORGANIZATIONS", "Gérer les organisations"
     MANAGE_PROGRAM = "MANAGE_PROGRAM", "Gérer un programme"
     SUBMIT_REPORT = "SUBMIT_REPORT", "Soumettre un rapport"
     PROPOSE_BOUNTY = "PROPOSE_BOUNTY", "Proposer une récompense"
-    APPROVE_BOUNTY = "APPROVE_BOUNTY", "Approuver une récompense"
+    APPROVE_BOUNTY = "APPROVE_BOUNTY", "Approuver une récompense et créditer le Wallet"
     RECORD_PAYMENT = "RECORD_PAYMENT", "Enregistrer un paiement"
     DRAFT_ADVISORY = "DRAFT_ADVISORY", "Rédiger un advisory"
     PUBLISH_ADVISORY = "PUBLISH_ADVISORY", "Publier un advisory"
@@ -51,22 +61,32 @@ class Capability(models.TextChoices):
 C = Capability
 
 #: Capacites accordees a chaque role. Aucune capacite n'est implicite.
+#:
+#: Projection des 5 roles de la spec v2 sur les 10 roles du code :
+#: CHERCHEUR_VDP -> roles chercheurs, TRIAGER -> TRIAGER, CSIRT_ANALYST ->
+#: CSIRT_ANALYST, NAT_COORDINATOR -> NATIONAL_COORDINATOR, VENDOR_ADMIN ->
+#: DSI_ADMIN (et ORGANIZATION_MANAGER, memes boutons).
 ROLE_CAPABILITIES = {
-    Role.SUPER_ADMIN: set(C.values),
+    # L'administration technique est separee du metier (ISO/IEC 27001 A.5.3) :
+    # comptes, organisations, programmes et matrices de prime, mais aucun
+    # acces au contenu des dossiers ni aucun bouton de workflow.
+    Role.SUPER_ADMIN: {
+        C.MANAGE_USERS,
+        C.MANAGE_ALL_ORGANIZATIONS,
+        C.MANAGE_ORGANIZATION,
+        C.MANAGE_PROGRAM,
+    },
     Role.NATIONAL_COORDINATOR: {
         C.VIEW_ALL_CASES,
-        C.TRIAGE_CASE,
-        C.CHANGE_CASE_STATUS,
         C.ASSIGN_CASE,
-        C.SET_SEVERITY,
+        C.VALIDATE_SEVERITY,
+        C.ARBITRATE_CASE,
         C.POST_INTERNAL_MESSAGE,
         C.MANAGE_ALL_ORGANIZATIONS,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
-        C.PROPOSE_BOUNTY,
         C.APPROVE_BOUNTY,
         C.RECORD_PAYMENT,
-        C.DRAFT_ADVISORY,
         C.PUBLISH_ADVISORY,
         C.VIEW_AUDIT_LOG,
         C.VIEW_NATIONAL_DASHBOARD,
@@ -75,12 +95,15 @@ ROLE_CAPABILITIES = {
         C.IMPORT_CSAF,
         C.MANAGE_USERS,
     },
+    # Seul role a saisir le CVSS. VALIDATE_SEVERITY s'y ajoute pour un
+    # analyste senior (User.is_senior_analyst), jamais par defaut.
     Role.CSIRT_ANALYST: {
         C.VIEW_ALL_CASES,
-        C.TRIAGE_CASE,
-        C.CHANGE_CASE_STATUS,
         C.ASSIGN_CASE,
         C.SET_SEVERITY,
+        C.REQUEST_INFORMATION,
+        C.PROPOSE_REJECTION,
+        C.COORDINATE_VENDOR,
         C.POST_INTERNAL_MESSAGE,
         C.MANAGE_PROGRAM,
         C.PROPOSE_BOUNTY,
@@ -92,25 +115,23 @@ ROLE_CAPABILITIES = {
     Role.TRIAGER: {
         C.VIEW_ALL_CASES,
         C.TRIAGE_CASE,
-        C.CHANGE_CASE_STATUS,
-        C.SET_SEVERITY,
+        C.REQUEST_INFORMATION,
+        C.PROPOSE_REJECTION,
         C.POST_INTERNAL_MESSAGE,
         C.VIEW_CSIRT_DASHBOARD,
     },
     Role.DSI_ADMIN: {
         C.VIEW_ORG_CASES,
-        C.CHANGE_CASE_STATUS,
+        C.MANAGE_REMEDIATION,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
-        C.PROPOSE_BOUNTY,
         C.EXPORT_DATA,
     },
     Role.ORGANIZATION_MANAGER: {
         C.VIEW_ORG_CASES,
-        C.CHANGE_CASE_STATUS,
+        C.MANAGE_REMEDIATION,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
-        C.PROPOSE_BOUNTY,
         C.EXPORT_DATA,
     },
     Role.SECURITY_RESEARCHER: {C.SUBMIT_REPORT},
@@ -124,6 +145,9 @@ ROLE_CAPABILITIES = {
     },
     Role.PUBLIC_USER: {C.SUBMIT_REPORT},
 }
+
+#: Capacite supplementaire d'un analyste senior (etape 4 du workflow).
+SENIOR_ANALYST_CAPABILITIES = frozenset({C.VALIDATE_SEVERITY})
 
 #: Roles operant au niveau national (voient l'ensemble des cases).
 NATIONAL_ROLES = frozenset(
@@ -161,8 +185,11 @@ BUSINESS_ROLES = frozenset(set(Role.values) - set(RESEARCHER_ROLES))
 READ_ONLY_ROLES = frozenset({Role.AUDITOR})
 
 
-def capabilities_for(role):
-    return ROLE_CAPABILITIES.get(role, set())
+def capabilities_for(role, senior=False):
+    capabilities = set(ROLE_CAPABILITIES.get(role, set()))
+    if senior and role == Role.CSIRT_ANALYST:
+        capabilities |= SENIOR_ANALYST_CAPABILITIES
+    return capabilities
 
 
 def role_label(role):

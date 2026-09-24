@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from apps.core.admin import CaseContentAdminMixin
+
 from .models import (
     Case,
     CaseAssignment,
@@ -31,7 +33,7 @@ class SLAEventInline(admin.TabularInline):
 
 
 @admin.register(Case)
-class CaseAdmin(admin.ModelAdmin):
+class CaseAdmin(CaseContentAdminMixin, admin.ModelAdmin):
     list_display = (
         "case_id",
         "title",
@@ -58,7 +60,7 @@ class CaseAdmin(admin.ModelAdmin):
 
 
 @admin.register(CaseMessage)
-class CaseMessageAdmin(admin.ModelAdmin):
+class CaseMessageAdmin(CaseContentAdminMixin, admin.ModelAdmin):
     list_display = ("case", "author", "confidentiality", "is_system", "created_at")
     list_filter = ("confidentiality", "is_system")
     search_fields = ("case__case_id", "author__email")

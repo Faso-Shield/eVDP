@@ -69,6 +69,12 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         verbose_name="Rôle",
         help_text="Rôle RBAC. Jamais modifiable par l'utilisateur lui-même.",
     )
+    is_senior_analyst = models.BooleanField(
+        default=False,
+        verbose_name="Analyste senior",
+        help_text="Accorde à un analyste CSIRT la validation des qualifications "
+        "(étape 4), jamais la sienne.",
+    )
     is_active = models.BooleanField(default=True, verbose_name="Compte actif")
     is_staff = models.BooleanField(default=False, verbose_name="Accès à l'administration")
     email_verified = models.BooleanField(default=False, verbose_name="Adresse vérifiée")
@@ -179,14 +185,23 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     # -- RBAC ---------------------------------------------------------------
     @property
     def capabilities(self):
-        return capabilities_for(self.role)
+        capabilities = capabilities_for(self.role, senior=self.is_senior_analyst)
+        if self.is_superuser:
+            # Le drapeau Django ouvre l'administration technique, pas le
+            # metier : un superutilisateur n'obtient jamais l'acces au contenu
+            # des dossiers ni un bouton de workflow par ce seul drapeau.
+            capabilities |= capabilities_for(Role.SUPER_ADMIN)
+        return capabilities
 
     def has_capability(self, capability):
         if not self.is_active:
             return False
-        if self.is_superuser:
-            return True
         return capability in self.capabilities
+
+    @property
+    def sees_all_cases(self):
+        """Perimetre national sur le contenu des dossiers (hors super admin)."""
+        return self.has_capability(Capability.VIEW_ALL_CASES)
 
     @property
     def is_national(self):

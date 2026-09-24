@@ -62,9 +62,40 @@ def search_cases(
     return queryset
 
 
+#: Etat SLA -> couleur de badge (vert, orange a 75 % du delai, rouge a echeance).
+SLA_COLORS = {"ok": "sla-ok", "warning": "sla-warning", "breached": "sla-breached"}
+
+
+def sla_color(case, now=None):
+    """Couleur d'echeance de l'etape en cours d'un dossier (ou "")."""
+    now = now or timezone.now()
+    events = [
+        event
+        for event in case.sla_events.all()
+        if event.state in (SLAState.PENDING, SLAState.APPROACHING, SLAState.BREACHED)
+    ]
+    if not events:
+        return ""
+    worst = "ok"
+    for event in events:
+        if event.state == SLAState.BREACHED or event.due_at <= now:
+            return SLA_COLORS["breached"]
+        policy = event.policy
+        ratio = (policy.warning_ratio if policy else 75) / 100
+        total = (event.due_at - event.created_at).total_seconds()
+        elapsed = (now - event.created_at).total_seconds()
+        if event.state == SLAState.APPROACHING or (total > 0 and elapsed / total >= ratio):
+            worst = "warning"
+    return SLA_COLORS[worst]
+
+
 def kanban_board(user, limit_per_column=40):
     """Regroupe les cases visibles par colonne Kanban."""
-    queryset = visible_cases(user).exclude(status=CaseStatus.CLOSED)
+    queryset = (
+        visible_cases(user)
+        .exclude(status=CaseStatus.CLOSED)
+        .prefetch_related("sla_events__policy")
+    )
     board = []
     for key, label, states in KANBAN_COLUMNS:
         column_cases = list(queryset.filter(status__in=states)[:limit_per_column])
@@ -93,16 +124,20 @@ def case_statistics(user):
         "total": total,
         "new": queryset.filter(status=CaseStatus.SUBMITTED).count(),
         "in_triage": queryset.filter(
-            status__in=[CaseStatus.TRIAGE, CaseStatus.NEEDS_INFORMATION]
+            status__in=[
+                CaseStatus.ACKNOWLEDGED,
+                CaseStatus.IN_ANALYSIS,
+                CaseStatus.VALIDATION_PENDING,
+                CaseStatus.NEEDS_INFORMATION,
+                CaseStatus.REJECTION_PENDING,
+            ]
         ).count(),
         "validated": validated,
         "in_remediation": queryset.filter(
             status__in=[
-                CaseStatus.REMEDIATION,
-                CaseStatus.VENDOR_CONTACTED,
-                CaseStatus.VENDOR_ACKNOWLEDGED,
+                CaseStatus.VENDOR_NOTIFIED,
+                CaseStatus.REMEDIATION_IN_PROGRESS,
                 CaseStatus.FIX_AVAILABLE,
-                CaseStatus.IN_PROGRESS,
             ]
         ).count(),
         "critical": severities.get(Severity.CRITICAL, 0),

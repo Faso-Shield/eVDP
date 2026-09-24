@@ -118,7 +118,7 @@
         <div class="card-body">
           <div class="form-field">
             <label for="attachments">Fichiers (5 maximum)</label>
-            <input type="file" name="attachments" id="attachments" multiple>
+            <input type="file" name="attachments" id="attachments" multiple required>
             <div class="help">
               Captures, traces, PoC. Les exécutables et scripts sont refusés.
               Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier.

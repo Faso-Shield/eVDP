@@ -256,6 +256,50 @@ class CaseListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+def _viewer(serializer):
+    request = serializer.context.get("request")
+    return getattr(request, "user", None)
+
+
+def apply_visibility(data, case, user):
+    """Retire d'une representation ce que la matrice v2 cache a `user`.
+
+    Meme source de verite que la fiche web (coordination.visibility) : un
+    appel API ne doit jamais en montrer plus que l'interface.
+    """
+    from apps.coordination.visibility import PARTIAL, READ, WRITE, level, viewer_kind
+    from apps.coordination.workflow import public_status_bucket
+
+    if user is None:
+        return data
+    kind = viewer_kind(case, user)
+    cvss = level(case, user, "cvss", kind)
+    if kind == "reporter":
+        key, label = public_status_bucket(case.status)
+        data["status"] = key
+        data["status_label"] = label
+        for name in ("severity", "severity_label", "priority_score", "workflow"):
+            data.pop(name, None)
+    if cvss not in (READ, WRITE, PARTIAL):
+        for name in ("cvss_score", "cvss_vector", "cwe", "severity", "severity_label"):
+            data.pop(name, None)
+    elif cvss == PARTIAL:
+        data.pop("cvss_vector", None)
+    if "report" in data and isinstance(data["report"], dict):
+        from apps.coordination.visibility import reporter_label
+
+        report_level = level(case, user, "report", kind)
+        if report_level != READ:
+            data["report"] = {"title": case.report.title, "content": "non communiqué"}
+        data["report"]["reporter"] = reporter_label(case, user, kind)
+    if "timeline" in data and level(case, user, "tracking", kind) is None:
+        data["timeline"] = [event for event in data["timeline"] if event.get("is_public")]
+    if kind not in ("triager", "analyst", "coordinator", "auditor"):
+        for name in ("bounty_stage", "assignee", "tags", "next_action"):
+            data.pop(name, None)
+    return data
+
+
 class CaseDetailSerializer(CaseListSerializer):
     report = serializers.SerializerMethodField()
     cwe = serializers.CharField(source="cwe.code", default=None, read_only=True)
@@ -264,9 +308,12 @@ class CaseDetailSerializer(CaseListSerializer):
     assignee = serializers.CharField(
         source="assignee.display_name", default=None, read_only=True
     )
+    next_action = serializers.SerializerMethodField()
 
     class Meta(CaseListSerializer.Meta):
         fields = CaseListSerializer.Meta.fields + [
+            "bounty_stage",
+            "next_action",
             "product",
             "vulnerability_type",
             "cvss_vector",
@@ -308,9 +355,37 @@ class CaseDetailSerializer(CaseListSerializer):
                 "occurred_at": event.occurred_at,
                 "event_type": event.event_type,
                 "label": event.label,
+                "is_public": event.is_public,
             }
             for event in obj.timeline.all()
         ]
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_next_action(self, obj):
+        """Bouton principal de l'etape et son proprietaire (« En attente de »)."""
+        from apps.coordination.workflow import primary_action
+
+        action = primary_action(obj)
+        if action is None:
+            return None
+        return {
+            "action": action.key,
+            "label": action.label,
+            "step": action.step,
+            "owner": action.owner,
+            "missing": action.missing(obj),
+        }
+
+    def to_representation(self, instance):
+        return apply_visibility(super().to_representation(instance), instance, _viewer(self))
+
+
+def _list_to_representation(self, instance):
+    data = serializers.ModelSerializer.to_representation(self, instance)
+    return apply_visibility(data, instance, _viewer(self))
+
+
+CaseListSerializer.to_representation = _list_to_representation
 
 
 class CaseUpdateSerializer(serializers.ModelSerializer):

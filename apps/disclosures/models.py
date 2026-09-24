@@ -76,7 +76,7 @@ class Advisory(BaseModel):
         max_length=16, choices=Severity.choices, default=Severity.MEDIUM, db_index=True
     )
     cvss_score = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
-    cvss_vector = models.CharField(max_length=120, blank=True)
+    cvss_vector = models.CharField(max_length=255, blank=True)
     cwe = models.ForeignKey(
         "vulnerabilities.CWE",
         null=True,

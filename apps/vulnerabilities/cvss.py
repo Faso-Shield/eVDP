@@ -1,11 +1,15 @@
-"""Calculateur CVSS v3.1 (score de base).
+"""Calculateur CVSS v3.1 et v4.0 (score de base).
 
-Implementation autonome de la specification FIRST CVSS v3.1, section 8.1.
+* v3.1 : implementation autonome de la specification FIRST CVSS v3.1,
+  section 8.1.
+* v4.0 : exigee par SPEC-eVDP-2026-V2. Le score v4.0 repose sur la table
+  officielle des macro-vecteurs FIRST (270 valeurs) et une interpolation ;
+  plutot que de la recopier, on s'appuie sur la bibliotheque `cvss`
+  (Red Hat, pure Python, sans dependance), qui l'implemente et la teste
+  contre le calculateur de reference.
+
 Aucun appel reseau : le score reste calculable hors ligne, conformement a
 l'exigence "ne pas dependre d'une API externe pour le fonctionnement de base".
-
-TODO : ajouter CVSS v4.0 (le format de vecteur est deja detecte et rejete
-proprement pour eviter un score errone).
 """
 
 import math
@@ -13,6 +17,25 @@ from decimal import Decimal
 
 PREFIX_31 = "CVSS:3.1"
 PREFIX_30 = "CVSS:3.0"
+PREFIX_40 = "CVSS:4.0"
+
+#: Metriques de base CVSS v4.0, dans l'ordre de la specification.
+METRIC_ORDER_40 = ["AV", "AC", "AT", "PR", "UI", "VC", "VI", "VA", "SC", "SI", "SA"]
+
+_IMPACT = {"H": "Élevée", "L": "Faible", "N": "Aucune"}
+METRIC_LABELS_40 = {
+    "AV": ("Vecteur d'attaque", {"N": "Réseau", "A": "Adjacent", "L": "Local", "P": "Physique"}),
+    "AC": ("Complexité d'attaque", {"L": "Faible", "H": "Élevée"}),
+    "AT": ("Prérequis d'attaque", {"N": "Aucun", "P": "Présents"}),
+    "PR": ("Privilèges requis", {"N": "Aucun", "L": "Faibles", "H": "Élevés"}),
+    "UI": ("Interaction utilisateur", {"N": "Aucune", "P": "Passive", "A": "Active"}),
+    "VC": ("Confidentialité (système vulnérable)", _IMPACT),
+    "VI": ("Intégrité (système vulnérable)", _IMPACT),
+    "VA": ("Disponibilité (système vulnérable)", _IMPACT),
+    "SC": ("Confidentialité (systèmes suivants)", _IMPACT),
+    "SI": ("Intégrité (systèmes suivants)", _IMPACT),
+    "SA": ("Disponibilité (systèmes suivants)", _IMPACT),
+}
 
 METRIC_ORDER = ["AV", "AC", "PR", "UI", "S", "C", "I", "A"]
 
@@ -50,16 +73,39 @@ class CVSSError(ValueError):
     """Vecteur CVSS invalide."""
 
 
+def is_v4(vector):
+    return (vector or "").strip().upper().startswith(PREFIX_40)
+
+
+def _cvss4(vector):
+    """Objet CVSS v4.0 valide, ou CVSSError."""
+    from cvss import CVSS4
+    from cvss.exceptions import CVSSError as LibraryError
+
+    try:
+        return CVSS4(vector.strip())
+    except LibraryError as exc:
+        raise CVSSError(f"Vecteur CVSS v4.0 invalide : {exc}") from exc
+
+
+def parse_vector_v4(vector):
+    """Metriques de base d'un vecteur CVSS v4.0."""
+    parsed = _cvss4(vector)
+    return {key: parsed.metrics[key] for key in METRIC_ORDER_40}
+
+
 def parse_vector(vector):
     """Analyse un vecteur CVSS v3.x et retourne le dict des metriques de base."""
     if not vector:
         raise CVSSError("Vecteur CVSS vide.")
     raw = vector.strip().upper()
-    if raw.startswith("CVSS:4"):
-        raise CVSSError("CVSS v4.0 n'est pas encore pris en charge par le calculateur eVDP.")
+    if raw.startswith(PREFIX_40):
+        return parse_vector_v4(vector)
     parts = raw.split("/")
     if not parts or parts[0] not in (PREFIX_31, PREFIX_30):
-        raise CVSSError("Le vecteur doit commencer par CVSS:3.1/ ou CVSS:3.0/.")
+        raise CVSSError(
+            "Le vecteur doit commencer par CVSS:3.1/, CVSS:3.0/ ou CVSS:4.0/."
+        )
     metrics = {}
     for chunk in parts[1:]:
         if ":" not in chunk:
@@ -88,7 +134,11 @@ def _round_up1(value):
 
 
 def base_score(vector):
-    """Retourne le score de base CVSS v3.1 (0.0 - 10.0)."""
+    """Retourne le score de base CVSS v3.1 ou v4.0 (0.0 - 10.0)."""
+    if is_v4(vector):
+        if not vector:
+            raise CVSSError("Vecteur CVSS vide.")
+        return float(_cvss4(vector).base_score)
     metrics = parse_vector(vector)
     scope_changed = metrics["S"] == "C"
 
@@ -144,6 +194,16 @@ def severity_from_score(score):
 def describe(vector):
     """Decompose un vecteur en libelles lisibles pour l'interface."""
     metrics = parse_vector(vector)
+    if is_v4(vector):
+        return [
+            {
+                "code": key,
+                "label": METRIC_LABELS_40[key][0],
+                "value": metrics[key],
+                "value_label": METRIC_LABELS_40[key][1].get(metrics[key], metrics[key]),
+            }
+            for key in METRIC_ORDER_40
+        ]
     return [
         {
             "code": key,

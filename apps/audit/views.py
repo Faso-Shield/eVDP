@@ -5,15 +5,32 @@ from django.core.paginator import Paginator
 from django.shortcuts import render
 
 from apps.accounts.permissions import require_roles
-from apps.accounts.roles import Role
+from apps.accounts.roles import Capability, Role
 
 from .models import AuditAction, AuditLog
+
+#: Objets metier : leur trace releve du journal d'audit complet, pas des
+#: logs techniques ouverts au super admin.
+CASE_CONTENT_OBJECTS = (
+    "Case",
+    "VulnerabilityReport",
+    "Attachment",
+    "CaseMessage",
+    "Bounty",
+    "BountyPayment",
+    "WalletEntry",
+    "Advisory",
+)
 
 
 @login_required
 @require_roles(Role.SUPER_ADMIN, Role.NATIONAL_COORDINATOR, Role.AUDITOR)
 def audit_list(request):
     entries = AuditLog.objects.select_related("actor")
+    if not request.user.has_capability(Capability.VIEW_AUDIT_LOG):
+        # Super admin : logs techniques seulement (comptes, organisations,
+        # programmes, configuration), jamais la trace des dossiers.
+        entries = entries.exclude(object_type__in=CASE_CONTENT_OBJECTS)
     action = request.GET.get("action", "").strip()
     actor = request.GET.get("actor", "").strip()
     obj = request.GET.get("object", "").strip()

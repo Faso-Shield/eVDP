@@ -14,6 +14,7 @@ from apps.accounts.roles import RESEARCHER_ROLES
 from apps.attachments.views import safe_filename
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
+from apps.bounty.services import wallet_balance
 
 from .forms import PayoutMethodForm, PayoutProfileForm
 from .models import IdentityMode, PayoutMethod, ResearcherProfile
@@ -108,6 +109,9 @@ def wallet_home(request):
             "methods": profile.methods.filter(is_active=True),
             "method_form": PayoutMethodForm(),
             "max_methods": settings.EVDP["MAX_PAYOUT_METHODS"],
+            # Grand livre du Wallet : le solde est calcule, jamais stocke.
+            "wallet_entries": request.user.wallet_entries.select_related("bounty__case")[:50],
+            "wallet_balance": wallet_balance(request.user),
         },
     )
 

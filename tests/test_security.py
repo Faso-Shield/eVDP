@@ -71,7 +71,12 @@ def test_stored_xss_in_report_is_neutralised(client_for, case_alpha, researcher_
 def test_stored_xss_in_message_is_neutralised(
     client_for, case_alpha, coordinator, researcher_a
 ):
-    post_message(case_alpha, coordinator, "<script>alert(1)</script>Message legitime")
+    post_message(
+        case_alpha,
+        coordinator,
+        "<script>alert(1)</script>Message legitime",
+        confidentiality=Confidentiality.RESEARCHER,
+    )
     client = client_for(researcher_a)
     content = client.get(f"/cases/{case_alpha.case_id}/").content.decode()
     assert "<script>alert(1)</script>" not in content
@@ -85,7 +90,7 @@ def test_post_without_csrf_token_is_rejected(client_for, researcher_a, case_alph
     client.force_login(researcher_a)
     response = client.post(
         reverse("coordination:post_message", args=[case_alpha.case_id]),
-        {"body": "Message sans jeton", "confidentiality": "PARTICIPANTS"},
+        {"body": "Message sans jeton", "confidentiality": "RESEARCHER"},
     )
     assert response.status_code == 403
     assert case_alpha.messages.count() == 0
@@ -118,31 +123,33 @@ def test_nonexistent_case_returns_same_404(client_for, researcher_a):
 
 
 # --------------------------------------------------- confidentialite messages
-def test_internal_message_hidden_from_reporter(case_alpha, coordinator, researcher_a):
+def test_internal_message_hidden_from_reporter(case_alpha, analyst, researcher_a):
     post_message(
-        case_alpha, coordinator, "Analyse interne", confidentiality=Confidentiality.INTERNAL
+        case_alpha, analyst, "Analyse interne", confidentiality=Confidentiality.INTERNAL
     )
     bodies = [m.body for m in visible_messages(case_alpha, researcher_a)]
     assert "Analyse interne" not in bodies
 
 
-def test_internal_message_hidden_from_organization(case_alpha, coordinator, dsi_alpha):
+def test_internal_message_hidden_from_organization(case_alpha, analyst, dsi_alpha):
+    from apps.coordination.workflow import CaseStatus
+
+    from .conftest import advance
+
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     post_message(
-        case_alpha, coordinator, "Analyse interne", confidentiality=Confidentiality.INTERNAL
+        case_alpha, analyst, "Analyse interne", confidentiality=Confidentiality.INTERNAL
     )
     bodies = [m.body for m in visible_messages(case_alpha, dsi_alpha)]
     assert "Analyse interne" not in bodies
 
 
-def test_restricted_message_hidden_from_analyst(case_alpha, coordinator, analyst):
-    post_message(
-        case_alpha,
-        coordinator,
-        "Note coordination nationale",
-        confidentiality=Confidentiality.RESTRICTED,
-    )
-    bodies = [m.body for m in visible_messages(case_alpha, analyst)]
-    assert "Note coordination nationale" not in bodies
+def test_coordinator_cannot_write_internal_notes(case_alpha, coordinator):
+    """Notes de triage et d'analyse : le coordinateur les lit sans les ecrire."""
+    from django.core.exceptions import PermissionDenied
+
+    with pytest.raises(PermissionDenied):
+        post_message(case_alpha, coordinator, "Note", confidentiality=Confidentiality.INTERNAL)
 
 
 def test_researcher_cannot_post_internal_message(case_alpha, researcher_a):
@@ -155,7 +162,9 @@ def test_researcher_cannot_post_internal_message(case_alpha, researcher_a):
 
 
 def test_message_integrity_hash(case_alpha, coordinator):
-    message = post_message(case_alpha, coordinator, "Contenu original")
+    message = post_message(
+        case_alpha, coordinator, "Contenu original", confidentiality=Confidentiality.RESEARCHER
+    )
     assert message.integrity_ok() is True
     message.body = "Contenu altere"
     assert message.integrity_ok() is False
@@ -181,9 +190,7 @@ def test_malformed_public_key_is_refused():
 
 def test_valid_public_key_shape_is_accepted():
     blob = (
-        "-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
-        "mQINBGX...\n"
-        "-----END PGP PUBLIC KEY BLOCK-----"
+        "-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQINBGX...\n-----END PGP PUBLIC KEY BLOCK-----"
     )
     assert validate_public_key(blob) == blob
 

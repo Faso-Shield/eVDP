@@ -22,6 +22,7 @@ click-repl==0.3.0
 colorama==0.4.6
 coverage==7.16.0
 cron-descriptor==1.4.5
+cvss==3.4
 cyclonedx-python-lib==11.12.0
 defusedxml==0.7.1
 Django==5.2.17

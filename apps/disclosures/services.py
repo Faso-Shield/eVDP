@@ -111,7 +111,10 @@ def update_advisory(advisory, actor, request=None):
     Un advisory publie reste modifiable (correction editoriale), mais chaque
     modification laisse une trace nominative.
     """
-    if not actor.has_capability(Capability.DRAFT_ADVISORY):
+    if not (
+        actor.has_capability(Capability.DRAFT_ADVISORY)
+        or actor.has_capability(Capability.PUBLISH_ADVISORY)
+    ):
         raise PermissionDenied("Capacite requise pour modifier un advisory.")
 
     advisory.save()
@@ -146,10 +149,21 @@ def transition_advisory(advisory, target_status, actor, request=None):
 
 
 @transaction.atomic
-def publish_advisory(advisory, actor, request=None, published_at=None):
-    """Publie l'advisory. Action irreversible hors retrait explicite."""
+def publish_advisory(advisory, actor, request=None, published_at=None, from_workflow=False):
+    """Publie l'advisory. Action irreversible hors retrait explicite.
+
+    Un advisory issu d'un dossier se publie par l'etape 10 du workflow
+    (« Publier et clôturer »), qui porte la relecture, le controle du credit,
+    la fin de la branche prime et la regle des quatre yeux : il ne peut pas
+    etre publie a cote.
+    """
     if not actor.has_capability(Capability.PUBLISH_ADVISORY):
         raise PermissionDenied("Capacité requise pour publier un advisory.")
+    if advisory.case_id and not from_workflow and advisory.case.status != "CLOSED":
+        raise ValidationError(
+            "Cet advisory est lié à un dossier : il se publie par « Publier et "
+            "clôturer » sur le dossier (étape 10 du workflow)."
+        )
     if not advisory.can_transition_to(AdvisoryStatus.PUBLISHED):
         raise ValidationError("Un advisory doit être approuvé ou planifié avant publication.")
     if not advisory.summary.strip():

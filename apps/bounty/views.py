@@ -11,33 +11,27 @@ from django.views.decorators.http import require_POST
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
 from apps.coordination.models import Case
+from apps.coordination.services import perform_action
+from apps.coordination.workflow import TransitionNotAllowed
 
 from .forms import BountyDecisionForm, BountyProposalForm, BountyReviewForm, PaymentForm
-from .models import Bounty
 from .services import (
-    approve_bounty,
     budget_status,
-    propose_bounty,
     record_payment,
     reject_bounty,
     review_bounty,
     suggested_amount,
+    visible_bounties,
 )
 
 
 def _visible_bounties(user):
     """Isolation : chaque profil ne voit que les recompenses de son perimetre."""
-    queryset = Bounty.objects.select_related("case", "program", "researcher")
-    if user.is_national:
-        return queryset
-    case_ids = Case.objects.visible_to(user).values_list("id", flat=True)
-    return queryset.filter(case_id__in=case_ids)
+    return visible_bounties(user)
 
 
 def _get_bounty(request, bounty_id):
-    bounty = get_object_or_404(
-        Bounty.objects.select_related("case", "program", "researcher"), pk=bounty_id
-    )
+    bounty = get_object_or_404(_visible_bounties(request.user), pk=bounty_id)
     if not bounty.case.is_visible_to(request.user):
         raise Http404("Recompense introuvable.")
     return bounty
@@ -138,13 +132,19 @@ def propose(request, case_id):
         form = BountyProposalForm(request.POST)
         if form.is_valid():
             try:
-                bounty = propose_bounty(
+                perform_action(
                     case,
+                    "propose_bounty",
                     request.user,
-                    amount=form.cleaned_data["amount"],
-                    justification=form.cleaned_data.get("justification", ""),
+                    data={
+                        "amount": form.cleaned_data["amount"],
+                        "justification": form.cleaned_data.get("justification", ""),
+                    },
                     request=request,
                 )
+                bounty = case.bounty
+            except TransitionNotAllowed as exc:
+                messages.error(request, str(exc))
             except (PermissionDenied, ValidationError) as exc:
                 messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
             else:
@@ -163,7 +163,7 @@ def propose(request, case_id):
 @require_POST
 @login_required
 @require_not_read_only
-@require_capability(Capability.PROPOSE_BOUNTY)
+@require_capability(Capability.PROPOSE_BOUNTY, Capability.APPROVE_BOUNTY)
 def review(request, bounty_id):
     bounty = _get_bounty(request, bounty_id)
     form = BountyReviewForm(request.POST)
@@ -194,14 +194,19 @@ def approve(request, bounty_id):
     form = BountyDecisionForm(request.POST)
     if form.is_valid():
         try:
-            approve_bounty(
-                bounty,
+            perform_action(
+                bounty.case,
+                "approve_bounty",
                 request.user,
-                amount=form.cleaned_data.get("amount"),
-                note=form.cleaned_data.get("note", ""),
+                data={
+                    "amount": form.cleaned_data.get("amount"),
+                    "comment": form.cleaned_data.get("note", ""),
+                },
                 request=request,
             )
-            messages.success(request, "Récompense approuvée.")
+            messages.success(request, "Récompense approuvée et Wallet crédité.")
+        except TransitionNotAllowed as exc:
+            messages.error(request, str(exc))
         except (PermissionDenied, ValidationError) as exc:
             messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:

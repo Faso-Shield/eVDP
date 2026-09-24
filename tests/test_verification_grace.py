@@ -15,9 +15,8 @@ from apps.accounts.models import TokenPurpose, UserToken
 from apps.accounts.tasks import remind_unverified_accounts
 from apps.accounts.verification import grace_deadline, is_within_grace
 from apps.notifications.models import Notification
-from apps.reports.services import submit_report
 
-from .conftest import build_report
+from .conftest import build_report, submit
 
 pytestmark = pytest.mark.django_db
 
@@ -90,7 +89,7 @@ def test_unverified_account_still_admitted_during_grace(
     _cree_le(bounty_researcher, timezone.make_aware(timezone.datetime(2025, 6, 1)))
     monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=10))
 
-    case = submit_report(
+    case = submit(
         build_report(bounty_researcher, organization, bounty_program),
         reporter=bounty_researcher,
     )
@@ -106,7 +105,7 @@ def test_refused_once_the_grace_has_expired(
     monkeypatch.setattr(timezone, "localdate", lambda: BASCULE + timedelta(days=31))
 
     with pytest.raises(ValidationError, match="adresse email vérifiée"):
-        submit_report(
+        submit(
             build_report(bounty_researcher, organization, bounty_program),
             reporter=bounty_researcher,
         )

@@ -76,10 +76,12 @@ La distinction métier reste stricte : le workflow appliqué est déterminé par
 
 ### DA-3 — Machine à états déclarative
 
-`apps/coordination/workflow.py` déclare deux tables de transitions
-(`VDP_TRANSITIONS`, `BOUNTY_TRANSITIONS`) et une table de capacités requises
-(`TRANSITION_CAPABILITIES`). `check_transition()` est le seul point de
-décision.
+`apps/coordination/workflow.py` déclare la table des actions du workflow v2
+(`ACTIONS` : un bouton, une capacité, ses pré-requis et sa règle des quatre
+yeux), dont dérivent `VDP_TRANSITIONS` (statut du dossier) et
+`BOUNTY_TRANSITIONS` (statut de prime, champ distinct). `check_transition()`
+est le seul point de décision ; `apps/coordination/visibility.py` porte la
+matrice de visibilité des données. Voir `docs/cvd-workflow.md`.
 
 *Pourquoi :* une machine à états déclarative est testable exhaustivement et
 lisible par un auditeur non développeur. Aucune transition n'est possible sans
@@ -308,9 +310,10 @@ et `RewardTier` n'ont pas d'autre chemin d'écriture que leur `ModelForm`.
 ### Transition de statut
 
 ```
-coordination.services.transition_case()
+coordination.services.perform_action()   (transition_case() : compatibilité)
    ├── check_transition()  ← hors transaction, refus audité durablement
-   └── _apply_transition() ← atomique
+   │     transition existante, capacité, périmètre (404), pré-requis, quatre yeux
+   └── _apply_action()     ← atomique
         ├── met à jour statut et horodatages
         ├── écrit CaseStatusHistory + CaseTimelineEvent
         ├── ouvre/solde les échéances SLA

@@ -1,5 +1,6 @@
 """Fixtures partagees de la suite de tests eVDP."""
 
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -10,6 +11,7 @@ from apps.accounts.middleware import SESSION_KEY as MFA_SESSION_KEY
 from apps.accounts.models import User
 from apps.accounts.roles import Role
 from apps.coordination.models import SLAPolicy
+from apps.coordination.workflow import CaseStatus
 from apps.organizations.models import (
     MembershipRole,
     Organization,
@@ -226,6 +228,19 @@ def bounty_program(db, organization, sla_policy):
 
 
 # ----------------------------------------------------------------------- cases
+def evidence(name="preuve.txt", content=b"Trace de reproduction de la vulnerabilite.\n"):
+    """Piece jointe minimale : exigee a toute soumission web ou API (workflow v2)."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    return SimpleUploadedFile(name, content, content_type="text/plain")
+
+
+def submit(report, **kwargs):
+    """`submit_report` avec une preuve jointe, comme un declarant reel."""
+    kwargs.setdefault("attachments", [evidence()])
+    return submit_report(report, **kwargs)
+
+
 def build_report(reporter, organization=None, program=None, **overrides):
     data = {
         "title": "Vulnerabilite de test",
@@ -245,22 +260,21 @@ def build_report(reporter, organization=None, program=None, **overrides):
 
 @pytest.fixture
 def case_alpha(db, researcher_a, organization, vdp_program, sla_policy):
-    return submit_report(
-        build_report(researcher_a, organization, vdp_program), reporter=researcher_a
-    )
+    return submit(build_report(researcher_a, organization, vdp_program), reporter=researcher_a)
 
 
 @pytest.fixture
 def case_beta(db, researcher_b, other_organization, sla_policy):
-    return submit_report(
+    return submit(
         build_report(researcher_b, other_organization, title="Autre vulnerabilite"),
         reporter=researcher_b,
     )
 
 
 @pytest.fixture
-def bounty_case(db, bounty_researcher, organization, bounty_program, sla_policy):
-    return submit_report(
+def submitted_bounty_case(db, bounty_researcher, organization, bounty_program, sla_policy):
+    """Dossier Bug Bounty tout juste soumis (etape 0)."""
+    return submit(
         build_report(
             bounty_researcher,
             organization,
@@ -269,6 +283,150 @@ def bounty_case(db, bounty_researcher, organization, bounty_program, sla_policy)
         ),
         reporter=bounty_researcher,
     )
+
+
+@pytest.fixture
+def bounty_case(submitted_bounty_case):
+    """Dossier Bug Bounty valide : la branche prime est ouverte (BOUNTY_ELIGIBLE)."""
+    return advance(submitted_bounty_case, CaseStatus.VALIDATED)
+
+
+# ------------------------------------------------------------ workflow v2
+def workflow_actor(key, organization=None):
+    """Acteur dedie aux helpers de workflow, distinct des fixtures de test.
+
+    Les tests gardent ainsi leurs propres utilisateurs pour les controles
+    qu'ils visent (quatre yeux, perimetre), sans collision avec ceux-ci.
+    """
+    roles = {
+        "triager": Role.TRIAGER,
+        "analyst": Role.CSIRT_ANALYST,
+        "coordinator": Role.NATIONAL_COORDINATOR,
+        "dsi": Role.DSI_ADMIN,
+    }
+    suffix = f"-{organization.pk.hex[:8]}" if organization is not None else ""
+    email = f"wf-{key}{suffix}@test.bf"
+    user = User.objects.filter(email=email).first()
+    if user is None:
+        user = make_user(email, roles[key])
+        if organization is not None:
+            OrganizationMember.objects.create(
+                organization=organization, user=user, membership_role=MembershipRole.DSI
+            )
+    return user
+
+
+#: Etape -> (action, role de l'acteur, donnees du formulaire).
+_WORKFLOW_STEPS = {
+    CaseStatus.SUBMITTED: (
+        "acknowledge",
+        "triager",
+        {},
+    ),
+    CaseStatus.ACKNOWLEDGED: (
+        "declare_admissible",
+        "triager",
+        {"in_scope": True, "organization_identified": True, "attachment_readable": True},
+    ),
+    CaseStatus.IN_ANALYSIS: ("submit_qualification", "analyst", {}),
+    CaseStatus.VALIDATION_PENDING: (
+        "validate_qualification",
+        "coordinator",
+        {"comment": "Qualification validee."},
+    ),
+    CaseStatus.VALIDATED: ("notify_vendor", "analyst", {}),
+    CaseStatus.VENDOR_NOTIFIED: ("submit_remediation_plan", "dsi", None),
+    CaseStatus.REMEDIATION_IN_PROGRESS: (
+        "declare_fix",
+        "dsi",
+        {"fix_description": "Requetes parametrees.", "fix_version": "2.0.1"},
+    ),
+    CaseStatus.FIX_AVAILABLE: (
+        "confirm_fix",
+        "analyst",
+        {"verification_report": "Injection non reproductible."},
+    ),
+    CaseStatus.FIX_VERIFIED: ("submit_advisory", "analyst", {}),
+    CaseStatus.ADVISORY_REVIEW: (
+        "publish_and_close",
+        "coordinator",
+        {"comment": "Relu.", "review_done": True},
+    ),
+}
+
+
+def _prepare_step(case, status):
+    """Remplit ce qu'une etape exige avant son bouton (hors formulaire)."""
+    from apps.audit.models import AuditAction
+    from apps.audit.services import log_action
+    from apps.coordination.services import set_severity
+
+    if status == CaseStatus.SUBMITTED:
+        log_action(AuditAction.CASE_VIEWED, actor=workflow_actor("triager"), obj=case)
+    if status == CaseStatus.IN_ANALYSIS:
+        if not case.cvss_vector:
+            set_severity(
+                case,
+                workflow_actor("analyst"),
+                cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            )
+        if case.cwe_id is None:
+            case.cwe, _ = CWE.objects.get_or_create(
+                code="CWE-89", defaults={"name": "SQL Injection"}
+            )
+            case.save(update_fields=["cwe", "updated_at"])
+    if status == CaseStatus.FIX_VERIFIED:
+        from apps.coordination.workflow import working_advisory
+        from apps.disclosures.services import create_advisory_from_case
+
+        if working_advisory(case) is None:
+            create_advisory_from_case(
+                case,
+                workflow_actor("analyst"),
+                summary="Une vulnerabilite corrigee affectait le portail de test.",
+            )
+    if status == CaseStatus.ADVISORY_REVIEW:
+        _close_bounty_branch(case)
+
+
+def _close_bounty_branch(case):
+    """La cloture exige une branche prime terminee : proposer puis crediter."""
+    from apps.coordination.services import perform_action
+    from apps.coordination.workflow import BountyStage
+
+    case.refresh_from_db()
+    if case.bounty_stage == BountyStage.ELIGIBLE:
+        perform_action(case, "propose_bounty", workflow_actor("analyst"))
+    if case.bounty_stage == BountyStage.PROPOSED:
+        perform_action(
+            case, "approve_bounty", workflow_actor("coordinator"), data={"comment": "Ok."}
+        )
+
+
+def advance(case, target):
+    """Fait avancer `case` par les boutons du workflow v2 jusqu'a `target`.
+
+    Chaque etape est cliquee par un acteur legitime, avec ses pre-requis :
+    les controles du moteur (capacite, pre-requis, quatre yeux) s'appliquent
+    comme en production.
+    """
+    from apps.coordination.services import perform_action
+    from apps.coordination.workflow import MAIN_PATH
+
+    case.refresh_from_db()
+    while MAIN_PATH.index(case.status) < MAIN_PATH.index(target):
+        status = case.status
+        action, role, data = _WORKFLOW_STEPS[status]
+        _prepare_step(case, status)
+        if data is None:
+            data = {
+                "remediation_plan": "Corriger la requete et deployer.",
+                "remediation_target_date": timezone.localdate() + timedelta(days=20),
+            }
+        organization = case.organization if role == "dsi" else None
+        perform_action(case, action, workflow_actor(role, organization), data=dict(data))
+        case.refresh_from_db()
+    return case
 
 
 # ---------------------------------------------------------------------- client

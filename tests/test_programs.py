@@ -154,13 +154,14 @@ def test_sort_by_reward_puts_vdp_programs_last(client, organization):
 
 
 def test_sort_by_reports_orders_by_case_count(client, organization, researcher_a):
-    from apps.reports.services import submit_report
     from tests.conftest import build_report
+
+    from .conftest import submit
 
     make_program(organization, "Programme calme")
     busy = make_program(organization, "Programme actif")
-    submit_report(build_report(researcher_a, organization, busy), reporter=researcher_a)
-    submit_report(build_report(researcher_a, organization, busy), reporter=researcher_a)
+    submit(build_report(researcher_a, organization, busy), reporter=researcher_a)
+    submit(build_report(researcher_a, organization, busy), reporter=researcher_a)
 
     response = client.get(reverse("programs:list"), {"sort": "reports"})
     content = response.content.decode()
@@ -453,28 +454,26 @@ def test_unfilled_default_tiers_are_not_shown_as_a_public_reward(
 
 
 # ----------------------------------------------- statistiques et hall of fame
-def test_program_detail_shows_trust_stats(client, bounty_case, coordinator):
-    from apps.coordination.services import transition_case
-    from apps.coordination.workflow import CaseStatus
-
-    transition_case(bounty_case, CaseStatus.RECEIVED, actor=coordinator)
+def test_program_detail_shows_trust_stats(client, bounty_case):
+    """`bounty_case` a franchi l'accuse de reception (workflow v2)."""
+    assert bounty_case.acknowledged_at is not None
 
     response = client.get(reverse("programs:detail", args=[bounty_case.program.slug]))
     assert response.status_code == 200
     assert response.context["stats"]["total_reports"] == 1
 
 
-def test_program_detail_hall_of_fame_lists_credited_researchers_only(
-    client, bounty_case, coordinator
-):
+def test_program_detail_hall_of_fame_lists_credited_researchers_only(client, bounty_case):
     """Seuls les chercheurs ayant choisi d'etre credites publiquement (et
-    jamais "Chercheur anonyme") apparaissent sur la fiche du programme."""
-    from apps.disclosures.services import create_advisory_from_case, publish_advisory
+    jamais "Chercheur anonyme") apparaissent sur la fiche du programme.
 
-    advisory = create_advisory_from_case(bounty_case, coordinator, summary="Resume public.")
-    advisory.status = "APPROVED"
-    advisory.save(update_fields=["status"])
-    publish_advisory(advisory, coordinator)
+    L'advisory est publie par le chemin du workflow v2 (etapes 9 et 10).
+    """
+    from apps.coordination.workflow import CaseStatus
+
+    from .conftest import advance
+
+    advance(bounty_case, CaseStatus.CLOSED)
 
     response = client.get(reverse("programs:detail", args=[bounty_case.program.slug]))
     assert "bb-hunter" in response.context["hall_of_fame"]

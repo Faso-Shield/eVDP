@@ -56,8 +56,9 @@ def advisory_detail(request, advisory_id):
         Advisory.objects.select_related("organization", "cve", "cwe"),
         advisory_id=advisory_id.upper(),
     )
-    can_preview = request.user.is_authenticated and request.user.has_capability(
-        Capability.DRAFT_ADVISORY
+    can_preview = request.user.is_authenticated and (
+        request.user.has_capability(Capability.DRAFT_ADVISORY)
+        or request.user.has_capability(Capability.PUBLISH_ADVISORY)
     )
     if not advisory.is_published and not can_preview:
         raise Http404("Advisory introuvable.")
@@ -74,7 +75,7 @@ def advisory_detail(request, advisory_id):
 
 
 @login_required
-@require_capability(Capability.DRAFT_ADVISORY)
+@require_capability(Capability.DRAFT_ADVISORY, Capability.PUBLISH_ADVISORY)
 def advisory_manage_list(request):
     queryset = Advisory.objects.select_related("organization", "case").order_by("-created_at")
     page = Paginator(queryset, 25).get_page(request.GET.get("page"))
@@ -159,8 +160,13 @@ def _appliquer_action(request, advisory):
 
 @login_required
 @require_not_read_only
-@require_capability(Capability.DRAFT_ADVISORY)
+@require_capability(Capability.DRAFT_ADVISORY, Capability.PUBLISH_ADVISORY)
 def advisory_manage(request, advisory_id):
+    """Redaction (analyste) et relecture / publication (coordinateur).
+
+    Matrice v2 : le brouillon d'advisory est en acces complet pour
+    l'analyste et le coordinateur.
+    """
     advisory = get_object_or_404(Advisory, advisory_id=advisory_id.upper())
 
     if request.method == "POST":

@@ -46,8 +46,11 @@
 
 <div class="grid grid-2">
   <div class="card">
-    <div class="card-header"><h2>Mes récompenses</h2></div>
+    <div class="card-header"><h2>Mes récompenses</h2><a class="btn btn-sm btn-outline" href="{% url 'wallet:home' %}">Wallet</a></div>
     <div class="card-body">
+      {% for currency, total in wallet_balance.items %}
+        <div class="flex-between mb-1"><span>Solde du Wallet</span><strong>{{ total|money }} {{ currency }}</strong></div>
+      {% endfor %}
       {% for bounty in bounties %}
         <div class="flex-between" style="padding:.4rem 0;border-bottom:1px solid var(--border)">
           <a href="{% url 'bounty:detail' bounty.id %}" class="mono small">{{ bounty.case.case_id }}</a>

@@ -241,3 +241,75 @@ class BountyPayment(BaseModel):
         self.status = PaymentStatus.SETTLED
         self.settled_at = timezone.now()
         self.save(update_fields=["status", "settled_at", "updated_at"])
+
+
+class WalletEntryKind(models.TextChoices):
+    CREDIT = "CREDIT", "Crédit (prime approuvée)"
+    ADJUSTMENT = "ADJUSTMENT", "Ajustement"
+    PAYOUT = "PAYOUT", "Versement hors plateforme"
+
+
+class WalletEntryQuerySet(models.QuerySet):
+    def update(self, **kwargs):  # pragma: no cover - garde-fou
+        raise NotImplementedError("Le grand livre du Wallet est append-only.")
+
+    def delete(self):  # pragma: no cover - garde-fou
+        raise NotImplementedError("Le grand livre du Wallet est append-only.")
+
+
+class WalletEntry(BaseModel):
+    """Ecriture du grand livre du Wallet d'un chercheur.
+
+    Le solde n'est jamais stocke ni modifiable : il se calcule en sommant les
+    ecritures (voir bounty.services.wallet_balance). Une erreur se corrige par
+    une ecriture d'ajustement, jamais en modifiant une ecriture existante.
+    Aucun flux financier reel n'est declenche : le versement effectif reste
+    hors plateforme (MVP).
+    """
+
+    researcher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="wallet_entries",
+    )
+    bounty = models.ForeignKey(
+        Bounty,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="wallet_entries",
+    )
+    kind = models.CharField(max_length=16, choices=WalletEntryKind.choices)
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Montant signé : positif au crédit, négatif au débit.",
+    )
+    currency = models.CharField(max_length=8, default="XOF")
+    label = models.CharField(max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="wallet_entries_recorded",
+    )
+
+    objects = WalletEntryQuerySet.as_manager()
+
+    class Meta:
+        db_table = "wallet_entries"
+        ordering = ["-created_at"]
+        verbose_name = "Écriture de Wallet"
+        verbose_name_plural = "Grand livre du Wallet"
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {self.amount} {self.currency}"
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Une écriture de Wallet ne se modifie pas.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Une écriture de Wallet ne se supprime pas.")

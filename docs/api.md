@@ -61,7 +61,26 @@ les rôles nationaux voient l'ensemble.
 
 ```http
 POST /api/v1/reports/
+Content-Type: multipart/form-data
 ```
+
+La soumission est **multipart** : les champs ci-dessous plus **au moins une
+pièce jointe** dans le champ `attachments` (répétable, 5 fichiers au maximum).
+Sans pièce jointe, ou si l'une d'elles est refusée (extension, signature,
+taille), la réponse est **400** et aucun rapport n'est créé : rapport, dossier
+et pièces jointes sont enregistrés dans une seule transaction (workflow v2,
+étape 0). Exemple :
+
+```bash
+curl -H "X-EVDP-API-Key: evdp_…" \
+     -F title="Injection SQL sur le portail e-Etat civil" \
+     -F description="Le paramètre numero n'est pas filtré…" \
+     -F vulnerability_type=SQLI -F accepted_policy=true \
+     -F attachments=@capture.png -F attachments=@trace.txt \
+     https://evdp.bf/api/v1/reports/
+```
+
+Champs acceptés :
 
 ```json
 {
@@ -82,14 +101,14 @@ POST /api/v1/reports/
 }
 ```
 
-**201** — retourne le dossier créé :
+**201** — retourne le dossier créé, vu par le déclarant (statut simplifié à
+5 paliers, ni sévérité ni CVSS internes) :
 
 ```json
 {
   "case_id": "EVDP-2026-000001",
-  "status": "SUBMITTED",
-  "severity": "CRITICAL",
-  "cvss_score": "9.8",
+  "status": "RECEIVED",
+  "status_label": "Reçu",
   "created_at": "2026-09-05T21:43:55Z"
 }
 ```
@@ -113,26 +132,60 @@ GET /api/v1/reports/EVDP-2026-000001/
 
 ```http
 PATCH /api/v1/reports/EVDP-2026-000001/
-{"severity": "HIGH", "cvss_vector": "CVSS:3.1/...", "cwe": "CWE-89"}
+{"severity": "HIGH", "cvss_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", "cwe": "CWE-89"}
 ```
 
-Capacité requise : `SET_SEVERITY`.
+Capacité requise : `SET_SEVERITY` (analyste CSIRT uniquement). Vecteurs CVSS
+v3.1 et v4.0 acceptés. La qualification n'est modifiable qu'avant sa
+soumission à validation (`SUBMITTED`, `ACKNOWLEDGED`, `IN_ANALYSIS`,
+`NEEDS_INFORMATION`).
 
-### Changer de statut
+### Actions du workflow v2
+
+```http
+POST /api/v1/reports/EVDP-2026-000001/actions/
+{"action": "validate_qualification", "comment": "Vecteur relu, CWE confirmé"}
+```
+
+Un bouton, un rôle : `action` est la clé d'une action du workflow
+(`acknowledge`, `declare_admissible`, `submit_qualification`,
+`validate_qualification`, `notify_vendor`, `submit_remediation_plan`,
+`declare_fix`, `confirm_fix`, `submit_advisory`, `publish_and_close`,
+`propose_bounty`, `approve_bounty`, et les actions d'exception
+`request_information`, `send_information`, `propose_rejection`,
+`propose_duplicate`, `confirm_rejection`, `return_rejection`,
+`return_to_author`, `return_bounty`, `insufficient_fix`, `escalate`,
+`decide_deadline_disclosure`). Les champs propres à l'étape se passent au même
+niveau (`in_scope`, `remediation_plan`, `remediation_target_date`,
+`fix_version`, `verification_report`, `review_done`, `amount`,
+`justification`, `original_case_id`…). Voir `docs/cvd-workflow.md`.
+
+**400** si l'action est refusée, avec la liste de ce qui manque :
+
+```json
+{"detail": "Pré-requis manquants : Vecteur CVSS manquant", "missing": ["Vecteur CVSS manquant"]}
+```
+
+**404** si le dossier est hors du périmètre de l'appelant. Le détail d'un
+dossier expose `next_action` (bouton attendu, propriétaire, pré-requis
+manquants) aux équipes du CSIRT.
+
+### Changer de statut (compatibilité)
 
 ```http
 POST /api/v1/reports/EVDP-2026-000001/transition/
-{"target_status": "VALIDATED", "comment": "Reproduite en préproduction"}
+{"target_status": "ACKNOWLEDGED", "comment": "Dossier ouvert"}
 ```
 
-**400** si la transition est interdite par la machine à états.
+Applique l'action unique qui mène au statut demandé, avec exactement les mêmes
+contrôles que `/actions/`.
 
 ### Messagerie
 
 ```http
 GET  /api/v1/reports/EVDP-2026-000001/messages/
 POST /api/v1/reports/EVDP-2026-000001/messages/
-{"body": "Pouvez-vous préciser la version ?", "confidentiality": "PARTICIPANTS"}
+{"body": "Pouvez-vous préciser la version ?", "confidentiality": "RESEARCHER"}
 ```
 
 Niveaux : `PARTICIPANTS`, `INTERNAL` (rôles nationaux),

@@ -3,8 +3,12 @@
 import pytest
 from django.urls import reverse
 
+from apps.accounts.models import User
 from apps.accounts.roles import Capability, Role
 from apps.coordination.models import Case
+from apps.coordination.workflow import CaseStatus
+
+from .conftest import advance
 
 pytestmark = pytest.mark.django_db
 
@@ -41,7 +45,11 @@ def test_organization_cannot_access_other_organization_case(client_for, dsi_beta
 
 
 def test_organization_accesses_own_case(client_for, dsi_alpha, case_alpha):
+    """Visible par l'organisation a partir de l'etape 5 seulement."""
     client = client_for(dsi_alpha)
+    url = reverse("coordination:case_detail", args=[case_alpha.case_id])
+    assert client.get(url).status_code == 404
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     response = client.get(reverse("coordination:case_detail", args=[case_alpha.case_id]))
     assert response.status_code == 200
 
@@ -85,14 +93,15 @@ def test_triager_cannot_manage_organizations(triager):
 def test_auditor_is_read_only(auditor):
     assert auditor.is_read_only is True
     assert auditor.has_capability(Capability.VIEW_ALL_CASES)
-    assert not auditor.has_capability(Capability.CHANGE_CASE_STATUS)
+    assert not auditor.has_capability(Capability.SET_SEVERITY)
+    assert not auditor.has_capability(Capability.ARBITRATE_CASE)
 
 
 def test_auditor_cannot_post_message(client_for, auditor, case_alpha):
     client = client_for(auditor)
     response = client.post(
         reverse("coordination:post_message", args=[case_alpha.case_id]),
-        {"body": "Tentative", "confidentiality": "PARTICIPANTS"},
+        {"body": "Tentative", "confidentiality": "RESEARCHER"},
     )
     assert response.status_code == 403
     assert case_alpha.messages.count() == 0
@@ -110,7 +119,30 @@ def test_auditor_can_read_audit_log(client_for, auditor):
         (Role.SECURITY_RESEARCHER, Capability.SUBMIT_REPORT, True),
         (Role.SECURITY_RESEARCHER, Capability.VIEW_ALL_CASES, False),
         (Role.SECURITY_RESEARCHER, Capability.TRIAGE_CASE, False),
-        (Role.CSIRT_ANALYST, Capability.TRIAGE_CASE, True),
+        (Role.CSIRT_ANALYST, Capability.TRIAGE_CASE, False),
+        (Role.CSIRT_ANALYST, Capability.SET_SEVERITY, True),
+        (Role.CSIRT_ANALYST, Capability.COORDINATE_VENDOR, True),
+        (Role.CSIRT_ANALYST, Capability.DRAFT_ADVISORY, True),
+        (Role.CSIRT_ANALYST, Capability.PROPOSE_BOUNTY, True),
+        (Role.CSIRT_ANALYST, Capability.VALIDATE_SEVERITY, False),
+        (Role.TRIAGER, Capability.TRIAGE_CASE, True),
+        (Role.TRIAGER, Capability.REQUEST_INFORMATION, True),
+        (Role.TRIAGER, Capability.PROPOSE_REJECTION, True),
+        (Role.TRIAGER, Capability.SET_SEVERITY, False),
+        (Role.NATIONAL_COORDINATOR, Capability.VALIDATE_SEVERITY, True),
+        (Role.NATIONAL_COORDINATOR, Capability.ARBITRATE_CASE, True),
+        (Role.NATIONAL_COORDINATOR, Capability.APPROVE_BOUNTY, True),
+        (Role.NATIONAL_COORDINATOR, Capability.SET_SEVERITY, False),
+        (Role.NATIONAL_COORDINATOR, Capability.DRAFT_ADVISORY, False),
+        (Role.NATIONAL_COORDINATOR, Capability.PROPOSE_BOUNTY, False),
+        (Role.DSI_ADMIN, Capability.MANAGE_REMEDIATION, True),
+        (Role.DSI_ADMIN, Capability.PROPOSE_BOUNTY, False),
+        (Role.ORGANIZATION_MANAGER, Capability.MANAGE_REMEDIATION, True),
+        (Role.ORGANIZATION_MANAGER, Capability.PROPOSE_BOUNTY, False),
+        (Role.SUPER_ADMIN, Capability.MANAGE_USERS, True),
+        (Role.SUPER_ADMIN, Capability.MANAGE_PROGRAM, True),
+        (Role.SUPER_ADMIN, Capability.VIEW_ALL_CASES, False),
+        (Role.SUPER_ADMIN, Capability.PUBLISH_ADVISORY, False),
         (Role.CSIRT_ANALYST, Capability.MANAGE_USERS, False),
         (Role.NATIONAL_COORDINATOR, Capability.PUBLISH_ADVISORY, True),
         (Role.DSI_ADMIN, Capability.VIEW_ALL_CASES, False),
@@ -169,3 +201,43 @@ def test_the_refusal_is_audited(client_for, researcher_a):
     assert AuditLog.objects.filter(
         action=AuditAction.PERMISSION_DENIED, actor=researcher_a
     ).exists()
+
+
+# ------------------------------------------------------------ workflow v2
+def test_senior_analyst_gains_validation_only(db):
+    from .conftest import make_user
+
+    senior = make_user("senior@matrix.bf", Role.CSIRT_ANALYST, is_senior_analyst=True)
+    assert senior.has_capability(Capability.VALIDATE_SEVERITY)
+    assert not senior.has_capability(Capability.APPROVE_BOUNTY)
+
+
+def test_senior_flag_ignored_for_other_roles(db):
+    from .conftest import make_user
+
+    user = make_user("triage-senior@matrix.bf", Role.TRIAGER, is_senior_analyst=True)
+    assert not user.has_capability(Capability.VALIDATE_SEVERITY)
+
+
+def test_superuser_has_only_administration_capabilities(db, case_alpha):
+    superuser = User.objects.create_superuser(email="root@matrix.bf", password="Xx-123456789!")
+    assert superuser.has_capability(Capability.MANAGE_USERS)
+    assert not superuser.has_capability(Capability.VIEW_ALL_CASES)
+    assert not superuser.has_capability(Capability.PUBLISH_ADVISORY)
+    assert not Case.objects.visible_to(superuser).exists()
+    assert not case_alpha.is_visible_to(superuser)
+
+
+def test_participant_organization_does_not_see_case_before_step_5(dsi_alpha, case_alpha):
+    """Etre participant ne deroge pas a la regle de l'etape 5."""
+    from apps.coordination.services import add_participant
+
+    add_participant(case_alpha, dsi_alpha)
+    assert not case_alpha.is_visible_to(dsi_alpha)
+    assert not Case.objects.visible_to(dsi_alpha).exists()
+
+
+def test_organization_sees_case_from_step_5(dsi_alpha, case_alpha):
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
+    assert case_alpha.is_visible_to(dsi_alpha)
+    assert set(Case.objects.visible_to(dsi_alpha)) == {case_alpha}

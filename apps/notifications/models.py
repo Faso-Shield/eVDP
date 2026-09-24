@@ -24,6 +24,8 @@ class NotificationKind(models.TextChoices):
     DUPLICATE = "DUPLICATE", "Rapport en doublon"
     SLA_APPROACHING = "SLA_APPROACHING", "Échéance SLA proche"
     SLA_BREACHED = "SLA_BREACHED", "SLA dépassé"
+    ESCALATED = "ESCALATED", "Dossier escaladé"
+    ACTION_REQUIRED = "ACTION_REQUIRED", "Action attendue"
     DISCLOSURE_UPCOMING = "DISCLOSURE_UPCOMING", "Divulgation imminente"
     ADVISORY_PUBLISHED = "ADVISORY_PUBLISHED", "Advisory publié"
     BOUNTY_PROPOSED = "BOUNTY_PROPOSED", "Récompense proposée"

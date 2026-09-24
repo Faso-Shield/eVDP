@@ -515,3 +515,23 @@ table.table tbody tr:hover { background: var(--surface-alt); }
   border-radius: var(--radius); max-width: 100%; height: auto;
 }
 .mfa-fallback summary { cursor: pointer; font-size: .85rem; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------------
+   Workflow v2 : bouton unique, pre-requis, echeances
+   --------------------------------------------------------------------------- */
+.sla-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; vertical-align: middle; }
+.sla-dot.sla-ok { background: #1f8a4c; }
+.sla-dot.sla-warning { background: #d98a00; }
+.sla-dot.sla-breached { background: var(--sev-critical); }
+.sla-text-breached { color: var(--sev-critical); }
+.wf-stepper { display: flex; flex-wrap: wrap; gap: .25rem; list-style: none; padding: 0; margin: 0 0 1rem; }
+.wf-stepper li { font-size: .75rem; padding: .2rem .5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.wf-stepper li.done { background: var(--evdp-accent-light); color: #0a5843; border-color: #bfe3d6; }
+.wf-stepper li.current { background: var(--evdp-accent); color: #fff; border-color: var(--evdp-accent); font-weight: 600; }
+.wf-waiting { padding: .6rem .8rem; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-muted); }
+.wf-missing { margin: .5rem 0 0; padding-left: 1.1rem; color: var(--sev-critical); font-size: .85rem; }
+.wf-dialog { border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem; max-width: 34rem; width: calc(100% - 2rem); }
+.wf-dialog::backdrop { background: rgba(10, 20, 30, .45); }
+.wf-secondary summary { cursor: pointer; font-weight: 600; }
+.wf-secondary details { margin-top: .5rem; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }

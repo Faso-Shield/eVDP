@@ -24,6 +24,7 @@ from .workflow import (
     DISMISSED_STATES,
     ORG_VISIBLE_STATES,
     TERMINAL_STATES,
+    BountyStage,
     CaseStatus,
     kanban_column_for,
 )
@@ -34,16 +35,29 @@ class SLAPolicy(TimeStampedModel):
 
     name = models.CharField(max_length=120, unique=True)
     is_default = models.BooleanField(default=False)
-    acknowledgement_hours = models.PositiveIntegerField(default=72)
-    triage_days = models.PositiveIntegerField(default=5)
-    vendor_response_days = models.PositiveIntegerField(default=7)
+    acknowledgement_hours = models.PositiveIntegerField(
+        default=72, help_text="Étape 1 : accusé de réception."
+    )
+    triage_days = models.PositiveIntegerField(
+        default=5, help_text="Étapes 2 et 3 : recevabilité puis qualification."
+    )
+    validation_days = models.PositiveIntegerField(
+        default=2, help_text="Étape 4 : validation de la qualification."
+    )
+    vendor_response_days = models.PositiveIntegerField(
+        default=5, help_text="Étape 6 : plan de remédiation de l'organisation."
+    )
     remediation_days_critical = models.PositiveIntegerField(default=30)
-    remediation_days_high = models.PositiveIntegerField(default=30)
-    remediation_days_medium = models.PositiveIntegerField(default=60)
+    remediation_days_high = models.PositiveIntegerField(default=60)
+    remediation_days_medium = models.PositiveIntegerField(default=90)
     remediation_days_low = models.PositiveIntegerField(default=90)
+    verification_days = models.PositiveIntegerField(
+        default=5, help_text="Étape 8 : contre-vérification du correctif."
+    )
     disclosure_delay_days = models.PositiveIntegerField(default=90)
     warning_ratio = models.PositiveSmallIntegerField(
-        default=80, help_text="Pourcentage du délai à partir duquel une alerte est levée."
+        default=75,
+        help_text="Pourcentage du délai à partir duquel la carte passe en orange.",
     )
 
     class Meta:
@@ -85,18 +99,24 @@ class CaseQuerySet(models.QuerySet):
         """
         if not user or not user.is_authenticated:
             return self.none()
-        if user.is_national:
+        if user.sees_all_cases:
             return self
-        filters = models.Q(participants__user=user, participants__is_active=True)
-        filters |= models.Q(reporter=user)
+        filters = models.Q(reporter=user)
         if user.is_organization_user:
+            # Une organisation ne voit un dossier qu'a partir de l'etape 5,
+            # une fois le CSIRT l'ayant explicitement notifiee -- jamais
+            # pendant le triage, pour proteger le declarant d'une reaction
+            # prematuree. Etre participant n'y deroge pas.
             org_ids = user.organization_ids()
             if org_ids:
-                # Une organisation ne voit un dossier qui la concerne qu'une
-                # fois le CSIRT l'ayant explicitement engagee (statut
-                # ORG_VISIBLE_STATES) -- jamais pendant le triage, pour
-                # proteger le declarant d'une reaction prematuree.
                 filters |= models.Q(organization_id__in=org_ids, status__in=ORG_VISIBLE_STATES)
+            filters |= models.Q(
+                participants__user=user,
+                participants__is_active=True,
+                status__in=ORG_VISIBLE_STATES,
+            )
+        else:
+            filters |= models.Q(participants__user=user, participants__is_active=True)
         return self.filter(filters).distinct()
 
     def sla_breached(self):
@@ -159,7 +179,7 @@ class Case(BaseModel):
         max_length=16, choices=Severity.choices, default=Severity.MEDIUM, db_index=True
     )
     cvss_score = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
-    cvss_vector = models.CharField(max_length=120, blank=True)
+    cvss_vector = models.CharField(max_length=255, blank=True)
     cwe = models.ForeignKey(
         "vulnerabilities.CWE",
         null=True,
@@ -202,6 +222,37 @@ class Case(BaseModel):
     disclosure_date = models.DateField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     is_published = models.BooleanField(default=False)
+
+    # -- Workflow v2 -----------------------------------------------------------
+    bounty_stage = models.CharField(
+        max_length=24,
+        choices=BountyStage.choices,
+        default=BountyStage.NONE,
+        blank=True,
+        db_index=True,
+        help_text="Statut de prime, distinct du statut du dossier.",
+    )
+    return_status = models.CharField(
+        max_length=24,
+        choices=CaseStatus.choices,
+        blank=True,
+        help_text="Étape d'origine à retrouver après des compléments ou un rejet renvoyé.",
+    )
+    admissibility_checklist = models.JSONField(default=dict, blank=True)
+    vendor_notified_at = models.DateTimeField(null=True, blank=True)
+    remediation_plan = models.TextField(blank=True)
+    remediation_target_date = models.DateField(null=True, blank=True)
+    fix_description = models.TextField(blank=True)
+    fix_version = models.CharField(max_length=120, blank=True)
+    fix_deployed_on = models.DateField(null=True, blank=True)
+    verification_report = models.TextField(blank=True)
+    sla_paused_at = models.DateTimeField(
+        null=True, blank=True, help_text="SLA suspendu pendant une demande de compléments."
+    )
+    escalated_at = models.DateTimeField(null=True, blank=True)
+    deadline_disclosure_at = models.DateTimeField(
+        null=True, blank=True, help_text="Divulgation à échéance décidée par le Coordinateur."
+    )
 
     objects = CaseQuerySet.as_manager()
 
@@ -285,16 +336,16 @@ class Case(BaseModel):
         """Verification unitaire cote objet (complement du queryset)."""
         if not user or not user.is_authenticated:
             return False
-        if user.is_national:
+        if user.sees_all_cases:
             return True
-        if self.is_participant(user):
+        if self.reporter_id == user.id:
             return True
-        if user.is_organization_user and self.organization_id:
-            return (
-                self.organization_id in set(user.organization_ids())
-                and self.status in ORG_VISIBLE_STATES
-            )
-        return False
+        if user.is_organization_user:
+            if self.status not in ORG_VISIBLE_STATES:
+                return False
+            if self.organization_id and self.organization_id in set(user.organization_ids()):
+                return True
+        return self.is_participant(user)
 
 
 class CaseStatusHistory(BaseModel):
@@ -390,7 +441,7 @@ class CaseMessage(BaseModel):
     confidentiality = models.CharField(
         max_length=16,
         choices=Confidentiality.choices,
-        default=Confidentiality.PARTICIPANTS,
+        default=Confidentiality.RESEARCHER,
         db_index=True,
     )
     is_system = models.BooleanField(default=False)
@@ -418,19 +469,12 @@ class CaseMessage(BaseModel):
         return super().save(*args, **kwargs)
 
     def is_visible_to(self, user):
-        """Un message interne n'est jamais visible d'un chercheur ni d'une DSI."""
+        """Visibilite du canal selon la matrice (voir coordination.visibility)."""
+        from .visibility import readable_channels
+
         if not user or not user.is_authenticated:
             return False
-        if self.confidentiality == Confidentiality.RESTRICTED:
-            from apps.accounts.roles import Role
-
-            return user.is_superuser or user.role in (
-                Role.NATIONAL_COORDINATOR,
-                Role.SUPER_ADMIN,
-            )
-        if self.confidentiality == Confidentiality.INTERNAL:
-            return user.is_national
-        return self.case.is_visible_to(user)
+        return self.confidentiality in readable_channels(self.case, user)
 
     def integrity_ok(self):
         return self.content_hash == hash_text(self.body)

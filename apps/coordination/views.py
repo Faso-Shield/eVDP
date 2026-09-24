@@ -6,8 +6,9 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
-from apps.accounts.permissions import require_capability, require_not_read_only
+from apps.accounts.permissions import deny, require_capability, require_not_read_only
 from apps.accounts.roles import Capability
 from apps.attachments.services import store_attachment
 from apps.audit.models import AuditAction
@@ -22,21 +23,35 @@ from .forms import (
     CaseMessageForm,
     CveLinkForm,
     DisclosureScheduleForm,
-    DuplicateForm,
-    StatusTransitionForm,
+    QualificationForm,
     TriageForm,
+    WorkflowActionForm,
 )
 from .models import Case
 from .services import (
+    QUALIFICATION_EDITABLE_STATES,
     assign_case,
-    mark_duplicate,
+    perform_action,
     post_message,
     schedule_disclosure,
     set_severity,
-    transition_case,
     visible_messages,
 )
-from .workflow import TransitionNotAllowed, allowed_targets
+from .visibility import case_view
+from .workflow import (
+    ADMISSIBILITY_CHECKLIST,
+    MAIN_PATH,
+    PUBLIC_STATUS_STEPS,
+    SECONDARY,
+    OutOfScope,
+    TransitionNotAllowed,
+    author_of,
+    available_actions,
+    bounty_action,
+    get_action,
+    primary_action,
+    step_number,
+)
 
 
 def _get_case(request, case_id):
@@ -61,6 +76,72 @@ def _get_case(request, case_id):
         )
         raise Http404("Dossier introuvable.")
     return case
+
+
+def user_can_click(case, action, user):
+    """L'utilisateur est-il le proprietaire de ce bouton ?"""
+    if getattr(user, "is_read_only", False):
+        return False
+    if action.reporter_only:
+        return case.reporter_id == user.pk
+    return user.has_capability(action.capability)
+
+
+def action_panel(case, action, user):
+    """Etat d'affichage d'un bouton de workflow (principal ou prime)."""
+    if action is None:
+        return None
+    owner = user_can_click(case, action, user)
+    blocked_by_four_eyes = bool(
+        owner and action.four_eyes and author_of(case, action) == user.pk
+    )
+    missing = action.missing(case) if owner else []
+    return {
+        "action": action,
+        "owner": owner,
+        "missing": missing,
+        "four_eyes_blocked": blocked_by_four_eyes,
+        "enabled": owner and not missing and not blocked_by_four_eyes,
+        "form": WorkflowActionForm(action=action) if owner else None,
+    }
+
+
+def secondary_panels(case, user):
+    panels = []
+    for action in available_actions(case, kind=SECONDARY):
+        if not user_can_click(case, action, user):
+            continue
+        panels.append(action_panel(case, action, user))
+    return panels
+
+
+def _stepper(case):
+    current = step_number(case.status)
+    if current is None and case.return_status:
+        current = step_number(case.return_status)
+    return [
+        {
+            "status": status,
+            "label": status.label,
+            "index": index,
+            "done": current is not None and index < current,
+            "current": index == current,
+        }
+        for index, status in enumerate(MAIN_PATH)
+    ]
+
+
+def _public_steps(current_key):
+    keys = [key for key, _label in PUBLIC_STATUS_STEPS]
+    current = keys.index(current_key) if current_key in keys else None
+    return [
+        {
+            "label": label,
+            "done": current is not None and index < current,
+            "current": index == current,
+        }
+        for index, (_key, label) in enumerate(PUBLIC_STATUS_STEPS)
+    ]
 
 
 @login_required
@@ -105,79 +186,187 @@ def kanban(request):
 def case_detail(request, case_id):
     case = _get_case(request, case_id)
     log_action(AuditAction.CASE_VIEWED, actor=request.user, obj=case, request=request)
+    user = request.user
+    view = case_view(case, user)
 
     cvss_breakdown = []
-    if case.cvss_vector:
+    if case.cvss_vector and view["cvss"] in ("read", "write"):
         try:
             cvss_breakdown = describe(case.cvss_vector)
         except CVSSError:
             cvss_breakdown = []
 
-    is_reporter = case.reporter_id == request.user.id
-    can_manage = request.user.has_capability(Capability.CHANGE_CASE_STATUS)
-    can_draft_advisory = request.user.has_capability(Capability.DRAFT_ADVISORY)
+    editable = case.status in QUALIFICATION_EDITABLE_STATES and not user.is_read_only
+    triage_initial = {
+        "severity": case.severity,
+        "cvss_vector": case.cvss_vector,
+        "cwe": case.cwe_id,
+        "organization": case.organization_id,
+        "scope": case.scope_id,
+        "tags": ", ".join(case.tags or []),
+    }
+    triage_form = None
+    if editable and user.has_capability(Capability.SET_SEVERITY):
+        triage_form = QualificationForm(case=case, initial=triage_initial)
+    elif editable and user.has_capability(Capability.TRIAGE_CASE):
+        triage_form = TriageForm(case=case, initial=triage_initial)
+
+    can_arbitrate = user.has_capability(Capability.ARBITRATE_CASE)
+    can_coordinate = user.has_capability(Capability.COORDINATE_VENDOR)
+    primary = primary_action(case)
+    bounty_step = bounty_action(case)
 
     context = {
         "case": case,
         "report": case.report,
-        "messages_list": visible_messages(case, request.user),
-        "timeline": case.timeline.select_related("actor"),
-        "attachments": case.attachments.select_related("uploaded_by"),
-        "sla_events": case.sla_events.all(),
-        "status_history": case.status_history.select_related("actor")[:30],
-        "participants": case.participants.select_related("user").filter(is_active=True),
-        "message_form": CaseMessageForm(user=request.user),
-        "upload_form": AttachmentUploadForm(),
-        "status_form": (
-            StatusTransitionForm(case=case, user=request.user) if can_manage else None
+        "view": view,
+        "messages_list": visible_messages(case, user),
+        "timeline": case.timeline.select_related("actor") if view["tracking"] else [],
+        "attachments": (
+            case.attachments.select_related("uploaded_by") if view["attachments_listed"] else []
         ),
-        "triage_form": (
-            TriageForm(
-                case=case,
-                initial={
-                    "severity": case.severity,
-                    "cvss_vector": case.cvss_vector,
-                    "cwe": case.cwe_id,
-                    "organization": case.organization_id,
-                    "scope": case.scope_id,
-                    "tags": ", ".join(case.tags or []),
-                },
-            )
-            if request.user.has_capability(Capability.TRIAGE_CASE)
-            else None
+        "sla_events": case.sla_events.all() if view["tracking"] else [],
+        "status_history": (
+            case.status_history.select_related("actor")[:30] if view["tracking"] else []
         ),
+        "participants": (
+            case.participants.select_related("user").filter(is_active=True)
+            if view["tracking"]
+            else []
+        ),
+        "message_form": (
+            CaseMessageForm(user=user, case=case) if view["writable_channels"] else None
+        ),
+        "upload_form": AttachmentUploadForm() if not user.is_read_only else None,
+        "primary_panel": action_panel(case, primary, user),
+        "bounty_panel": action_panel(case, bounty_step, user),
+        "secondary_panels": secondary_panels(case, user),
+        "stepper": _stepper(case),
+        "public_steps": _public_steps(view["status_key"]),
+        "admissibility_checklist": ADMISSIBILITY_CHECKLIST,
+        "triage_form": triage_form,
         "assignment_form": (
             AssignmentForm(initial={"assignee": case.assignee_id})
-            if request.user.has_capability(Capability.ASSIGN_CASE)
+            if user.has_capability(Capability.ASSIGN_CASE) and not user.is_read_only
             else None
-        ),
-        "duplicate_form": (
-            DuplicateForm() if request.user.has_capability(Capability.TRIAGE_CASE) else None
         ),
         "disclosure_form": (
             DisclosureScheduleForm(initial={"disclosure_date": case.disclosure_date})
-            if can_manage
+            if (can_arbitrate or can_coordinate) and not user.is_read_only
             else None
         ),
-        "cve_form": CveLinkForm() if can_manage else None,
+        "cve_form": (
+            CveLinkForm()
+            if user.has_capability(Capability.DRAFT_ADVISORY) and not user.is_read_only
+            else None
+        ),
         "cvss_breakdown": cvss_breakdown,
-        "allowed_targets": allowed_targets(case.status, case.workflow),
-        "is_reporter": is_reporter,
-        "can_manage": can_manage,
-        "can_draft_advisory": can_draft_advisory,
-        "bounty": getattr(case, "bounty", None),
-        "advisories": case.advisories.all(),
+        "can_draft_advisory": user.has_capability(Capability.DRAFT_ADVISORY),
+        "bounty": getattr(case, "bounty", None) if view["wallet"] else None,
+        "advisories": case.advisories.all() if view["advisory"] else [],
         # Le case original d'un doublon n'est jamais expose au declarant.
-        "show_duplicate_origin": case.duplicate_of_id is not None and request.user.is_national,
+        "show_duplicate_origin": case.duplicate_of_id is not None and user.sees_all_cases,
     }
     return render(request, "coordination/case_detail.html", context)
 
 
+@require_POST
+@login_required
+def workflow_action(request, case_id, action_key):
+    """Bouton de workflow : un seul point d'entree pour toutes les actions."""
+    case = _get_case(request, case_id)
+    try:
+        action = get_action(action_key)
+    except TransitionNotAllowed as exc:
+        raise Http404("Action inconnue.") from exc
+    if getattr(request.user, "is_read_only", False):
+        deny(request, "Role en lecture seule.", obj=case)
+
+    form = WorkflowActionForm(request.POST, action=action)
+    if not form.is_valid():
+        messages.error(request, "Saisie invalide : " + form.errors.as_text())
+        return redirect("coordination:case_detail", case_id=case.case_id)
+    try:
+        perform_action(case, action.key, request.user, data=form.workflow_data(), request=request)
+    except OutOfScope as exc:
+        raise Http404("Dossier introuvable.") from exc
+    except TransitionNotAllowed as exc:
+        messages.error(request, str(exc))
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, f"« {action.label} » effectué.")
+    if not case.is_visible_to(request.user):
+        # Un rejet confirme ou une etape franchie peut sortir le dossier du
+        # perimetre de l'acteur : retour a la liste plutot qu'un 404.
+        return redirect("coordination:case_list")
+    return redirect("coordination:case_detail", case_id=case.case_id)
+
+
+@require_POST
+@login_required
+@require_not_read_only
+@require_capability(Capability.TRIAGE_CASE, Capability.SET_SEVERITY)
+def triage(request, case_id):
+    case = _get_case(request, case_id)
+    if case.status not in QUALIFICATION_EDITABLE_STATES:
+        messages.error(request, "La qualification n'est plus modifiable à cette étape.")
+        return redirect("coordination:case_detail", case_id=case.case_id)
+    analyst = request.user.has_capability(Capability.SET_SEVERITY)
+    form_class = QualificationForm if analyst else TriageForm
+    form = form_class(request.POST, case=case)
+    if not form.is_valid():
+        messages.error(request, "Qualification invalide : " + form.errors.as_text())
+        return redirect("coordination:case_detail", case_id=case.case_id)
+
+    if analyst:
+        try:
+            set_severity(
+                case,
+                request.user,
+                severity=form.cleaned_data["severity"],
+                cvss_vector=form.cleaned_data.get("cvss_vector", ""),
+                request=request,
+            )
+        except (PermissionDenied, ValidationError) as exc:
+            messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+            return redirect("coordination:case_detail", case_id=case.case_id)
+
+    updates = []
+    if analyst and form.cleaned_data.get("cwe"):
+        case.cwe = form.cleaned_data["cwe"]
+        updates.append("cwe")
+    if form.cleaned_data.get("organization"):
+        case.organization = form.cleaned_data["organization"]
+        updates.append("organization")
+    if "scope" in form.fields:
+        # Affecte sans condition : le triage doit aussi pouvoir retirer
+        # l'actif retenu, ce qu'un test de verite empecherait.
+        case.scope = form.cleaned_data.get("scope")
+        updates.append("scope")
+    tags = form.cleaned_data.get("tags")
+    if tags is not None:
+        case.tags = tags
+        updates.append("tags")
+    if updates:
+        case.save(update_fields=updates + ["updated_at"])
+        log_action(
+            AuditAction.CASE_UPDATED,
+            actor=request.user,
+            obj=case,
+            request=request,
+            fields=updates,
+        )
+    messages.success(request, "Qualification enregistrée." if analyst else "Rattachement enregistré.")
+    return redirect("coordination:case_detail", case_id=case.case_id)
+
+
+@require_POST
 @login_required
 @require_not_read_only
 def post_case_message(request, case_id):
     case = _get_case(request, case_id)
-    form = CaseMessageForm(request.POST, user=request.user)
+    form = CaseMessageForm(request.POST, user=request.user, case=case)
     if form.is_valid():
         try:
             post_message(
@@ -189,85 +378,13 @@ def post_case_message(request, case_id):
             )
             messages.success(request, "Message publié.")
         except (PermissionDenied, ValidationError) as exc:
-            messages.error(request, str(exc))
+            messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
         messages.error(request, "Message invalide.")
     return redirect("coordination:case_detail", case_id=case.case_id)
 
 
-@login_required
-@require_not_read_only
-@require_capability(Capability.CHANGE_CASE_STATUS)
-def change_status(request, case_id):
-    case = _get_case(request, case_id)
-    form = StatusTransitionForm(request.POST, case=case, user=request.user)
-    if form.is_valid():
-        try:
-            transition_case(
-                case,
-                form.cleaned_data["target_status"],
-                request.user,
-                comment=form.cleaned_data.get("comment", ""),
-                request=request,
-            )
-            messages.success(request, f"Statut mis à jour : {case.get_status_display()}.")
-        except TransitionNotAllowed as exc:
-            messages.error(request, str(exc))
-    else:
-        messages.error(request, "Transition invalide.")
-    return redirect("coordination:case_detail", case_id=case.case_id)
-
-
-@login_required
-@require_not_read_only
-@require_capability(Capability.TRIAGE_CASE)
-def triage(request, case_id):
-    case = _get_case(request, case_id)
-    form = TriageForm(request.POST, case=case)
-    if form.is_valid():
-        try:
-            set_severity(
-                case,
-                request.user,
-                severity=form.cleaned_data["severity"],
-                cvss_vector=form.cleaned_data.get("cvss_vector", ""),
-                request=request,
-            )
-        except (PermissionDenied, ValidationError) as exc:
-            messages.error(request, str(exc))
-            return redirect("coordination:case_detail", case_id=case.case_id)
-
-        updates = []
-        if form.cleaned_data.get("cwe"):
-            case.cwe = form.cleaned_data["cwe"]
-            updates.append("cwe")
-        if form.cleaned_data.get("organization"):
-            case.organization = form.cleaned_data["organization"]
-            updates.append("organization")
-        if "scope" in form.fields:
-            # Affecte sans condition : le triage doit aussi pouvoir retirer
-            # l'actif retenu, ce qu'un test de verite empecherait.
-            case.scope = form.cleaned_data.get("scope")
-            updates.append("scope")
-        tags = form.cleaned_data.get("tags")
-        if tags is not None:
-            case.tags = tags
-            updates.append("tags")
-        if updates:
-            case.save(update_fields=updates + ["updated_at"])
-            log_action(
-                AuditAction.CASE_UPDATED,
-                actor=request.user,
-                obj=case,
-                request=request,
-                fields=updates,
-            )
-        messages.success(request, "Qualification enregistrée.")
-    else:
-        messages.error(request, "Qualification invalide : " + form.errors.as_text())
-    return redirect("coordination:case_detail", case_id=case.case_id)
-
-
+@require_POST
 @login_required
 @require_not_read_only
 @require_capability(Capability.ASSIGN_CASE)
@@ -288,32 +405,10 @@ def assign(request, case_id):
     return redirect("coordination:case_detail", case_id=case.case_id)
 
 
+@require_POST
 @login_required
 @require_not_read_only
-@require_capability(Capability.TRIAGE_CASE)
-def mark_as_duplicate(request, case_id):
-    case = _get_case(request, case_id)
-    form = DuplicateForm(request.POST)
-    if form.is_valid():
-        try:
-            mark_duplicate(
-                case,
-                form.cleaned_data["original_case_id"],
-                request.user,
-                comment=form.cleaned_data.get("comment", ""),
-                request=request,
-            )
-            messages.success(request, "Dossier marqué comme doublon.")
-        except (PermissionDenied, ValidationError, TransitionNotAllowed) as exc:
-            messages.error(request, str(exc))
-    else:
-        messages.error(request, form.errors.as_text())
-    return redirect("coordination:case_detail", case_id=case.case_id)
-
-
-@login_required
-@require_not_read_only
-@require_capability(Capability.CHANGE_CASE_STATUS)
+@require_capability(Capability.ARBITRATE_CASE, Capability.COORDINATE_VENDOR)
 def set_disclosure_date(request, case_id):
     case = _get_case(request, case_id)
     form = DisclosureScheduleForm(request.POST)
@@ -327,9 +422,10 @@ def set_disclosure_date(request, case_id):
     return redirect("coordination:case_detail", case_id=case.case_id)
 
 
+@require_POST
 @login_required
 @require_not_read_only
-@require_capability(Capability.CHANGE_CASE_STATUS)
+@require_capability(Capability.DRAFT_ADVISORY)
 def link_cve(request, case_id):
     case = _get_case(request, case_id)
     form = CveLinkForm(request.POST)
@@ -349,6 +445,7 @@ def link_cve(request, case_id):
     return redirect("coordination:case_detail", case_id=case.case_id)
 
 
+@require_POST
 @login_required
 @require_not_read_only
 def upload_attachment(request, case_id):

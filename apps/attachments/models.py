@@ -119,5 +119,14 @@ class Attachment(BaseModel):
     def is_visible_to(self, user):
         case = self.owning_case()
         if case is None:
-            return bool(user and user.is_authenticated and user.is_national)
+            return bool(user and user.is_authenticated and user.sees_all_cases)
         return case.is_visible_to(user)
+
+    def is_downloadable_by(self, user):
+        """Contenu du fichier : l'auditeur n'en voit que les metadonnees."""
+        case = self.owning_case()
+        if case is None:
+            return self.is_visible_to(user)
+        from apps.coordination.visibility import can_download_attachment
+
+        return can_download_attachment(case, user)

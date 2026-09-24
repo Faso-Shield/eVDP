@@ -5,10 +5,15 @@ au service correspondant (apps.bounty.services), qui garantit en un seul geste
 la verification de capacite, la separation proposant/approbateur, l'audit, la
 notification du chercheur et la mise a jour du profil. Une action appliquee a
 plusieurs lignes traite chaque recompense independamment et rapporte les refus.
+
+Workflow v2 : le Wallet ne regarde pas l'administration technique ; ces vues
+sont fermees (CaseContentAdminMixin), la prime se traite depuis le dossier.
 """
 
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
+
+from apps.core.admin import CaseContentAdminMixin
 
 from .models import Bounty, BountyPayment, BountyReview
 from .services import approve_bounty, record_payment, reject_bounty
@@ -70,7 +75,7 @@ def action_record_payment(modeladmin, request, queryset):
 
 
 @admin.register(Bounty)
-class BountyAdmin(admin.ModelAdmin):
+class BountyAdmin(CaseContentAdminMixin, admin.ModelAdmin):
     list_display = (
         "case",
         "researcher",
@@ -107,7 +112,7 @@ class BountyAdmin(admin.ModelAdmin):
 
 
 @admin.register(BountyPayment)
-class BountyPaymentAdmin(admin.ModelAdmin):
+class BountyPaymentAdmin(CaseContentAdminMixin, admin.ModelAdmin):
     list_display = (
         "bounty",
         "amount",

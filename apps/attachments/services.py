@@ -186,7 +186,7 @@ def store_attachment(
 
 def authorize_download(attachment, user, request=None):
     """Autorise (ou refuse) le telechargement et journalise l'acces."""
-    if not attachment.is_visible_to(user):
+    if not attachment.is_downloadable_by(user):
         log_action(
             AuditAction.ATTACHMENT_DOWNLOADED,
             actor=user,

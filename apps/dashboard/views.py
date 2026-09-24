@@ -10,6 +10,7 @@ from apps.accounts.permissions import require_capability
 from apps.accounts.roles import Capability
 from apps.accounts.verification import accounts_losing_access
 from apps.bounty.models import Bounty, BountyStatus
+from apps.bounty.services import wallet_balance
 from apps.coordination import selectors
 from apps.coordination.models import Case
 from apps.core.navigation import landing_route
@@ -65,6 +66,7 @@ def researcher_dashboard(request):
             "bounties": bounties.order_by("-created_at")[:10],
             "rewards_total": rewards_total,
             "rewards_pending": rewards_pending,
+            "wallet_balance": wallet_balance(user),
             "programs": Program.objects.public()[:6],
             "advisories": Advisory.objects.published().filter(case__reporter=user)[:5],
         },

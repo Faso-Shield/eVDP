@@ -66,7 +66,7 @@ class VulnerabilityReport(BaseModel):
         on_delete=models.SET_NULL,
         related_name="reports",
     )
-    cvss_vector = models.CharField(max_length=120, blank=True)
+    cvss_vector = models.CharField(max_length=255, blank=True)
     cvss_score = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
     reported_severity = models.CharField(
         max_length=16,

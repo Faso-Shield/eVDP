@@ -129,6 +129,17 @@ def export_case_pdf(request, case_id):
     )
     if not case.is_visible_to(request.user):
         raise Http404("Dossier introuvable.")
+    from apps.coordination.visibility import (
+        PARTIAL,
+        can_download_attachment,
+        level,
+        reporter_label,
+    )
+
+    # La fiche reprend le contenu du rapport : reservee aux roles qui le lisent
+    # (l'auditeur n'en consulte que les metadonnees).
+    if not can_download_attachment(case, request.user):
+        raise Http404("Dossier introuvable.")
 
     buffer = BytesIO()
     document = SimpleDocTemplate(
@@ -159,12 +170,17 @@ def export_case_pdf(request, case_id):
         ["Titre", case.title],
         ["Statut", case.get_status_display()],
         ["Severite", case.get_severity_display()],
-        ["CVSS", f"{case.cvss_score or '-'} ({case.cvss_vector or 'non renseigne'})"],
+        [
+            "CVSS",
+            f"{case.cvss_score or '-'}"
+            if level(case, request.user, "cvss") == PARTIAL
+            else f"{case.cvss_score or '-'} ({case.cvss_vector or 'non renseigne'})",
+        ],
         ["Organisation", case.organization.name if case.organization_id else "-"],
         ["CWE", case.cwe.code if case.cwe_id else "-"],
         ["CVE", case.cve.cve_id if case.cve_id else "-"],
         ["Analyste", str(case.assignee) if case.assignee_id else "-"],
-        ["Declarant", case.report.reporter_display],
+        ["Declarant", reporter_label(case, request.user) or "Identite protegee"],
         ["Cree le", timezone.localtime(case.created_at).strftime("%d/%m/%Y %H:%M")],
         [
             "Divulgation",
