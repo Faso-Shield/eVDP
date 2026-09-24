@@ -19,7 +19,7 @@ import hashlib
 from apps.accounts.roles import Role
 
 from .constants import Confidentiality
-from .workflow import ORG_VISIBLE_STATES, public_status_bucket
+from .workflow import ORG_VISIBLE_STATES, public_status_of
 
 WRITE = "write"
 READ = "read"
@@ -215,7 +215,7 @@ def case_view(case, user):
     content = has_content_access(case, user) if kind is not None else False
     get = lambda data: level(case, user, data, kind, content)  # noqa: E731
     simplified = kind == REPORTER
-    bucket_key, bucket_label = public_status_bucket(case.status)
+    bucket_key, bucket_label = public_status_of(case)
     return {
         "kind": kind,
         "is_reporter": kind == REPORTER,

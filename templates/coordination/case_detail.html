@@ -23,8 +23,8 @@
     {% if view.report_body and not view.is_reporter %}
       <a class="btn btn-sm btn-outline" href="{% url 'dashboard:export_case_pdf' case.case_id %}">Export PDF</a>
     {% endif %}
-    {% if can_draft_advisory %}
-      <a class="btn btn-sm btn-outline" href="{% url 'disclosures:create_from_case' case.case_id %}">Rédiger un advisory</a>
+    {% if advisory_button %}
+      <a class="btn btn-sm btn-accent" href="{{ advisory_button.url }}">{{ advisory_button.label }}</a>
     {% endif %}
   </div>
 </div>

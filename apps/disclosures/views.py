@@ -84,14 +84,27 @@ def advisory_manage_list(request):
 
 @login_required
 @require_not_read_only
-@require_capability(Capability.DRAFT_ADVISORY)
+@require_capability(Capability.DRAFT_ADVISORY, Capability.PUBLISH_ADVISORY)
 def advisory_create(request, case_id=None):
     """Cree un brouillon d'advisory a partir d'un case valide."""
     case = None
+    if not case_id and not request.user.has_capability(Capability.DRAFT_ADVISORY):
+        # Advisory autonome (sans dossier) : redaction de l'analyste seulement.
+        raise PermissionDenied("Capacité requise pour rédiger un advisory.")
     if case_id:
+        from apps.coordination.workflow import can_edit_case_advisory, working_advisory
+
         case = get_object_or_404(Case, case_id=case_id.upper())
         if not case.is_visible_to(request.user):
             raise Http404("Dossier introuvable.")
+        # Seul le responsable de l'etape (analyste a l'etape 9, Coordinateur a
+        # l'etape 10) redige l'advisory du dossier.
+        if not can_edit_case_advisory(case, request.user):
+            raise Http404("Dossier introuvable.")
+        existing = working_advisory(case)
+        if existing is not None:
+            # Un seul brouillon par dossier : on reprend celui en cours.
+            return redirect("disclosures:manage", advisory_id=existing.advisory_id)
 
     if request.method == "POST":
         form = AdvisoryForm(request.POST)
@@ -109,8 +122,8 @@ def advisory_create(request, case_id=None):
             return redirect("coordination:case_detail", case_id=case.case_id)
         messages.success(
             request,
-            f"Brouillon {advisory.advisory_id} généré à partir du dossier "
-            f"{case.case_id}. Complétez le résumé public avant publication.",
+            f"Proposition d'advisory {advisory.advisory_id} générée à partir du "
+            f"dossier {case.case_id} : relisez-la et complétez-la avant de la soumettre.",
         )
         return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
     else:
@@ -168,6 +181,16 @@ def advisory_manage(request, advisory_id):
     l'analyste et le coordinateur.
     """
     advisory = get_object_or_404(Advisory, advisory_id=advisory_id.upper())
+    if (
+        advisory.case_id
+        and not advisory.is_published
+        and advisory.status != AdvisoryStatus.RETRACTED
+    ):
+        # Brouillon d'un dossier : au seul responsable de l'etape en cours.
+        from apps.coordination.workflow import can_edit_case_advisory
+
+        if not can_edit_case_advisory(advisory.case, request.user):
+            raise Http404("Advisory introuvable.")
 
     if request.method == "POST":
         form = AdvisoryForm(request.POST, instance=advisory)

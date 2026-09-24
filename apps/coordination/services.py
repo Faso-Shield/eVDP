@@ -52,6 +52,7 @@ from .workflow import (
     current_owner_ids,
     get_action,
     public_status_bucket,
+    public_status_of,
     resolve_target,
     step_owners,
     working_advisory,
@@ -335,7 +336,11 @@ def transition_case(case, target_status, actor, comment="", request=None, data=N
     retrouver le bouton correspondant ; tous les controles s'appliquent.
     """
     for action in available_actions(case):
-        if action.track == "case" and action.target and resolve_target(case, action) == target_status:
+        if (
+            action.track == "case"
+            and action.target
+            and resolve_target(case, action) == target_status
+        ):
             payload = dict(data or {})
             payload["comment"] = comment
             return perform_action(case, action.key, actor, data=payload, request=request)
@@ -569,7 +574,9 @@ def _on_request_information(case, actor, data, now, request):
 def _on_send_information(case, actor, data, now, request):
     _resume_sla(case)
     post_message(case, actor, data["comment"], confidentiality=Confidentiality.RESEARCHER)
-    add_timeline_event(case, TimelineEventType.INFORMATION_PROVIDED, "Compléments reçus", actor)
+    add_timeline_event(
+        case, TimelineEventType.INFORMATION_PROVIDED, "Compléments reçus", actor
+    )
     return ["sla_paused_at"]
 
 
@@ -608,6 +615,20 @@ def _on_return_rejection(case, actor, data, now, request):
         case, TimelineEventType.RETURNED, "Rejet renvoyé à l'étape d'origine", actor
     )
     return ["duplicate_of", "sla_paused_at"]
+
+
+def _on_propose_closure(case, actor, data, now, request):
+    add_timeline_event(
+        case, TimelineEventType.RETURNED, "Clôture sans advisory proposée", actor
+    )
+    return []
+
+
+def _on_close_without_advisory(case, actor, data, now, request):
+    add_timeline_event(
+        case, TimelineEventType.CLOSED, "Dossier clos sans publication d'advisory", actor
+    )
+    return []
 
 
 def _on_return_to_author(case, actor, data, now, request):
@@ -651,6 +672,8 @@ _ACTION_HANDLERS = {
     "confirm_rejection": _on_confirm_rejection,
     "return_rejection": _on_return_rejection,
     "return_to_author": _on_return_to_author,
+    "propose_closure": _on_propose_closure,
+    "close_without_advisory": _on_close_without_advisory,
     "escalate": _on_escalate,
     "decide_deadline_disclosure": _on_deadline_disclosure,
 }
@@ -710,7 +733,9 @@ def notify_case_staff(case, kind, exclude=None, skip=()):
     if exclude is not None:
         ids.discard(exclude.pk)
     recipients = [
-        user for user in User.objects.filter(id__in=ids, is_active=True) if case.is_visible_to(user)
+        user
+        for user in User.objects.filter(id__in=ids, is_active=True)
+        if case.is_visible_to(user)
     ]
     return notify_many(recipients, kind, case=case)
 
@@ -1015,7 +1040,7 @@ def resolve_tracking_token(raw_token):
 
 def public_status_for(case):
     """(cle, libelle, resultat) simplifies pour la page de suivi publique."""
-    key, label = public_status_bucket(case.status)
+    key, label = public_status_of(case)
     return {
         "key": key,
         "label": label,

@@ -99,9 +99,19 @@ def test_public_status_hides_internal_detail(case_alpha):
 )
 def test_public_status_has_five_steps(case_alpha, internal, key, label):
     case_alpha.status = internal
-    case_alpha.save(update_fields=["status"])
+    case_alpha.is_published = internal == CaseStatus.CLOSED
+    case_alpha.save(update_fields=["status", "is_published"])
     status = public_status_for(case_alpha)
     assert (status["key"], status["label"]) == (key, label)
+
+
+def test_closed_without_advisory_is_not_announced_as_published(case_alpha):
+    """Dossier clos sans publication : « Clôturé », jamais « Publié »."""
+    case_alpha.status = CaseStatus.CLOSED
+    case_alpha.is_published = False
+    case_alpha.save(update_fields=["status", "is_published"])
+    status = public_status_for(case_alpha)
+    assert (status["key"], status["label"]) == ("RESOLVED", "Clôturé")
 
 
 def test_public_status_resolved_bucket(case_alpha):

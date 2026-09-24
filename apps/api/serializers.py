@@ -268,14 +268,14 @@ def apply_visibility(data, case, user):
     appel API ne doit jamais en montrer plus que l'interface.
     """
     from apps.coordination.visibility import PARTIAL, READ, WRITE, level, viewer_kind
-    from apps.coordination.workflow import public_status_bucket
+    from apps.coordination.workflow import public_status_of
 
     if user is None:
         return data
     kind = viewer_kind(case, user)
     cvss = level(case, user, "cvss", kind)
     if kind == "reporter":
-        key, label = public_status_bucket(case.status)
+        key, label = public_status_of(case)
         data["status"] = key
         data["status_label"] = label
         for name in ("severity", "severity_label", "priority_score", "workflow"):

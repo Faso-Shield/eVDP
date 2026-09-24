@@ -87,6 +87,17 @@ SUBMITTED → ACKNOWLEDGED → IN_ANALYSIS → VALIDATION_PENDING → VALIDATED
 | 9 | `FIX_VERIFIED` | Analyste CSIRT | Soumettre l'advisory (`submit_advisory`) | Brouillon assaini : aucun PoC, aucune IP, aucune URL sensible | `ADVISORY_REVIEW` | — |
 | 10 | `ADVISORY_REVIEW` | Coordinateur | Publier et clôturer (`publish_and_close`) | Relecture faite, crédit conforme au choix du chercheur, branche prime terminée, publieur ≠ auteur, commentaire | `CLOSED` | — |
 
+**Rédaction de l'advisory (étapes 9 et 10).** Le bouton « Rédiger un
+advisory » de la fiche du dossier n'apparaît qu'au responsable de l'étape :
+l'analyste à l'étape 9, le Coordinateur à l'étape 10 (« Relire et modifier
+l'advisory »). Le premier clic génère une proposition complète à partir du
+dossier (qualification, CWE et CVSS, produit, versions affectée et corrigée,
+correctif déclaré et vérifié, crédit du chercheur, chronologie publique) ; le
+texte libre du déclarant n'y est repris qu'assaini (sans code, URL, adresse IP
+ni preuve de concept). Un second clic rouvre le même brouillon. Le
+Coordinateur peut ensuite le modifier, le valider (« Publier et clôturer »)
+ou clôturer le dossier sans publication.
+
 Délai de remédiation par sévérité : **Critique 30 j, Élevée 60 j, Moyenne et
 Faible 90 j**. `RECEIVED` disparaît : l'assignation automatique suffit à
 marquer le dossier comme reçu.
@@ -129,6 +140,8 @@ statut de prime (`Case.bounty_stage`) est **distinct** du statut du dossier.
 | Marquer comme doublon (`propose_duplicate`) | Triage, Analyste | 1 à 3 | `REJECTION_PENDING` (motif doublon) | Coordinateur confirme → `DUPLICATE`, rattaché à l'original sans fuite |
 | Renvoyer à l'auteur (`return_to_author`, `return_bounty`) | Coordinateur | 4, 10, B2 | Retour à l'étape précédente | — |
 | Correctif insuffisant (`insufficient_fix`) | Analyste | 8 | Retour en `REMEDIATION_IN_PROGRESS` | — |
+| Proposer une clôture sans advisory (`propose_closure`) | Analyste | 9 | `ADVISORY_REVIEW` sans brouillon | Le Coordinateur décide : rédiger et publier, ou clôturer sans publication |
+| Clôturer sans publication (`close_without_advisory`) | Coordinateur | 10 | `CLOSED` sans advisory publié (branche prime terminée, commentaire, quatre yeux) | Le déclarant voit « Clôturé », jamais « Publié » |
 | Escalader | Automatique (SLA 6 ou 7 dépassé) | 6, 7 | Alerte rouge ; le Coordinateur devient responsable du dossier | Le Coordinateur peut décider une divulgation à échéance (`decide_deadline_disclosure`) après 90 j : l'advisory peut alors être soumis sans correctif |
 
 La DSI ne peut ni rejeter ni marquer un doublon : si elle conteste, elle

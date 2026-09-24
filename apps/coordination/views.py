@@ -142,6 +142,31 @@ def _stepper(case):
     ]
 
 
+def _advisory_button(case, user):
+    """Bouton « Rédiger un advisory » du responsable de l'etape (9 ou 10)."""
+    from django.urls import reverse
+
+    from .workflow import can_edit_case_advisory, working_advisory
+
+    if not can_edit_case_advisory(case, user):
+        return None
+    existing = working_advisory(case)
+    if existing is not None:
+        label = (
+            "Modifier l'advisory"
+            if case.status != "ADVISORY_REVIEW"
+            else ("Relire et modifier l'advisory")
+        )
+        return {
+            "label": label,
+            "url": reverse("disclosures:manage", args=[existing.advisory_id]),
+        }
+    return {
+        "label": "Rédiger un advisory",
+        "url": reverse("disclosures:create_from_case", args=[case.case_id]),
+    }
+
+
 def _public_steps(current_key):
     keys = [key for key, _label in PUBLIC_STATUS_STEPS]
     current = keys.index(current_key) if current_key in keys else None
@@ -238,7 +263,9 @@ def case_detail(request, case_id):
         "messages_list": visible_messages(case, user),
         "timeline": case.timeline.select_related("actor") if view["tracking"] else [],
         "attachments": (
-            case.attachments.select_related("uploaded_by") if view["attachments_listed"] else []
+            case.attachments.select_related("uploaded_by")
+            if view["attachments_listed"]
+            else []
         ),
         "sla_events": case.sla_events.all() if view["tracking"] else [],
         "status_history": (
@@ -279,7 +306,7 @@ def case_detail(request, case_id):
             else None
         ),
         "cvss_breakdown": cvss_breakdown,
-        "can_draft_advisory": user.has_capability(Capability.DRAFT_ADVISORY),
+        "advisory_button": _advisory_button(case, user),
         "bounty": getattr(case, "bounty", None) if view["wallet"] else None,
         "advisories": case.advisories.all() if view["advisory"] else [],
         # Le case original d'un doublon n'est jamais expose au declarant.
@@ -305,7 +332,9 @@ def workflow_action(request, case_id, action_key):
         messages.error(request, "Saisie invalide : " + form.errors.as_text())
         return redirect("coordination:case_detail", case_id=case.case_id)
     try:
-        perform_action(case, action.key, request.user, data=form.workflow_data(), request=request)
+        perform_action(
+            case, action.key, request.user, data=form.workflow_data(), request=request
+        )
     except OutOfScope as exc:
         raise Http404("Dossier introuvable.") from exc
     except TransitionNotAllowed as exc:
@@ -377,7 +406,9 @@ def triage(request, case_id):
             request=request,
             fields=updates,
         )
-    messages.success(request, "Qualification enregistrée." if analyst else "Rattachement enregistré.")
+    messages.success(
+        request, "Qualification enregistrée." if analyst else "Rattachement enregistré."
+    )
     return redirect("coordination:case_detail", case_id=case.case_id)
 
 

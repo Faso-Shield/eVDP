@@ -73,11 +73,11 @@ def case_status(context, case):
     Le declarant ne voit jamais l'avancement interne (rejet seulement
     propose, qualification en attente de validation, etc.).
     """
-    from apps.coordination.workflow import public_status_bucket
+    from apps.coordination.workflow import public_status_of
 
     user = context.get("user")
     if user is not None and getattr(user, "pk", None) and case.reporter_id == user.pk:
-        return public_status_bucket(case.status)[1]
+        return public_status_of(case)[1]
     return case.get_status_display()
 
 

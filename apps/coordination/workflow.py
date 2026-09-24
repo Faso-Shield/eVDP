@@ -179,7 +179,7 @@ _POC_MARKERS = (
     "curl ",
     "wget ",
     "' or 1=1",
-    "\" or 1=1",
+    '" or 1=1',
     "union select",
     "/etc/passwd",
     "proof of concept",
@@ -241,7 +241,9 @@ def working_advisory(case):
     from apps.disclosures.models import AdvisoryStatus
 
     return (
-        case.advisories.exclude(status__in=[AdvisoryStatus.PUBLISHED, AdvisoryStatus.RETRACTED])
+        case.advisories.exclude(
+            status__in=[AdvisoryStatus.PUBLISHED, AdvisoryStatus.RETRACTED]
+        )
         .order_by("-created_at")
         .first()
     )
@@ -382,6 +384,46 @@ def _pre_publish(case, data):
     return missing
 
 
+def _pre_close_without_advisory(case, data):
+    if case.bounty_stage not in BOUNTY_FINAL_STAGES:
+        return ["Branche prime non terminée"]
+    return []
+
+
+def advisory_editors_step(case):
+    """Etape ou le brouillon d'advisory du dossier se redige, ou None.
+
+    Etape 9 (correctif verifie, ou divulgation a echeance decidee) :
+    l'analyste redige. Etape 10 (advisory en relecture) : le Coordinateur
+    relit, modifie et valide -- ou redige si l'analyste a propose une
+    cloture sans advisory.
+    """
+    if case.status == CaseStatus.FIX_VERIFIED or (
+        case.deadline_disclosure_at and case.status in ESCALATION_STATES
+    ):
+        return "draft"
+    if case.status == CaseStatus.ADVISORY_REVIEW:
+        return "review"
+    return None
+
+
+def can_edit_case_advisory(case, user):
+    """Le compte peut-il rediger ou modifier l'advisory de ce dossier ?
+
+    Reserve au responsable de l'etape en cours : analyste a l'etape 9,
+    Coordinateur a l'etape 10.
+    """
+    from .visibility import has_content_access
+
+    step = advisory_editors_step(case)
+    if step is None or getattr(user, "is_read_only", False):
+        return False
+    if not has_content_access(case, user) or case.reporter_id == user.pk:
+        return False
+    needed = Capability.DRAFT_ADVISORY if step == "draft" else Capability.PUBLISH_ADVISORY
+    return user.has_capability(needed)
+
+
 def _pre_propose_bounty(case, data):
     from apps.bounty.services import amount_outside_tier
 
@@ -389,9 +431,10 @@ def _pre_propose_bounty(case, data):
     if case.reporter_id is None:
         missing.append("Aucun chercheur identifié")
     if data is not None and data.get("amount") is not None:
-        if amount_outside_tier(case, data["amount"]) and not (
-            data.get("justification") or ""
-        ).strip():
+        if (
+            amount_outside_tier(case, data["amount"])
+            and not (data.get("justification") or "").strip()
+        ):
             missing.append("Montant hors palier : justification écrite obligatoire")
     return missing
 
@@ -432,7 +475,9 @@ def _pre_deadline_disclosure(case, data):
     if case.deadline_disclosure_at:
         missing.append("Divulgation à échéance déjà décidée")
     notified = case.vendor_notified_at
-    if notified is None or timezone.now() - notified < timedelta(days=DEADLINE_DISCLOSURE_DAYS):
+    if notified is None or timezone.now() - notified < timedelta(
+        days=DEADLINE_DISCLOSURE_DAYS
+    ):
         missing.append(
             f"Moins de {DEADLINE_DISCLOSURE_DAYS} jours depuis la notification de l'organisation"
         )
@@ -576,7 +621,11 @@ ACTIONS = [
         # VENDOR_NOTIFIED et REMEDIATION_IN_PROGRESS : seulement apres une
         # divulgation a echeance decidee par le Coordinateur (voir
         # `_source_allowed`).
-        (CaseStatus.FIX_VERIFIED, CaseStatus.VENDOR_NOTIFIED, CaseStatus.REMEDIATION_IN_PROGRESS),
+        (
+            CaseStatus.FIX_VERIFIED,
+            CaseStatus.VENDOR_NOTIFIED,
+            CaseStatus.REMEDIATION_IN_PROGRESS,
+        ),
         CaseStatus.ADVISORY_REVIEW,
         step="9",
         prerequisites=_pre_submit_advisory,
@@ -708,6 +757,30 @@ ACTIONS = [
         comment_required=True,
     ),
     WorkflowAction(
+        "propose_closure",
+        "Proposer une clôture sans advisory",
+        Owner.ANALYST,
+        Capability.DRAFT_ADVISORY,
+        (CaseStatus.FIX_VERIFIED,),
+        CaseStatus.ADVISORY_REVIEW,
+        kind=SECONDARY,
+        comment_required=True,
+        owner_only=True,
+    ),
+    WorkflowAction(
+        "close_without_advisory",
+        "Clôturer sans publication",
+        Owner.COORDINATOR,
+        Capability.PUBLISH_ADVISORY,
+        (CaseStatus.ADVISORY_REVIEW,),
+        CaseStatus.CLOSED,
+        kind=SECONDARY,
+        comment_required=True,
+        four_eyes="__into_current__",
+        prerequisites=_pre_close_without_advisory,
+        owner_only=True,
+    ),
+    WorkflowAction(
         "insufficient_fix",
         "Correctif insuffisant",
         Owner.ANALYST,
@@ -809,7 +882,9 @@ def resolve_target(case, action):
     if action.target == CONFIRMED_REJECTION:
         return CaseStatus.DUPLICATE if case.duplicate_of_id else CaseStatus.REJECTED
     if action.target == RETURN_TO_PREVIOUS:
-        entry = case.status_history.filter(to_status=case.status).order_by("-created_at").first()
+        entry = (
+            case.status_history.filter(to_status=case.status).order_by("-created_at").first()
+        )
         if entry and entry.from_status:
             return entry.from_status
         return CaseStatus.IN_ANALYSIS
@@ -824,7 +899,9 @@ def author_of(case, action):
         bounty = getattr(case, "bounty", None)
         return bounty.proposed_by_id if bounty else None
     if action.four_eyes == "__into_current__":
-        entry = case.status_history.filter(to_status=case.status).order_by("-created_at").first()
+        entry = (
+            case.status_history.filter(to_status=case.status).order_by("-created_at").first()
+        )
     else:
         source = ACTIONS_BY_KEY[action.four_eyes]
         entry = (
@@ -870,12 +947,18 @@ def check_transition(case, action, user=None, data=None):
             if case.reporter_id != user.pk:
                 raise TransitionNotAllowed("Action réservée au déclarant du rapport.")
         elif not user.has_capability(action.capability):
-            raise TransitionNotAllowed(f"Capacité requise pour cette action : {action.capability}.")
+            raise TransitionNotAllowed(
+                f"Capacité requise pour cette action : {action.capability}."
+            )
         elif not is_step_owner(case, action, user):
             raise TransitionNotAllowed(
                 "Action réservée au responsable de l'étape en cours du dossier."
             )
-    if action.comment_required and data is not None and not (data.get("comment") or "").strip():
+    if (
+        action.comment_required
+        and data is not None
+        and not (data.get("comment") or "").strip()
+    ):
         raise TransitionNotAllowed("Un commentaire est obligatoire.", ["Commentaire manquant"])
     missing = action.missing(case, data)
     if missing:
@@ -1109,9 +1192,19 @@ PUBLIC_STATUS_BUCKETS = [
 PUBLIC_STATUS_STEPS = [(key, label) for key, label, _ in PUBLIC_STATUS_BUCKETS[:5]]
 
 
-def public_status_bucket(status):
-    """(cle, libelle) simplifies pour le declarant."""
+def public_status_bucket(status, published=True):
+    """(cle, libelle) simplifies pour le declarant.
+
+    `published=False` : dossier clos sans publication d'advisory, affiche
+    « Clôturé » plutot que « Publié ».
+    """
     for key, label, states in PUBLIC_STATUS_BUCKETS:
         if status in states:
+            if key == "RESOLVED" and not published:
+                return key, "Clôturé"
             return key, label
     return "ANALYSIS", "En analyse"
+
+
+def public_status_of(case):
+    return public_status_bucket(case.status, published=case.is_published)
