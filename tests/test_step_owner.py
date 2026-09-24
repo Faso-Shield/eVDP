@@ -97,12 +97,12 @@ def test_closed_case_content_is_closed_to_staff(analyst, coordinator, auditor, c
         assert not has_content_access(case_alpha, user)
 
 
-def test_assigned_analyst_is_the_only_owner(analyst, coordinator, case_alpha):
-    from apps.coordination.services import assign_case
+def test_claiming_analyst_is_the_only_owner(analyst, case_alpha):
+    from apps.coordination.services import claim_case
 
     other = make_user("analyste-b@test.bf", Role.CSIRT_ANALYST)
     advance(case_alpha, CaseStatus.IN_ANALYSIS)
-    assign_case(case_alpha, analyst, coordinator)
+    claim_case(case_alpha, analyst)
 
     assert has_content_access(case_alpha, analyst)
     assert not has_content_access(case_alpha, other)

@@ -975,12 +975,13 @@ def check_transition(case, action, user=None, data=None):
 # ---------------------------------------------------------------------------
 # Responsables d'etape
 # ---------------------------------------------------------------------------
-def step_owners(case, action):
+def step_owners(case, action, ignore_claim=False):
     """Comptes responsables du bouton `action` sur ce dossier.
 
     Tous les comptes actifs portant la capacite et voyant le dossier, hors
-    auteur de l'etape precedente (quatre yeux) ; si le dossier est assigne a
-    l'un d'eux, l'assigne seul.
+    auteur de l'etape precedente (quatre yeux) ; si l'un d'eux a pris le
+    dossier en charge, lui seul. `ignore_claim=True` rend le groupe entier
+    (qui peut prendre en charge, a qui transferer).
     """
     from django.db.models import Q
 
@@ -1005,11 +1006,37 @@ def step_owners(case, action):
         # Exception reservee au responsable de l'etape en cours.
         owners = current_owner_ids(case)
         return [user for user in users if user.pk in owners]
-    if case.assignee_id:
-        assigned = [user for user in users if user.pk == case.assignee_id]
-        if assigned:
-            return assigned
+    if not ignore_claim:
+        claimed = claimed_ids(case)
+        mine = [user for user in users if user.pk in claimed]
+        if mine:
+            return mine
     return users
+
+
+def claimed_ids(case):
+    """Comptes ayant pris le dossier en charge (au plus un par role)."""
+    return set(case.assignments.filter(is_active=True).values_list("user_id", flat=True))
+
+
+def claim_action(case):
+    """Bouton principal dont le responsable peut prendre le dossier en charge."""
+    action = primary_action(case)
+    if action is None or action.reporter_only:
+        return None
+    return action
+
+
+def claim_holder(case):
+    """Compte ayant pris en charge l'etape en cours, ou None."""
+    action = claim_action(case)
+    if action is None:
+        return None
+    claimed = claimed_ids(case)
+    for user in step_owners(case, action, ignore_claim=True):
+        if user.pk in claimed:
+            return user
+    return None
 
 
 def statuses_owned_by(user):

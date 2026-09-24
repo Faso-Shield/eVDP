@@ -32,7 +32,6 @@ class Capability(models.TextChoices):
     VIEW_ALL_CASES = "VIEW_ALL_CASES", "Voir tous les cases"
     VIEW_ORG_CASES = "VIEW_ORG_CASES", "Voir les cases de son organisation"
     TRIAGE_CASE = "TRIAGE_CASE", "Accuser réception et déclarer recevable"
-    ASSIGN_CASE = "ASSIGN_CASE", "Assigner un case"
     SET_SEVERITY = "SET_SEVERITY", "Saisir le CVSS et soumettre la qualification"
     VALIDATE_SEVERITY = "VALIDATE_SEVERITY", "Valider une qualification"
     REQUEST_INFORMATION = "REQUEST_INFORMATION", "Demander des compléments"
@@ -78,7 +77,6 @@ ROLE_CAPABILITIES = {
     },
     Role.NATIONAL_COORDINATOR: {
         C.VIEW_ALL_CASES,
-        C.ASSIGN_CASE,
         C.VALIDATE_SEVERITY,
         C.ARBITRATE_CASE,
         C.POST_INTERNAL_MESSAGE,
@@ -99,7 +97,6 @@ ROLE_CAPABILITIES = {
     # analyste senior (User.is_senior_analyst), jamais par defaut.
     Role.CSIRT_ANALYST: {
         C.VIEW_ALL_CASES,
-        C.ASSIGN_CASE,
         C.SET_SEVERITY,
         C.REQUEST_INFORMATION,
         C.PROPOSE_REJECTION,

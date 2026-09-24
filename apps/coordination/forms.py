@@ -4,7 +4,6 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from apps.accounts.models import User
-from apps.accounts.roles import NATIONAL_ROLES
 from apps.organizations.models import Organization, OrganizationStatus
 from apps.programs.models import ProgramScope
 from apps.vulnerabilities.constants import Severity
@@ -59,7 +58,9 @@ class WorkflowActionForm(forms.Form):
     organization_identified = forms.BooleanField(
         label="L'organisation affectée est identifiée", required=False
     )
-    attachment_readable = forms.BooleanField(label="La pièce jointe est lisible", required=False)
+    attachment_readable = forms.BooleanField(
+        label="La pièce jointe est lisible", required=False
+    )
     # Etape 6 : plan de remediation.
     remediation_plan = forms.CharField(
         label="Plan de remédiation", required=False, widget=forms.Textarea(attrs={"rows": 4})
@@ -69,11 +70,15 @@ class WorkflowActionForm(forms.Form):
     )
     # Etape 7 : correctif.
     fix_description = forms.CharField(
-        label="Description du correctif", required=False, widget=forms.Textarea(attrs={"rows": 3})
+        label="Description du correctif",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
     )
     fix_version = forms.CharField(label="Version corrigée", required=False, max_length=120)
     fix_deployed_on = forms.DateField(
-        label="Date de déploiement", required=False, widget=forms.DateInput(attrs={"type": "date"})
+        label="Date de déploiement",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
     )
     # Etape 8 : contre-verification.
     verification_report = forms.CharField(
@@ -82,9 +87,7 @@ class WorkflowActionForm(forms.Form):
         widget=forms.Textarea(attrs={"rows": 4}),
     )
     # Etape 10 : relecture.
-    review_done = forms.BooleanField(
-        label="Relecture de l'advisory effectuée", required=False
-    )
+    review_done = forms.BooleanField(label="Relecture de l'advisory effectuée", required=False)
     # Branche prime.
     amount = forms.DecimalField(
         label="Montant", required=False, max_digits=12, decimal_places=2, min_value=0
@@ -192,13 +195,17 @@ class QualificationForm(TriageForm):
         return vector
 
 
-class AssignmentForm(forms.Form):
-    assignee = forms.ModelChoiceField(
-        label="Analyste",
-        queryset=User.objects.filter(is_active=True, role__in=NATIONAL_ROLES),
-        required=False,
-    )
+class TransferForm(forms.Form):
+    """Transfert d'un dossier pris en charge a un collegue du meme role."""
+
+    target = forms.ModelChoiceField(label="Collègue", queryset=User.objects.none())
     note = forms.CharField(label="Note", required=False, max_length=255)
+
+    def __init__(self, *args, candidates=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["target"].queryset = User.objects.filter(
+            pk__in=[user.pk for user in candidates]
+        ).order_by("full_name", "email")
 
 
 class DuplicateForm(forms.Form):

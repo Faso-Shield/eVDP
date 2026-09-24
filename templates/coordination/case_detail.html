@@ -228,6 +228,26 @@
           <p class="muted small">Dossier clos : plus aucune action possible.</p>
         {% endif %}
 
+        {% if claim.can_claim %}
+          <form method="post" action="{% url 'coordination:claim' case.case_id %}" class="mt-1">
+            {% csrf_token %}
+            <button class="btn btn-block btn-outline" type="submit">Prendre en charge</button>
+            {% if claim.colleagues %}<p class="small muted mt-1">Le dossier sortira de la file de vos {{ claim.colleagues }} collègue(s).</p>{% endif %}
+          </form>
+        {% elif claim.is_mine %}
+          <p class="small mt-1"><strong>Vous avez pris ce dossier en charge.</strong></p>
+          {% if claim.transfer_form %}
+          <details class="wf-secondary">
+            <summary>Transférer à un collègue</summary>
+            <form method="post" action="{% url 'coordination:transfer' case.case_id %}" class="mt-1">
+              {% csrf_token %}
+              {% for field in claim.transfer_form %}{% include "partials/form_field.html" %}{% endfor %}
+              <button class="btn btn-block btn-outline" type="submit">Transférer</button>
+            </form>
+          </details>
+          {% endif %}
+        {% endif %}
+
         {% if bounty_panel and view.wallet or bounty_panel and bounty_panel.owner %}
           <hr>
           <p class="small"><strong>Branche prime</strong> · {{ case.get_bounty_stage_display }}</p>
@@ -255,7 +275,7 @@
           <dt>Produit</dt><dd>{{ case.product|default:"—" }}</dd>
           <dt>Type</dt><dd>{{ case.get_vulnerability_type_display }}</dd>
           <dt>Programme</dt><dd>{% if case.program %}<a href="{% url 'programs:detail' case.program.slug %}">{{ case.program.name }}</a>{% else %}—{% endif %}</dd>
-          {% if view.tracking %}<dt>Analyste</dt><dd>{{ case.assignee.display_name|default:"Non assigné" }}</dd>{% endif %}
+          {% if view.tracking and claim %}<dt>Pris en charge par</dt><dd>{{ claim.holder.display_name|default:"Personne pour l'instant" }}</dd>{% endif %}
           <dt>Créé le</dt><dd>{{ case.created_at|date:"d/m/Y H:i" }}</dd>
           {% if view.tracking %}<dt>Divulgation prévue</dt><dd>{{ case.disclosure_date|date:"d/m/Y"|default:"Non planifiée" }}</dd>{% endif %}
         </dl>
@@ -366,18 +386,6 @@
     </div>
     {% endif %}
 
-    {% if assignment_form %}
-    <div class="card">
-      <div class="card-header"><h3>Assignation</h3></div>
-      <div class="card-body">
-        <form method="post" action="{% url 'coordination:assign' case.case_id %}">
-          {% csrf_token %}
-          {% for field in assignment_form %}{% include "partials/form_field.html" %}{% endfor %}
-          <button class="btn btn-block btn-outline" type="submit">Assigner</button>
-        </form>
-      </div>
-    </div>
-    {% endif %}
 
     {% if disclosure_form or cve_form %}
     <div class="card">

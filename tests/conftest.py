@@ -424,7 +424,11 @@ def advance(case, target):
                 "remediation_target_date": timezone.localdate() + timedelta(days=20),
             }
         organization = case.organization if role == "dsi" else None
-        perform_action(case, action, workflow_actor(role, organization), data=dict(data))
+        # Dossier pris en charge : seul son titulaire est responsable.
+        from apps.coordination.workflow import claim_holder
+
+        actor = claim_holder(case) or workflow_actor(role, organization)
+        perform_action(case, action, actor, data=dict(data))
         case.refresh_from_db()
     return case
 

@@ -18,23 +18,25 @@ from apps.vulnerabilities.cvss import CVSSError, describe
 
 from . import selectors
 from .forms import (
-    AssignmentForm,
     CaseFilterForm,
     CaseMessageForm,
     CveLinkForm,
     DisclosureScheduleForm,
     QualificationForm,
+    TransferForm,
     TriageForm,
     WorkflowActionForm,
 )
 from .models import Case
 from .services import (
     QUALIFICATION_EDITABLE_STATES,
-    assign_case,
+    claim_case,
     perform_action,
     post_message,
     schedule_disclosure,
     set_severity,
+    transfer_candidates,
+    transfer_case,
     visible_messages,
 )
 from .visibility import case_view, has_content_access
@@ -167,6 +169,26 @@ def _advisory_button(case, user):
     }
 
 
+def _claim_panel(case, user):
+    """Prise en charge : bouton, titulaire, ou formulaire de transfert."""
+    from .workflow import claim_action, claim_holder, step_owners
+
+    action = claim_action(case)
+    if action is None:
+        return None
+    holder = claim_holder(case)
+    pool = step_owners(case, action, ignore_claim=True)
+    in_pool = user.pk in {member.pk for member in pool}
+    candidates = transfer_candidates(case, user)
+    return {
+        "holder": holder,
+        "can_claim": holder is None and in_pool and not user.is_read_only,
+        "is_mine": holder is not None and holder.pk == user.pk,
+        "transfer_form": TransferForm(candidates=candidates) if candidates else None,
+        "colleagues": len(pool) - 1,
+    }
+
+
 def _public_steps(current_key):
     keys = [key for key, _label in PUBLIC_STATUS_STEPS]
     current = keys.index(current_key) if current_key in keys else None
@@ -290,11 +312,7 @@ def case_detail(request, case_id):
         "public_steps": _public_steps(view["status_key"]),
         "admissibility_checklist": ADMISSIBILITY_CHECKLIST,
         "triage_form": triage_form,
-        "assignment_form": (
-            AssignmentForm(initial={"assignee": case.assignee_id})
-            if user.has_capability(Capability.ASSIGN_CASE) and not user.is_read_only
-            else None
-        ),
+        "claim": _claim_panel(case, user),
         "disclosure_form": (
             DisclosureScheduleForm(initial={"disclosure_date": case.disclosure_date})
             if (can_arbitrate or can_coordinate) and not user.is_read_only
@@ -438,22 +456,39 @@ def post_case_message(request, case_id):
 @require_POST
 @login_required
 @require_not_read_only
-@require_capability(Capability.ASSIGN_CASE)
-def assign(request, case_id):
+def claim(request, case_id):
     case = _get_case(request, case_id)
-    form = AssignmentForm(request.POST)
-    if form.is_valid():
-        assign_case(
+    try:
+        claim_case(case, request.user, request=request)
+        messages.success(request, "Dossier pris en charge.")
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    return redirect("coordination:case_detail", case_id=case.case_id)
+
+
+@require_POST
+@login_required
+@require_not_read_only
+def transfer(request, case_id):
+    case = _get_case(request, case_id)
+    form = TransferForm(request.POST, candidates=transfer_candidates(case, request.user))
+    if not form.is_valid():
+        messages.error(request, "Transfert invalide : " + form.errors.as_text())
+        return redirect("coordination:case_detail", case_id=case.case_id)
+    try:
+        transfer_case(
             case,
-            form.cleaned_data.get("assignee"),
             request.user,
+            form.cleaned_data["target"],
             note=form.cleaned_data.get("note", ""),
             request=request,
         )
-        messages.success(request, "Assignation mise à jour.")
-    else:
-        messages.error(request, "Assignation invalide.")
-    return redirect("coordination:case_detail", case_id=case.case_id)
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+        return redirect("coordination:case_detail", case_id=case.case_id)
+    messages.success(request, f"Dossier transféré à {form.cleaned_data['target']}.")
+    # Le dossier sort du perimetre de celui qui l'a transfere.
+    return redirect("coordination:case_list")
 
 
 @require_POST

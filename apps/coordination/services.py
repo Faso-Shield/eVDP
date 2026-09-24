@@ -48,6 +48,8 @@ from .workflow import (
     TransitionNotAllowed,
     available_actions,
     check_transition,
+    claim_action,
+    claim_holder,
     current_actions,
     current_owner_ids,
     get_action,
@@ -787,30 +789,82 @@ def _apply_reputation(case, status, actor):
 # Assignation
 # ---------------------------------------------------------------------------
 @transaction.atomic
-def assign_case(case, assignee, actor, note="", request=None):
-    if not actor.has_capability(Capability.ASSIGN_CASE):
-        raise PermissionDenied("Vous n'êtes pas autorisé à assigner un case.")
-    case.assignments.filter(is_active=True).update(is_active=False)
-    case.assignee = assignee
+def _record_claim(case, user, actor, note, request, pool):
+    """Enregistre la prise en charge de `user`, liberant ses collegues."""
+    pool_ids = {member.pk for member in pool}
+    case.assignments.filter(is_active=True, user_id__in=pool_ids).update(is_active=False)
+    CaseAssignment.objects.create(case=case, user=user, assigned_by=actor, note=note[:255])
+    case.assignee = user
     case.save(update_fields=["assignee", "updated_at"])
-    if assignee is not None:
-        CaseAssignment.objects.create(case=case, user=assignee, assigned_by=actor, note=note)
-        add_participant(case, assignee, ParticipantRole.ANALYST, added_by=actor)
-        notify(assignee, NotificationKind.CASE_ASSIGNED, case=case)
-    add_timeline_event(
-        case,
-        TimelineEventType.ASSIGNED,
-        f"Dossier assigne a {assignee}" if assignee else "Assignation retiree",
+    add_participant(case, user, ParticipantRole.ANALYST, added_by=actor)
+
+
+@transaction.atomic
+def claim_case(case, actor, request=None):
+    """« Prendre en charge » : le responsable de l'etape s'attribue le dossier.
+
+    Le dossier disparait alors de la file de ses collegues du meme role, qui
+    ne recoivent plus ses avis. L'attribution vaut pour les etapes suivantes
+    de ce meme role (l'analyste suit son dossier de l'etape 3 a l'etape 9) et
+    ne gene jamais les autres roles.
+    """
+    action = claim_action(case)
+    pool = step_owners(case, action, ignore_claim=True) if action else []
+    if actor.pk not in {user.pk for user in pool}:
+        raise PermissionDenied("Réservé au responsable de l'étape en cours.")
+    holder = claim_holder(case)
+    if holder is not None:
+        raise ValidationError(f"Dossier déjà pris en charge par {holder.display_name}.")
+    _record_claim(case, actor, actor, "Prise en charge", request, pool)
+    add_timeline_event(case, TimelineEventType.ASSIGNED, "Dossier pris en charge", actor=actor)
+    log_action(
+        AuditAction.CASE_ASSIGNED,
         actor=actor,
+        obj=case,
+        request=request,
+        claimed_by=str(actor),
+        step=action.step,
+    )
+    return case
+
+
+@transaction.atomic
+def transfer_case(case, actor, target, note="", request=None):
+    """« Transférer à un collègue » : passage de relais au sein du meme role."""
+    action = claim_action(case)
+    if claim_holder(case) != actor:
+        raise PermissionDenied("Seul le compte qui a pris le dossier en charge le transfère.")
+    pool = step_owners(case, action, ignore_claim=True)
+    if target is None or target.pk == actor.pk or target.pk not in {u.pk for u in pool}:
+        raise ValidationError(
+            "Le destinataire doit être un collègue responsable de cette étape."
+        )
+    _record_claim(case, target, actor, note or "Transfert", request, pool)
+    notify(target, NotificationKind.CASE_ASSIGNED, case=case)
+    add_timeline_event(
+        case, TimelineEventType.ASSIGNED, f"Dossier transféré à {target}", actor=actor
     )
     log_action(
         AuditAction.CASE_ASSIGNED,
         actor=actor,
         obj=case,
         request=request,
-        assignee=str(assignee) if assignee else None,
+        transferred_to=str(target),
+        note=note[:200],
     )
     return case
+
+
+def transfer_candidates(case, user):
+    """Collegues a qui `user` peut transferer le dossier (meme role, meme etape)."""
+    if claim_holder(case) != user:
+        return []
+    action = claim_action(case)
+    return [
+        member
+        for member in step_owners(case, action, ignore_claim=True)
+        if member.pk != user.pk
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1055,7 +1109,8 @@ __all__ = [
     "perform_action",
     "escalate_case",
     "transition_case",
-    "assign_case",
+    "claim_case",
+    "transfer_case",
     "post_message",
     "visible_messages",
     "mark_duplicate",

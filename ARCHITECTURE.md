@@ -217,7 +217,7 @@ workflow + audit + notification + SLA.
 | `vulnerability_reports` | `reports.VulnerabilityReport` | Déclaration brute |
 | `cases` | `coordination.Case` | Dossier de traitement |
 | `case_status_history` | `CaseStatusHistory` | Historique des transitions |
-| `case_assignments` | `CaseAssignment` | Assignations |
+| `case_assignments` | `CaseAssignment` | Prises en charge (une active par rôle) |
 | `case_participants` | `CaseParticipant` | Liste blanche d'accès |
 | `case_messages` | `CaseMessage` | Messagerie, hash d'intégrité |
 | `case_timeline_events` | `CaseTimelineEvent` | Chronologie |
