@@ -13,6 +13,8 @@ from apps.bounty.models import Bounty, BountyStatus, PaymentStatus, ReviewDecisi
 from apps.bounty.services import (
     approve_bounty,
     budget_status,
+    confirm_settlement,
+    mark_payment_failed,
     propose_bounty,
     record_payment,
     reject_bounty,
@@ -398,20 +400,32 @@ def test_payment_records_trace_without_real_transfer(bounty_case, analyst, coord
     payment = record_payment(bounty, coordinator, reference="VIR-2026-001")
     bounty.refresh_from_db()
 
-    assert bounty.status == BountyStatus.PAID
+    # PAYMENT_PENDING, pas PAID : un simple enregistrement n'est jamais un
+    # statut positif tant qu'aucune preuve ne confirme le reglement (voir
+    # confirm_settlement, plus bas).
+    assert bounty.status == BountyStatus.PAYMENT_PENDING
     assert payment.status == PaymentStatus.RECORDED
     assert payment.settled_at is None  # aucun versement reel n'est execute
-    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAID).exists()
+    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_RECORDED).exists()
 
 
-def test_payment_debits_the_wallet(bounty_case, analyst, coordinator):
-    """Le versement (hors plateforme) laisse une ecriture PAYOUT negative."""
+def test_payment_debits_the_wallet_only_once_settled(bounty_case, analyst, coordinator):
+    """Le Wallet n'est debite qu'a la confirmation du reglement, preuve a l'appui.
+
+    Un versement seulement enregistre peut encore echouer : il ne doit pas
+    faire baisser le solde du chercheur.
+    """
     from apps.bounty.models import WalletEntry, WalletEntryKind
     from apps.bounty.services import wallet_balance
 
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     approve_bounty(bounty, coordinator)
-    record_payment(bounty, coordinator, reference="VIR-1")
+    payment = record_payment(bounty, coordinator, reference="VIR-1")
+    assert not WalletEntry.objects.filter(bounty=bounty, kind=WalletEntryKind.PAYOUT).exists()
+    assert wallet_balance(bounty_case.reporter) == {"XOF": Decimal("200000")}
+
+    _verify_the_fix(bounty_case, coordinator)
+    confirm_settlement(payment, coordinator, proof_file=_proof())
 
     payout = WalletEntry.objects.get(bounty=bounty, kind=WalletEntryKind.PAYOUT)
     assert payout.amount == Decimal("-200000")
@@ -425,10 +439,32 @@ def test_analyst_cannot_record_payment(bounty_case, analyst, coordinator):
         record_payment(bounty, analyst)
 
 
-def test_paid_bounty_updates_researcher_totals(bounty_case, analyst, coordinator):
+def test_payment_pending_does_not_update_researcher_totals(bounty_case, analyst, coordinator):
+    """Un versement seulement enregistre ne doit rien compter : voir
+    test_settled_bounty_updates_researcher_totals pour le cas confirme."""
     bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
     approve_bounty(bounty, coordinator)
     record_payment(bounty, coordinator)
+
+    profile = bounty_case.reporter.researcher_profile
+    profile.refresh_from_db()
+    assert profile.total_rewards == Decimal("0.00")
+
+
+def test_settled_bounty_updates_researcher_totals(bounty_case, analyst, coordinator):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)
+    _verify_the_fix(bounty_case, coordinator)
+    confirm_settlement(
+        payment,
+        coordinator,
+        proof_file=SimpleUploadedFile(
+            "recu.pdf", b"%PDF-1.4 recu", content_type="application/pdf"
+        ),
+    )
 
     profile = bounty_case.reporter.researcher_profile
     profile.refresh_from_db()
@@ -494,7 +530,7 @@ def test_payment_warns_without_any_payout_profile(bounty_case, analyst, coordina
     assert "aucun moyen" in payment.payout_warning
     warnings = [
         entry.metadata.get("warning", "")
-        for entry in AuditLog.objects.filter(action=AuditAction.BOUNTY_PAID)
+        for entry in AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_RECORDED)
     ]
     assert any("incomplet" in warning for warning in warnings)
 
@@ -540,6 +576,247 @@ def test_payment_view_flashes_the_payout_warning(
     )
     content = response.content.decode()
     assert "portefeuille" in content.lower()
+
+
+# ------------------------------------------------------------- reglement
+# La comptabilite agit hors plateforme et notifie l'agent par email avec une
+# preuve (recu, confirmation bancaire...) : cette preuve doit etre televersee
+# ici pour confirmer qu'un versement enregistre a reellement ete regle -
+# jamais sur une simple declaration.
+def _proof():
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    return SimpleUploadedFile(
+        "recu.pdf", b"%PDF-1.4 recu de virement", content_type="application/pdf"
+    )
+
+
+def _verify_the_fix(case, actor):
+    """Fait avancer le dossier jusqu'a FIX_VERIFIED (chemin nominal Bug Bounty).
+
+    Necessaire pour confirmer un reglement : voir SETTLEMENT_ELIGIBLE_CASE_
+    STATUSES, le paiement ne doit jamais etre effectue avant que tout le
+    processus de remediation soit lui-meme termine.
+    """
+    from apps.coordination.workflow import CaseStatus
+
+    # Workflow v2 : chaque etape est cliquee par son proprietaire legitime
+    # (voir tests.conftest.advance), jusqu'a la contre-verification (etape 8).
+    return advance(case, CaseStatus.FIX_VERIFIED)
+
+
+def _recorded_payment(bounty_case, analyst, coordinator, amount=Decimal("200000")):
+    """Versement pret a etre confirme : dossier deja verifie par defaut.
+
+    Les tests qui portent specifiquement sur l'etat du dossier (verification
+    pas encore faite) construisent leur propre scenario plutot que d'utiliser
+    ce raccourci - voir test_confirm_settlement_requires_a_verified_case.
+    """
+    bounty = propose_bounty(bounty_case, analyst, amount=amount)
+    approve_bounty(bounty, coordinator)
+    _verify_the_fix(bounty_case, coordinator)
+    return record_payment(bounty, coordinator)
+
+
+def test_confirm_settlement_requires_a_proof(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    with pytest.raises(ValidationError):
+        confirm_settlement(payment, coordinator, proof_file=None)
+
+
+def test_confirm_settlement_requires_a_verified_fix(bounty_case, analyst, coordinator):
+    """L'argent ne doit jamais sortir avant que tout le processus de
+    remediation soit lui-meme termine - pas seulement la decision de
+    recompense. Un dossier encore SUBMITTED, meme avec un versement
+    enregistre, ne peut pas etre confirme regle."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)  # dossier toujours SUBMITTED
+
+    with pytest.raises(ValidationError, match="correctif"):
+        confirm_settlement(payment, coordinator, proof_file=_proof())
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.RECORDED
+
+
+def test_confirm_settlement_succeeds_once_the_fix_is_verified(
+    bounty_case, analyst, coordinator
+):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)
+    _verify_the_fix(bounty_case, coordinator)
+
+    confirm_settlement(payment, coordinator, proof_file=_proof())
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.SETTLED
+
+
+def test_mark_payment_failed_also_requires_a_verified_fix(bounty_case, analyst, coordinator):
+    """Ni la confirmation ni l'echec ne doivent pouvoir statuer sur un
+    versement tant que le processus de remediation n'est pas termine : le
+    versement reste simplement "Enregistre" jusque-la, dans les deux sens."""
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)  # dossier toujours SUBMITTED
+
+    with pytest.raises(ValidationError, match="correctif"):
+        mark_payment_failed(payment, coordinator, reason="Compte errone")
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.RECORDED
+
+
+def test_mark_payment_failed_succeeds_once_the_fix_is_verified(
+    bounty_case, analyst, coordinator
+):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    payment = record_payment(bounty, coordinator)
+    _verify_the_fix(bounty_case, coordinator)
+
+    mark_payment_failed(payment, coordinator, reason="Compte errone")
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.FAILED
+
+
+def test_settlement_eligible_flag_reflects_the_case_status(
+    client_for, bounty_case, analyst, coordinator
+):
+    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    approve_bounty(bounty, coordinator)
+    record_payment(bounty, coordinator)
+
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:detail", args=[bounty.pk]))
+    assert response.context["settlement_eligible"] is False
+    assert "pas encore vérifié" in response.content.decode()
+
+    _verify_the_fix(bounty_case, coordinator)
+    response = client.get(reverse("bounty:detail", args=[bounty.pk]))
+    assert response.context["settlement_eligible"] is True
+
+
+def test_confirm_settlement_marks_the_payment_settled(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    confirm_settlement(payment, coordinator, proof_file=_proof(), note="Confirme par email")
+    payment.refresh_from_db()
+
+    assert payment.status == PaymentStatus.SETTLED
+    assert payment.settled_at is not None
+    assert payment.proof_original_filename == "recu.pdf"
+    assert payment.proof_sha256
+    assert payment.note == "Confirme par email"
+    assert payment.bounty.status == BountyStatus.PAID
+    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_SETTLED).exists()
+
+
+def test_confirm_settlement_requires_capability(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    with pytest.raises(PermissionDenied):
+        confirm_settlement(payment, analyst, proof_file=_proof())
+
+
+def test_confirm_settlement_refuses_an_already_settled_payment(
+    bounty_case, analyst, coordinator
+):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    confirm_settlement(payment, coordinator, proof_file=_proof())
+    with pytest.raises(ValidationError):
+        confirm_settlement(payment, coordinator, proof_file=_proof())
+
+
+def test_mark_payment_failed_requires_a_reason(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    with pytest.raises(ValidationError):
+        mark_payment_failed(payment, coordinator, reason="  ")
+
+
+def test_mark_payment_failed_marks_the_payment(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    mark_payment_failed(payment, coordinator, reason="Compte beneficiaire errone")
+    payment.refresh_from_db()
+
+    assert payment.status == PaymentStatus.FAILED
+    assert payment.failure_reason == "Compte beneficiaire errone"
+    # Retour a APPROVED : la recompense reste due, un nouveau versement peut
+    # etre enregistre - ce n'est pas un etat terminal.
+    assert payment.bounty.status == BountyStatus.APPROVED
+    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PAYMENT_FAILED).exists()
+
+
+def test_new_payment_can_be_recorded_after_a_failure(bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    mark_payment_failed(payment, coordinator, reason="Mauvais compte")
+    payment.bounty.refresh_from_db()
+
+    second = record_payment(payment.bounty, coordinator, reference="VIR-CORRECTIF")
+    assert second.pk != payment.pk
+    payment.bounty.refresh_from_db()
+    assert payment.bounty.status == BountyStatus.PAYMENT_PENDING
+
+
+def test_settle_payment_via_get_is_rejected(client_for, bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:settle_payment", args=[payment.pk]))
+    assert response.status_code == 405
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.RECORDED
+
+
+def test_settle_payment_view_uploads_the_proof(client_for, bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    client = client_for(coordinator)
+    response = client.post(
+        reverse("bounty:settle_payment", args=[payment.pk]),
+        {"proof_file": _proof(), "note": ""},
+    )
+    assert response.status_code == 302
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.SETTLED
+    assert payment.proof_file.name
+
+
+def test_fail_payment_view(client_for, bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    client = client_for(coordinator)
+    response = client.post(
+        reverse("bounty:fail_payment", args=[payment.pk]),
+        {"reason": "Virement rejete par la banque"},
+    )
+    assert response.status_code == 302
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.FAILED
+
+
+def test_payment_proof_download_requires_capability(
+    client_for, bounty_case, analyst, coordinator
+):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    confirm_settlement(payment, coordinator, proof_file=_proof())
+
+    client = client_for(analyst)
+    response = client.get(reverse("bounty:payment_proof", args=[payment.pk]))
+    assert response.status_code == 403
+
+
+def test_payment_proof_download_works_for_recorder(
+    client_for, bounty_case, analyst, coordinator
+):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    confirm_settlement(payment, coordinator, proof_file=_proof())
+
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:payment_proof", args=[payment.pk]))
+    assert response.status_code == 200
+    assert AuditLog.objects.filter(action=AuditAction.BOUNTY_PROOF_DOWNLOADED).exists()
+
+
+def test_payment_without_proof_download_is_404(client_for, bounty_case, analyst, coordinator):
+    payment = _recorded_payment(bounty_case, analyst, coordinator)
+    client = client_for(coordinator)
+    response = client.get(reverse("bounty:payment_proof", args=[payment.pk]))
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------- isolation

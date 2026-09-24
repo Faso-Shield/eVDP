@@ -55,6 +55,10 @@ vue ne charge même pas les avis pour un bénéficiaire.
   {% elif bounty.status == "APPROVED" %}
     <strong>Récompense approuvée.</strong> Le montant est arrêté. Le versement est
     réalisé hors plateforme par le service financier, puis enregistré ici.
+  {% elif bounty.status == "PAYMENT_PENDING" %}
+    <strong>Versement en cours.</strong> Un versement a été enregistré et est en
+    attente de confirmation par la coordination nationale. Vous serez notifié
+    une fois le règlement confirmé.
   {% elif bounty.status == "PAID" %}
     <strong>Récompense versée.</strong> Le versement a été enregistré. En cas
     d'écart avec ce que vous avez reçu, répondez dans la messagerie du dossier.
@@ -128,8 +132,9 @@ vue ne charge même pas les avis pour un bénéficiaire.
         <div class="table-wrap">
           <table class="table">
             <thead><tr>
-              <th>Montant</th><th>Moyen</th><th>Référence</th><th>Portefeuille</th><th>Statut</th>
+              <th>Montant</th><th>Moyen</th><th>Référence</th><th>Portefeuille</th><th>Statut</th><th>Preuve</th>
               {% if peut_instruire %}<th>Enregistré par</th>{% endif %}<th>Date</th>
+              {% if can_pay %}<th>Confirmation</th>{% endif %}
             </tr></thead>
             <tbody>
             {% for payment in payments %}
@@ -139,11 +144,49 @@ vue ne charge même pas les avis pour un bénéficiaire.
                 <td class="small">{{ payment.reference|default:"—" }}</td>
                 <td class="small mono">{{ payment.payout_snapshot|default:"—" }}</td>
                 <td><span class="status">{{ payment.get_status_display }}</span></td>
+                <td class="small">
+                  {% if payment.proof_file %}<a href="{% url 'bounty:payment_proof' payment.id %}">Télécharger</a>{% else %}—{% endif %}
+                </td>
                 {% if peut_instruire %}<td class="small">{{ payment.recorded_by.display_name|default:"—" }}</td>{% endif %}
                 <td class="small">{{ payment.created_at|date:"d/m/Y" }}</td>
+                {% if can_pay %}
+                <td class="small nowrap">
+                  {% if payment.status == "RECORDED" %}
+                    <details>
+                      <summary class="btn btn-sm btn-outline">Confirmer / Échec</summary>
+                      <div class="mt-1" style="min-width:240px">
+                        {% if settlement_eligible %}
+                        <form method="post" action="{% url 'bounty:settle_payment' payment.id %}" enctype="multipart/form-data" class="mb-1">
+                          {% csrf_token %}
+                          {% for field in settlement_form %}{% include "partials/form_field.html" %}{% endfor %}
+                          <button class="btn btn-sm btn-accent" type="submit">Confirmer réglé</button>
+                        </form>
+                        <form method="post" action="{% url 'bounty:fail_payment' payment.id %}">
+                          {% csrf_token %}
+                          {% for field in failure_form %}{% include "partials/form_field.html" %}{% endfor %}
+                          <button class="btn btn-sm btn-danger" type="submit">Marquer en échec</button>
+                        </form>
+                        {% else %}
+                        <div class="notice mb-0">
+                          <strong>Correctif pas encore vérifié.</strong> Le dossier est
+                          au statut « {{ bounty.case.get_status_display }} » : ni la
+                          confirmation de règlement ni le marquage en échec ne sont
+                          possibles avant que le correctif soit vérifié (ou une étape
+                          ultérieure).
+                        </div>
+                        {% endif %}
+                      </div>
+                    </details>
+                  {% elif payment.status == "SETTLED" %}
+                    <span class="small muted">Réglé le {{ payment.settled_at|date:"d/m/Y" }}</span>
+                  {% elif payment.status == "FAILED" %}
+                    <span class="small muted">{{ payment.failure_reason|default:"Échec" }}</span>
+                  {% endif %}
+                </td>
+                {% endif %}
               </tr>
             {% empty %}
-              <tr><td colspan="{% if peut_instruire %}7{% else %}6{% endif %}" class="muted">Aucun versement enregistré.</td></tr>
+              <tr><td colspan="{% if peut_instruire and can_pay %}9{% elif peut_instruire or can_pay %}8{% else %}7{% endif %}" class="muted">Aucun versement enregistré.</td></tr>
             {% endfor %}
             </tbody>
           </table>
@@ -172,6 +215,27 @@ vue ne charge même pas les avis pour un bénéficiaire.
           <input type="hidden" name="note" value="Rejet après revue">
           <button class="btn btn-danger btn-block" type="submit">Rejeter</button>
         </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if can_pay and payout_method %}
+    <div class="card card-payout">
+      <div class="card-header">
+        <h3 class="flex" style="align-items:center;gap:.45rem">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          Référence de paiement
+        </h3>
+        <span class="pill">Versement</span>
+      </div>
+      <div class="card-body">
+        <p class="mb-0" style="font-weight:600;color:var(--evdp-navy)">
+          {{ payout_profile.legal_full_name|default:bounty.researcher.display_name }}
+        </p>
+        <p class="payout-value mono mb-0">{{ payout_method.full_summary }}</p>
+        <p class="small muted mb-0">
+          Titulaire et moyen principal du chercheur, en clair. Consultation journalisée.
+        </p>
       </div>
     </div>
     {% endif %}

@@ -9,11 +9,13 @@ from decimal import Decimal
 
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.bounty.models import WalletEntry, WalletEntryKind
 from apps.bounty.services import (
     adjust_wallet,
     approve_bounty,
+    confirm_settlement,
     propose_bounty,
     record_payment,
     wallet_balance,
@@ -43,7 +45,17 @@ def test_balance_is_computed_from_entries(credited_bounty, coordinator):
     researcher = credited_bounty.researcher
     assert wallet_balance(researcher) == {"XOF": Decimal("200000")}
 
-    record_payment(credited_bounty, coordinator, amount=Decimal("150000"))
+    payment = record_payment(credited_bounty, coordinator, amount=Decimal("150000"))
+    # Enregistre seulement : le reglement n'est pas encore prouve.
+    assert wallet_balance(researcher) == {"XOF": Decimal("200000")}
+    advance(credited_bounty.case, CaseStatus.FIX_VERIFIED)
+    confirm_settlement(
+        payment,
+        coordinator,
+        proof_file=SimpleUploadedFile(
+            "recu.pdf", b"%PDF-1.4 recu", content_type="application/pdf"
+        ),
+    )
     assert wallet_balance(researcher) == {"XOF": Decimal("50000")}
 
     adjust_wallet(

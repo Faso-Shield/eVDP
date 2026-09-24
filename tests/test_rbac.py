@@ -241,3 +241,116 @@ def test_organization_sees_case_from_step_5(dsi_alpha, case_alpha):
     advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     assert case_alpha.is_visible_to(dsi_alpha)
     assert set(Case.objects.visible_to(dsi_alpha)) == {case_alpha}
+
+
+# ------------------------------------------ reference de paiement en clair
+# Workflow v2 : reservee a qui execute le versement (RECORD_PAYMENT, le
+# Coordinateur), sur la fiche de la prime, toujours journalisee. Jamais au
+# super admin, qui n'a acces ni aux dossiers ni au Wallet, et jamais sur la
+# fiche du dossier.
+@pytest.fixture
+def super_admin(db):
+    from apps.accounts.models import User
+
+    return User.objects.create_superuser(
+        email="admin@test.bf", password="x", full_name="Admin Test"
+    )
+
+
+def _give_a_wallet(researcher):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.researchers.models import PayoutMethod, PayoutMethodType
+    from apps.researchers.services import (
+        add_payout_method,
+        attach_id_document,
+        get_or_create_payout_profile,
+    )
+
+    profile = get_or_create_payout_profile(researcher)
+    profile.legal_full_name = "Awa Traore"
+    profile.contact_phone = "+22670000000"
+    profile.accepted_terms = True
+    profile.save()
+    attach_id_document(
+        profile,
+        researcher,
+        SimpleUploadedFile("cnib.pdf", b"%PDF-1.4 test", content_type="application/pdf"),
+    )
+    return add_payout_method(
+        profile,
+        researcher,
+        PayoutMethod(
+            method_type=PayoutMethodType.BANK_TRANSFER,
+            bank_name="Coris Bank",
+            account_holder_name="Awa Traore",
+            account_number="BF1234567890123456",
+        ),
+    )
+
+
+def _bounty_for(case, analyst):
+    from decimal import Decimal
+
+    from apps.bounty.services import propose_bounty
+
+    return propose_bounty(case, analyst, amount=Decimal("1500000"))
+
+
+def test_coordinator_sees_the_payout_reference_on_the_bounty(
+    client_for, coordinator, analyst, bounty_researcher, bounty_case
+):
+    from apps.audit.models import AuditAction, AuditLog
+
+    _give_a_wallet(bounty_researcher)
+    bounty = _bounty_for(bounty_case, analyst)
+
+    content = (
+        client_for(coordinator)
+        .get(reverse("bounty:detail", args=[bounty.pk]))
+        .content.decode()
+    )
+    assert "BF1234567890123456" in content
+    assert "Awa Traore" in content  # nom legal, pas seulement le moyen
+    assert AuditLog.objects.filter(
+        action=AuditAction.PAYOUT_REFERENCE_VIEWED, actor=coordinator
+    ).exists()
+
+
+def test_analyst_never_sees_the_payout_reference(
+    client_for, analyst, bounty_researcher, bounty_case
+):
+    """L'analyste propose la prime mais n'execute pas le versement."""
+    _give_a_wallet(bounty_researcher)
+    bounty = _bounty_for(bounty_case, analyst)
+
+    content = (
+        client_for(analyst).get(reverse("bounty:detail", args=[bounty.pk])).content.decode()
+    )
+    assert "BF1234567890123456" not in content
+
+
+def test_case_page_never_shows_the_payout_reference(
+    client_for, coordinator, bounty_researcher, bounty_case
+):
+    _give_a_wallet(bounty_researcher)
+    content = (
+        client_for(coordinator)
+        .get(reverse("coordination:case_detail", args=[bounty_case.case_id]))
+        .content.decode()
+    )
+    assert "BF1234567890123456" not in content
+
+
+def test_super_admin_never_reaches_the_payout_reference(
+    client_for, super_admin, analyst, bounty_researcher, bounty_case
+):
+    _give_a_wallet(bounty_researcher)
+    bounty = _bounty_for(bounty_case, analyst)
+    client = client_for(super_admin)
+
+    assert (
+        client.get(reverse("coordination:case_detail", args=[bounty_case.case_id])).status_code
+        == 404
+    )
+    assert client.get(reverse("bounty:detail", args=[bounty.pk])).status_code == 404

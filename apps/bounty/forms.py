@@ -53,3 +53,26 @@ class PaymentForm(forms.Form):
     )
     method = forms.ChoiceField(label="Moyen", choices=PaymentMethod.choices)
     reference = forms.CharField(label="Référence comptable", max_length=120, required=False)
+
+
+class SettlementForm(forms.Form):
+    """Confirmation qu'un versement enregistré a réellement été réglé.
+
+    La preuve est obligatoire : on ne marque jamais un versement "Réglé"
+    sur une simple déclaration (voir apps.bounty.services.confirm_settlement).
+    """
+
+    proof_file = forms.FileField(
+        label="Preuve de paiement (reçu, confirmation bancaire...)",
+        widget=forms.FileInput(attrs={"class": "upload-input"}),
+    )
+    note = forms.CharField(
+        label="Note (facultatif)", widget=forms.Textarea(attrs={"rows": 2}), required=False
+    )
+
+
+class PaymentFailureForm(forms.Form):
+    reason = forms.CharField(
+        label="Motif de l'échec",
+        widget=forms.Textarea(attrs={"rows": 2}),
+    )

@@ -62,6 +62,7 @@ BOUNTY_STAGE_BY_STATUS = {
     "PENDING": "BOUNTY_PROPOSED",
     "UNDER_REVIEW": "BOUNTY_PROPOSED",
     "APPROVED": "BOUNTY_CREDITED",
+    "PAYMENT_PENDING": "BOUNTY_CREDITED",
     "PAID": "BOUNTY_CREDITED",
     "REJECTED": "NOT_ELIGIBLE",
     "CANCELLED": "NOT_ELIGIBLE",
@@ -111,7 +112,7 @@ def forwards(apps, schema_editor):
     for bounty in Bounty.objects.select_related("case"):
         stage = BOUNTY_STAGE_BY_STATUS.get(bounty.status, "BOUNTY_PROPOSED")
         Case.objects.filter(pk=bounty.case_id).update(bounty_stage=stage)
-        if bounty.status in ("APPROVED", "PAID") and bounty.researcher_id:
+        if bounty.status in ("APPROVED", "PAYMENT_PENDING", "PAID") and bounty.researcher_id:
             amount = bounty.approved_amount or bounty.proposed_amount
             WalletEntry.objects.create(
                 researcher_id=bounty.researcher_id,
@@ -122,7 +123,8 @@ def forwards(apps, schema_editor):
                 label=f"Prime {bounty.case.case_id} (reprise)",
                 created_by_id=bounty.decided_by_id,
             )
-            for payment in bounty.payments.all():
+            # Seul un versement dont le reglement est prouve debite le Wallet.
+            for payment in bounty.payments.filter(status="SETTLED"):
                 WalletEntry.objects.create(
                     researcher_id=bounty.researcher_id,
                     bounty=bounty,
@@ -147,7 +149,7 @@ def forwards(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [
         ("coordination", "0007_workflow_v2"),
-        ("bounty", "0005_walletentry"),
+        ("bounty", "0007_walletentry"),
         ("programs", "0001_initial"),
         ("accounts", "0008_user_is_senior_analyst"),
     ]

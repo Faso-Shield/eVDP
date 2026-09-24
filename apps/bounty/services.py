@@ -1,5 +1,6 @@
 """Cycle de vie des recompenses Bug Bounty."""
 
+import uuid
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -8,11 +9,12 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from apps.accounts.roles import Capability
+from apps.attachments.services import compute_digest, validate_upload
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination.constants import TimelineEventType
 from apps.coordination.services import add_timeline_event
-from apps.coordination.workflow import BountyStage
+from apps.coordination.workflow import BountyStage, CaseStatus
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
 from apps.programs.models import ProgramType
@@ -26,6 +28,20 @@ from .models import (
     ReviewDecision,
     WalletEntry,
     WalletEntryKind,
+)
+
+#: Un versement enregistre ne peut etre statue (regle ou en echec) que si le
+#: correctif du dossier source a ete verifie - jamais avant, quel que soit
+#: l'avancement de la recompense elle-meme. Le workflow Bug Bounty
+#: (apps.coordination.workflow) impose deja de passer par FIX_VERIFIED avant
+#: tout etat qui suit : verifier l'appartenance a cet ensemble suffit, pas
+#: besoin de rejouer le graphe.
+SETTLEMENT_ELIGIBLE_CASE_STATUSES = frozenset(
+    {
+        CaseStatus.FIX_VERIFIED,
+        CaseStatus.ADVISORY_REVIEW,
+        CaseStatus.CLOSED,
+    }
 )
 
 
@@ -71,7 +87,11 @@ def budget_status(bounty, amount=None):
         return None
 
     consumed = policy.budget_consumed()
-    if bounty.status in (BountyStatus.APPROVED, BountyStatus.PAID):
+    if bounty.status in (
+        BountyStatus.APPROVED,
+        BountyStatus.PAYMENT_PENDING,
+        BountyStatus.PAID,
+    ):
         consumed -= bounty.approved_amount or Decimal("0")
     if amount is None:
         amount = (
@@ -345,8 +365,80 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
         status=PaymentStatus.RECORDED,
         recorded_by=actor,
     )
+    # PAYMENT_PENDING, pas PAID : un versement enregistre n'est qu'une
+    # intention tant qu'aucune preuve n'a confirme qu'il a reellement eu
+    # lieu (voir confirm_settlement). Le beneficiaire n'est notifie, et son
+    # total de recompenses n'est recalcule, qu'une fois cette confirmation
+    # obtenue - jamais sur une simple intention.
+    bounty.status = BountyStatus.PAYMENT_PENDING
+    bounty.save(update_fields=["status", "updated_at"])
+
+    if payout_warnings:
+        log_action(
+            AuditAction.BOUNTY_PAYMENT_RECORDED,
+            actor=actor,
+            obj=bounty,
+            request=request,
+            warning="; ".join(payout_warnings),
+        )
+    log_action(
+        AuditAction.BOUNTY_PAYMENT_RECORDED,
+        actor=actor,
+        obj=bounty,
+        request=request,
+        case=bounty.case.case_id,
+        amount=str(payment.amount),
+        reference=payment.reference,
+    )
+    # Transitoire, non persiste : permet a la vue d'afficher l'avertissement
+    # sans recalculer la meme logique.
+    payment.payout_warning = "; ".join(payout_warnings)
+    return payment
+
+
+@transaction.atomic
+def confirm_settlement(payment, actor, proof_file, note="", request=None):
+    """Confirme qu'un versement enregistre a reellement ete regle.
+
+    La comptabilite agit hors plateforme : elle notifie l'agent par email,
+    avec une preuve (recu, confirmation bancaire ou mobile money...). Cette
+    preuve est exigee ici - jamais une simple declaration - et televersee
+    avec les memes garanties que le justificatif d'identite du portefeuille
+    (nom de stockage opaque, jamais servie directement, voir
+    apps.bounty.views.payment_proof_download).
+    """
+    if not actor.has_capability(Capability.RECORD_PAYMENT):
+        raise PermissionDenied("Capacite requise pour confirmer un versement.")
+    if payment.status != PaymentStatus.RECORDED:
+        raise ValidationError("Seul un versement enregistre peut etre confirme regle.")
+    if payment.bounty.case.status not in SETTLEMENT_ELIGIBLE_CASE_STATUSES:
+        raise ValidationError(
+            "Le correctif du dossier doit etre verifie avant de confirmer le versement "
+            f"(statut actuel : {payment.bounty.case.get_status_display()})."
+        )
+    if not proof_file:
+        raise ValidationError({"proof_file": "Une preuve de paiement est obligatoire."})
+
+    metadata = validate_upload(proof_file)
+    digest = compute_digest(proof_file)
+
+    payment.proof_storage_name = f"{uuid.uuid4().hex}.{metadata['extension']}"
+    payment.proof_original_filename = proof_file.name[:255]
+    payment.proof_content_type = metadata["content_type"]
+    payment.proof_size = proof_file.size
+    payment.proof_sha256 = digest
+    payment.proof_uploaded_at = timezone.now()
+    if note.strip():
+        payment.note = note.strip()[:255]
+    payment.save()
+    payment.proof_file.save(payment.proof_storage_name, proof_file, save=True)
+    payment.mark_settled()
+
+    bounty = payment.bounty
     bounty.status = BountyStatus.PAID
     bounty.save(update_fields=["status", "updated_at"])
+    # Le Wallet n'est debite qu'une fois le reglement prouve : un versement
+    # seulement enregistre peut encore echouer (mark_payment_failed).
     if bounty.researcher_id:
         WalletEntry.objects.create(
             researcher=bounty.researcher,
@@ -358,34 +450,72 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
             created_by=actor,
         )
 
-    if payout_warnings:
-        log_action(
-            AuditAction.BOUNTY_PAID,
-            actor=actor,
-            obj=bounty,
-            request=request,
-            warning="; ".join(payout_warnings),
-        )
     log_action(
-        AuditAction.BOUNTY_PAID,
+        AuditAction.BOUNTY_PAYMENT_SETTLED,
         actor=actor,
-        obj=bounty,
+        obj=payment,
         request=request,
         case=bounty.case.case_id,
         amount=str(payment.amount),
-        reference=payment.reference,
+        sha256=digest,
+        filename=payment.proof_original_filename,
     )
+    # La confirmation - pas le simple enregistrement - est ce qui doit
+    # notifier le beneficiaire et alimenter son total de recompenses.
     if bounty.researcher_id:
         notify(bounty.researcher, NotificationKind.BOUNTY_PAID, case=bounty.case)
         profile = getattr(bounty.researcher, "researcher_profile", None)
         if profile:
             profile.recompute()
-    # Transitoire, non persiste : permet a la vue d'afficher l'avertissement
-    # sans recalculer la meme logique.
-    payment.payout_warning = "; ".join(payout_warnings)
     return payment
 
 
+@transaction.atomic
+def mark_payment_failed(payment, actor, reason, request=None):
+    """Signale qu'un versement enregistre n'a finalement pas abouti."""
+    if not actor.has_capability(Capability.RECORD_PAYMENT):
+        raise PermissionDenied("Capacite requise pour signaler un echec de versement.")
+    if payment.status != PaymentStatus.RECORDED:
+        raise ValidationError("Seul un versement enregistre peut etre marque en echec.")
+    if payment.bounty.case.status not in SETTLEMENT_ELIGIBLE_CASE_STATUSES:
+        raise ValidationError(
+            "Le correctif du dossier doit etre verifie avant de statuer sur ce versement "
+            f"(statut actuel : {payment.bounty.case.get_status_display()})."
+        )
+    if not reason.strip():
+        raise ValidationError({"reason": "Un motif est obligatoire."})
+
+    payment.mark_failed(reason.strip())
+
+    # Retour a APPROVED, pas un etat terminal : le versement rate, la
+    # recompense reste due, un nouveau versement peut etre enregistre.
+    bounty = payment.bounty
+    bounty.status = BountyStatus.APPROVED
+    bounty.save(update_fields=["status", "updated_at"])
+
+    log_action(
+        AuditAction.BOUNTY_PAYMENT_FAILED,
+        actor=actor,
+        obj=payment,
+        request=request,
+        case=bounty.case.case_id,
+        reason=reason.strip()[:200],
+    )
+    return payment
+
+
+def authorize_proof_download(payment, user, request=None):
+    """Autorise (ou refuse) le telechargement de la preuve, et journalise l'acces."""
+    if not user.has_capability(Capability.RECORD_PAYMENT):
+        return False
+    log_action(
+        AuditAction.BOUNTY_PROOF_DOWNLOADED,
+        actor=user,
+        obj=payment,
+        request=request,
+        case=payment.bounty.case.case_id,
+    )
+    return True
 # ---------------------------------------------------------------------------
 # Wallet : grand livre d'ecritures, solde calcule
 # ---------------------------------------------------------------------------
@@ -477,6 +607,9 @@ __all__ = [
     "approve_bounty",
     "reject_bounty",
     "record_payment",
+    "confirm_settlement",
+    "mark_payment_failed",
+    "authorize_proof_download",
     "suggested_amount",
     "ReviewDecision",
 ]

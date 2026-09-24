@@ -80,7 +80,11 @@ statut de prime (`Case.bounty_stage`) est **distinct** du statut du dossier.
   (`bounty.services.wallet_balance`), jamais stocké ni modifiable ; une écriture
   ne se modifie ni ne se supprime.
 - Aucun flux financier réel n'est déclenché : le versement effectif reste hors
-  plateforme (MVP).
+  plateforme (MVP). Le Coordinateur (`RECORD_PAYMENT`) enregistre le versement
+  puis en confirme le règlement, preuve à l'appui, une fois le correctif
+  vérifié ; le Wallet n'est débité qu'à cette confirmation. La référence de
+  paiement en clair (nom légal, moyen principal) lui est affichée sur la fiche
+  de la prime, consultation journalisée — jamais au super admin.
 - « Publier et clôturer » reste grisé tant que la prime n'est pas en
   `BOUNTY_CREDITED` ou `NOT_ELIGIBLE`.
 

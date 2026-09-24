@@ -9,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("bounty", "0004_bountypayment_payout_snapshot"),
+        ("bounty", "0006_alter_bounty_status"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

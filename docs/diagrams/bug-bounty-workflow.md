@@ -26,7 +26,7 @@ stateDiagram-v2
 flowchart LR
     B2["B2 — prime approuvée"] -->|CREDIT +montant| L[("WalletEntry<br/>append-only")]
     ADJ["Ajustement motivé<br/>(APPROVE_BOUNTY)"] -->|ADJUSTMENT ±| L
-    PAY["Versement hors plateforme<br/>(RECORD_PAYMENT)"] -->|PAYOUT −montant| L
+    PAY["Règlement confirmé, preuve à l'appui<br/>(RECORD_PAYMENT)"] -->|PAYOUT −montant| L
     L --> SOLDE["Solde = somme des écritures<br/>(calculé, jamais stocké)"]
 ```
 

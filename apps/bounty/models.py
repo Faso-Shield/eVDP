@@ -23,11 +23,20 @@ class BountyStatus(models.TextChoices):
     UNDER_REVIEW = "UNDER_REVIEW", "En revue"
     APPROVED = "APPROVED", "Approuvée"
     REJECTED = "REJECTED", "Rejetée"
+    PAYMENT_PENDING = "PAYMENT_PENDING", "Versement en attente de confirmation"
     PAID = "PAID", "Payée"
     CANCELLED = "CANCELLED", "Annulée"
 
 
 #: Transitions autorisees du cycle de vie d'une recompense.
+#
+# PAYMENT_PENDING est deliberement distinct de PAID : un versement enregistre
+# (bounty.services.record_payment) n'est qu'une intention, jamais confirmee
+# tant qu'aucune preuve n'a ete televersee (bounty.services.confirm_settlement).
+# Afficher "Payee" des l'enregistrement serait un statut positif non merite -
+# voir le retour utilisateur qui a motive cette distinction. Un versement en
+# echec (mark_payment_failed) fait revenir la recompense a APPROVED : un
+# nouveau versement peut alors etre enregistre.
 BOUNTY_TRANSITIONS = {
     BountyStatus.PENDING: [
         BountyStatus.UNDER_REVIEW,
@@ -40,7 +49,12 @@ BOUNTY_TRANSITIONS = {
         BountyStatus.REJECTED,
         BountyStatus.CANCELLED,
     ],
-    BountyStatus.APPROVED: [BountyStatus.PAID, BountyStatus.CANCELLED],
+    BountyStatus.APPROVED: [BountyStatus.PAYMENT_PENDING, BountyStatus.CANCELLED],
+    BountyStatus.PAYMENT_PENDING: [
+        BountyStatus.PAID,
+        BountyStatus.APPROVED,
+        BountyStatus.CANCELLED,
+    ],
     BountyStatus.REJECTED: [],
     BountyStatus.PAID: [],
     BountyStatus.CANCELLED: [],
@@ -193,6 +207,16 @@ class PaymentStatus(models.TextChoices):
     FAILED = "FAILED", "Échec"
 
 
+def payment_proof_upload_path(instance, filename):
+    """Chemin de stockage opaque : aucune donnee utilisateur dans le chemin.
+
+    Le nom d'origine (`filename`) est ignore : seul `proof_storage_name`,
+    genere par le service au moment du televersement, determine le chemin.
+    Meme principe que apps.researchers.models.payout_document_upload_path.
+    """
+    return f"bounty_payment_proofs/{instance.created_at:%Y/%m}/{instance.proof_storage_name}"
+
+
 class BountyPayment(BaseModel):
     """Trace comptable d'un versement. Aucun flux financier n'est declenche."""
 
@@ -228,6 +252,23 @@ class BountyPayment(BaseModel):
     )
     note = models.CharField(max_length=255, blank=True)
 
+    # -- Reglement : confirmation qu'un virement reel a eu lieu -------------
+    # La comptabilite agit hors plateforme et notifie l'agent par email avec
+    # une preuve ; cette preuve est televersee ici au moment de la
+    # confirmation. Memes principes de securite que le justificatif
+    # d'identite du portefeuille : nom de stockage opaque, jamais servi
+    # directement (voir apps.bounty.views.payment_proof_download).
+    proof_file = models.FileField(
+        upload_to=payment_proof_upload_path, max_length=300, blank=True
+    )
+    proof_storage_name = models.CharField(max_length=80, blank=True, editable=False)
+    proof_original_filename = models.CharField(max_length=255, blank=True)
+    proof_content_type = models.CharField(max_length=120, blank=True)
+    proof_size = models.PositiveBigIntegerField(default=0, editable=False)
+    proof_sha256 = models.CharField(max_length=64, blank=True, editable=False)
+    proof_uploaded_at = models.DateTimeField(null=True, blank=True)
+    failure_reason = models.TextField(blank=True)
+
     class Meta:
         db_table = "bounty_payments"
         ordering = ["-created_at"]
@@ -242,6 +283,10 @@ class BountyPayment(BaseModel):
         self.settled_at = timezone.now()
         self.save(update_fields=["status", "settled_at", "updated_at"])
 
+    def mark_failed(self, reason):
+        self.status = PaymentStatus.FAILED
+        self.failure_reason = reason
+        self.save(update_fields=["status", "failure_reason", "updated_at"])
 
 class WalletEntryKind(models.TextChoices):
     CREDIT = "CREDIT", "Crédit (prime approuvée)"

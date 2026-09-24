@@ -4,19 +4,34 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.http import Http404
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
+from apps.attachments.views import safe_filename
+from apps.audit.models import AuditAction
+from apps.audit.services import log_action
 from apps.coordination.models import Case
 from apps.coordination.services import perform_action
 from apps.coordination.workflow import TransitionNotAllowed
 
-from .forms import BountyDecisionForm, BountyProposalForm, BountyReviewForm, PaymentForm
+from .forms import (
+    BountyDecisionForm,
+    BountyProposalForm,
+    BountyReviewForm,
+    PaymentFailureForm,
+    PaymentForm,
+    SettlementForm,
+)
+from .models import BountyPayment
 from .services import (
+    SETTLEMENT_ELIGIBLE_CASE_STATUSES,
+    authorize_proof_download,
     budget_status,
+    confirm_settlement,
+    mark_payment_failed,
     record_payment,
     reject_bounty,
     review_bounty,
@@ -35,6 +50,15 @@ def _get_bounty(request, bounty_id):
     if not bounty.case.is_visible_to(request.user):
         raise Http404("Recompense introuvable.")
     return bounty
+
+
+def _get_payment(request, payment_id):
+    payment = get_object_or_404(
+        BountyPayment.objects.select_related("bounty__case"), pk=payment_id
+    )
+    if not payment.bounty.case.is_visible_to(request.user):
+        raise Http404("Versement introuvable.")
+    return payment
 
 
 def _instruit_les_recompenses(user):
@@ -115,6 +139,23 @@ def bounty_detail(request, bounty_id):
             payout_profile.methods.filter(is_primary=True, is_active=True).first()
             if payout_profile
             else None
+        )
+        # Reference de paiement en clair (nom legal et moyen principal) : elle
+        # sert a qui execute et rapproche le versement (RECORD_PAYMENT, le
+        # Coordinateur). Workflow v2 : jamais au super admin, qui n'a acces ni
+        # aux dossiers ni au Wallet. Chaque consultation est journalisee.
+        if contexte["payout_method"]:
+            log_action(
+                AuditAction.PAYOUT_REFERENCE_VIEWED,
+                actor=request.user,
+                obj=contexte["payout_method"],
+                request=request,
+                case=bounty.case.case_id,
+            )
+        contexte["settlement_form"] = SettlementForm()
+        contexte["failure_form"] = PaymentFailureForm()
+        contexte["settlement_eligible"] = (
+            bounty.case.status in SETTLEMENT_ELIGIBLE_CASE_STATUSES
         )
     return render(request, "bounty/detail.html", contexte)
 
@@ -268,3 +309,74 @@ def payment(request, bounty_id):
     else:
         messages.error(request, form.errors.as_text())
     return redirect("bounty:detail", bounty_id=bounty.pk)
+
+
+@require_POST
+@login_required
+@require_not_read_only
+@require_capability(Capability.RECORD_PAYMENT)
+def settle_payment(request, payment_id):
+    payment_obj = _get_payment(request, payment_id)
+    form = SettlementForm(request.POST, request.FILES)
+    if form.is_valid():
+        try:
+            confirm_settlement(
+                payment_obj,
+                request.user,
+                proof_file=form.cleaned_data["proof_file"],
+                note=form.cleaned_data.get("note", ""),
+                request=request,
+            )
+            messages.success(request, "Versement confirmé réglé.")
+        except (PermissionDenied, ValidationError) as exc:
+            messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.error(request, form.errors.as_text())
+    return redirect("bounty:detail", bounty_id=payment_obj.bounty_id)
+
+
+@require_POST
+@login_required
+@require_not_read_only
+@require_capability(Capability.RECORD_PAYMENT)
+def fail_payment(request, payment_id):
+    payment_obj = _get_payment(request, payment_id)
+    form = PaymentFailureForm(request.POST)
+    if form.is_valid():
+        try:
+            mark_payment_failed(
+                payment_obj, request.user, reason=form.cleaned_data["reason"], request=request
+            )
+            messages.success(request, "Versement marqué en échec.")
+        except (PermissionDenied, ValidationError) as exc:
+            messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.error(request, form.errors.as_text())
+    return redirect("bounty:detail", bounty_id=payment_obj.bounty_id)
+
+
+@login_required
+@require_capability(Capability.RECORD_PAYMENT)
+def payment_proof_download(request, payment_id):
+    """Telechargement controle de la preuve de paiement.
+
+    Comme pour le justificatif d'identite du portefeuille : aucun fichier
+    n'est servi directement, l'acces est reserve au meme perimetre que
+    l'enregistrement des versements et journalise.
+    """
+    payment_obj = _get_payment(request, payment_id)
+    if not payment_obj.proof_file:
+        raise Http404("Aucune preuve enregistrée.")
+    if not authorize_proof_download(payment_obj, request.user, request=request):
+        raise Http404("Preuve introuvable.")
+
+    response = FileResponse(
+        payment_obj.proof_file.open("rb"),
+        as_attachment=True,
+        filename=safe_filename(payment_obj.proof_original_filename),
+        content_type="application/octet-stream",
+    )
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    response["Cache-Control"] = "no-store, private"
+    return response
