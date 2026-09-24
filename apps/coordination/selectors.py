@@ -90,21 +90,27 @@ def sla_color(case, now=None):
 
 
 def kanban_board(user, limit_per_column=40):
-    """Regroupe les cases visibles par colonne Kanban."""
-    queryset = (
-        visible_cases(user)
-        .exclude(status=CaseStatus.CLOSED)
-        .prefetch_related("sla_events__policy")
-    )
+    """Regroupe les cases visibles par colonne Kanban.
+
+    La colonne « Clos » montre les dossiers termines (clos, rejetes,
+    doublons) que l'utilisateur voit en archives, les plus recemment
+    clotures d'abord ; au-dela de la limite, la liste complete prend le
+    relais (`truncated`).
+    """
+    queryset = visible_cases(user).prefetch_related("sla_events__policy")
     board = []
     for key, label, states in KANBAN_COLUMNS:
-        column_cases = list(queryset.filter(status__in=states)[:limit_per_column])
+        column = queryset.filter(status__in=states)
+        if key == "CLOSED":
+            column = column.order_by(F("closed_at").desc(nulls_last=True), "-updated_at")
+        count = column.count()
         board.append(
             {
                 "key": key,
                 "label": label,
-                "cases": column_cases,
-                "count": queryset.filter(status__in=states).count(),
+                "cases": list(column[:limit_per_column]),
+                "count": count,
+                "truncated": count > limit_per_column,
             }
         )
     return board

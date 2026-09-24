@@ -208,3 +208,25 @@ def test_report_link_hidden_from_business_accounts(client_for, analyst, research
 def test_anonymous_visitor_sees_the_report_link(client):
     content = client.get("/").content.decode()
     assert f'href="{reverse("reports:submit")}"' in content
+
+
+# ---------------------------------------------------------------------- Kanban
+def test_kanban_shows_closed_cases_to_the_coordinator(client_for, coordinator, closed_case):
+    """Regression : le Kanban excluait le statut CLOSED de la colonne « Clos »."""
+    from apps.coordination.selectors import kanban_board
+
+    column = next(col for col in kanban_board(coordinator) if col["key"] == "CLOSED")
+    assert closed_case in column["cases"]
+    assert column["count"] == 1
+    content = client_for(coordinator).get(reverse("coordination:kanban")).content.decode()
+    assert closed_case.case_id in content
+
+
+def test_kanban_closed_column_is_limited_and_links_to_the_list(coordinator, closed_case):
+    from apps.coordination.selectors import kanban_board
+
+    column = next(
+        col for col in kanban_board(coordinator, limit_per_column=0) if col["key"] == "CLOSED"
+    )
+    assert column["cases"] == []
+    assert column["truncated"] is True

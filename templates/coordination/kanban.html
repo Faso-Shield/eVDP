@@ -31,6 +31,9 @@ workflow respirent au lieu de tenir dans la gouttiere commune de 1240px.
     {% empty %}
       <p class="muted small">Aucun dossier.</p>
     {% endfor %}
+    {% if column.truncated %}
+      <a class="small" href="{% url 'coordination:case_list' %}">Voir les {{ column.count }} dossiers dans la liste</a>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
