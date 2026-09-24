@@ -81,7 +81,7 @@ def advisory_proposal(case):
     summary = (
         f"Une vulnérabilité de type {kind}{cwe}, de sévérité "
         f"{case.get_severity_display().lower()}{cvss}, affectait {product}"
-        f"{f' de {owner}' if owner else ''}. "
+        f"{f' ({owner})' if owner else ''}. "
     )
     summary += (
         f"Un correctif est disponible{f' (version {fixed})' if fixed else ''} et a été "
