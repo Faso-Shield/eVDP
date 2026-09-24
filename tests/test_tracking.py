@@ -268,3 +268,14 @@ def test_answer_with_unknown_code_changes_nothing(client, advance, analyst):
     case.refresh_from_db()
     assert case.status == CaseStatus.NEEDS_INFORMATION
     assert not case.messages.filter(body__contains="Intrus").exists()
+
+
+def test_tracking_page_is_reachable_from_every_page(client):
+    """Lien « Suivre mon signalement » dans l'en-tete, le pied de page et
+    l'accueil : le declarant anonyme doit pouvoir saisir son code."""
+    url = reverse("reports:track_lookup")
+    home = client.get(reverse("core:home")).content.decode()
+    assert home.count(f'href="{url}"') >= 3
+    page = client.get(url)
+    assert page.status_code == 200
+    assert 'name="code"' in page.content.decode()
