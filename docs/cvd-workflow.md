@@ -34,7 +34,7 @@ par `apps.coordination.workflow.check_transition()`.
 
 | # | Statut de départ | Rôle | Bouton unique | Pré-requis bloquants | Statut d'arrivée | SLA |
 |---|------------------|------|---------------|----------------------|------------------|-----|
-| 0 | — | Déclarant | Soumettre le rapport | Formulaire complet, ≥ 1 pièce jointe (web et API) | `SUBMITTED` | — |
+| 0 | — | Déclarant | Soumettre le rapport | Formulaire complet, ≥ 1 pièce jointe (web et API ; PDF, Word .docx/.doc, images, texte, archives — fichiers à macros refusés) | `SUBMITTED` | — |
 | 1 | `SUBMITTED` | Agent de triage | Accuser réception | Dossier ouvert au moins une fois | `ACKNOWLEDGED` | 72 h |
 | 2 | `ACKNOWLEDGED` | Agent de triage | Déclarer recevable | Checklist : périmètre, organisation identifiée, PJ lisible | `IN_ANALYSIS` | 5 j avec l'étape 3 |
 | 3 | `IN_ANALYSIS` | Analyste CSIRT | Soumettre la qualification | Vecteur CVSS v3.1 ou v4.0 saisi par un analyste, CWE, organisation confirmée | `VALIDATION_PENDING` | 5 j |
@@ -47,7 +47,12 @@ par `apps.coordination.workflow.check_transition()`.
 | 10 | `ADVISORY_REVIEW` | Coordinateur | Publier et clôturer | Relecture (≠ auteur), commentaire, prime réglée | `CLOSED` | — |
 
 `RECEIVED` disparaît : l'accusé de réception suffit à marquer le dossier
-comme reçu. Délai de remédiation par sévérité : Critique 30 j, Élevée 60 j,
+comme reçu.
+
+Le formulaire du déclarant ne contient **pas** de qualification technique
+(type, CWE, sévérité, vecteur CVSS, versions) : elle est saisie par
+l'analyste CSIRT à l'étape 3. L'anonymat et le crédit public s'excluent
+(l'anonymat l'emporte si les deux sont transmis par l'API). Délai de remédiation par sévérité : Critique 30 j, Élevée 60 j,
 Moyenne et Faible 90 j.
 
 Les données exigées par une étape se saisissent dans la carte « Données de

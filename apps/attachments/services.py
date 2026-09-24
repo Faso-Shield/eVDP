@@ -37,6 +37,10 @@ ALLOWED_MAGIC = {
     "jpeg": (b"\xff\xd8\xff",),
     "gif": (b"GIF87a", b"GIF89a"),
     "pdf": (b"%PDF-",),
+    # Word 97-2003 (OLE2) ; Word 2007+ et OpenDocument sont des archives ZIP.
+    "doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+    "docx": (b"PK\x03\x04",),
+    "odt": (b"PK\x03\x04",),
     "zip": (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
     "pcap": (
         b"\xd4\xc3\xb2\xa1",

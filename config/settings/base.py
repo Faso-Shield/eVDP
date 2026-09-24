@@ -397,6 +397,9 @@ EVDP = {
             "gif",
             "webp",
             "pdf",
+            "doc",
+            "docx",
+            "odt",
             "txt",
             "md",
             "log",
@@ -414,6 +417,11 @@ EVDP = {
         ],
     ),
     "ATTACHMENT_BLOCKED_EXTENSIONS": [
+        # Documents bureautiques a macros : vecteur classique de maliciel.
+        "docm",
+        "dotm",
+        "xlsm",
+        "pptm",
         "exe",
         "dll",
         "so",

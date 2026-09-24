@@ -153,6 +153,11 @@ class VulnerabilityReport(BaseModel):
 
     def save(self, *args, **kwargs):
         self.is_pgp_encrypted = bool(self.pgp_payload)
+        # Un signalement anonyme n'est jamais credite publiquement : l'anonymat
+        # l'emporte (le formulaire refuse deja la combinaison explicite ; ici
+        # on protege l'API, l'import CSAF et la valeur par defaut du champ).
+        if self.is_anonymous:
+            self.wants_credit = False
         if self.affected_organization and not self.affected_organization_name:
             self.affected_organization_name = self.affected_organization.name
         return super().save(*args, **kwargs)

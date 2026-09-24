@@ -236,3 +236,89 @@ def test_cvss_vector_is_recomputable():
     )
     assert vector == "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
     assert base_score(vector) == 9.8
+
+
+# ------------------------------------------- formulaire declarant (spec v2)
+def test_anonymous_and_public_credit_are_mutually_exclusive(client):
+    from apps.reports.models import VulnerabilityReport
+
+    response = client.post(
+        reverse("reports:submit"),
+        form_payload(is_anonymous="on", wants_credit="on", requests_cve="on"),
+    )
+    assert response.status_code == 200
+    assert "ne peut pas être crédité" in response.content.decode()
+    assert VulnerabilityReport.objects.count() == 0
+
+
+def test_anonymous_report_with_cve_request_is_accepted(client):
+    client.post(reverse("reports:submit"), form_payload(is_anonymous="on", requests_cve="on"))
+    case = Case.objects.get()
+    assert case.report.is_anonymous and case.report.requests_cve
+    assert case.report.wants_credit is False
+
+
+def test_anonymity_wins_over_credit_outside_the_form(researcher_a, organization):
+    """API, import CSAF ou valeur par defaut : un anonyme n'est jamais credite."""
+    from .conftest import build_report, submit
+
+    case = submit(build_report(None, organization, is_anonymous=True, wants_credit=True))
+    assert case.report.wants_credit is False
+
+
+def test_reporter_does_not_see_technical_qualification(client):
+    page = client.get(reverse("reports:submit")).content.decode()
+    assert "Qualification technique" not in page
+    for field in ("cvss_vector", "reported_severity", "vulnerability_type", "id_cwe"):
+        assert f'name="{field}"' not in page and f'id="{field}"' not in page
+
+
+def test_reporter_cannot_force_a_qualification(client):
+    """Les champs retires ne sont pas lus, meme envoyes a la main."""
+    client.post(
+        reverse("reports:submit"),
+        form_payload(
+            reported_severity="CRITICAL",
+            cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            vulnerability_type="SQLI",
+        ),
+    )
+    report = Case.objects.get().report
+    assert report.cvss_vector == ""
+    assert report.reported_severity == Severity.MEDIUM
+
+
+@pytest.mark.parametrize(
+    "name,content",
+    [
+        ("rapport.pdf", b"%PDF-1.7 contenu"),
+        ("rapport.docx", b"PK\x03\x04 contenu word"),
+        ("rapport.doc", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 contenu word"),
+    ],
+)
+def test_pdf_and_word_attachments_are_accepted(client, name, content):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    client.post(
+        reverse("reports:submit"),
+        form_payload(attachments=SimpleUploadedFile(name, content)),
+    )
+    assert Case.objects.get().attachments.get().original_filename == name
+
+
+@pytest.mark.parametrize(
+    "name,content",
+    [
+        ("macro.docm", b"PK\x03\x04 macros"),
+        ("faux.docx", b"MZ executable deguise"),
+        ("faux.doc", b"texte qui n'est pas du Word"),
+    ],
+)
+def test_macro_or_disguised_office_files_are_refused(client, name, content):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    client.post(
+        reverse("reports:submit"),
+        form_payload(attachments=SimpleUploadedFile(name, content)),
+    )
+    assert Case.objects.count() == 0

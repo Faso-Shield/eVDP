@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load evdp_tags %}
+{% load evdp_tags static %}
 {% block title %}Signaler une vulnérabilité{% endblock %}
 
 {% block content %}
@@ -84,22 +84,6 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><h2>Qualification technique</h2></div>
-        <div class="card-body">
-          <div class="form-grid">
-            {% include "partials/form_field.html" with field=form.vulnerability_type %}
-            {% include "partials/form_field.html" with field=form.cwe %}
-            {% include "partials/form_field.html" with field=form.reported_severity %}
-            {% include "partials/form_field.html" with field=form.cvss_vector %}
-            {% include "partials/form_field.html" with field=form.affected_version %}
-            {% include "partials/form_field.html" with field=form.fixed_version %}
-            {% include "partials/form_field.html" with field=form.environment %}
-            {% include "partials/form_field.html" with field=form.external_reference %}
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
         <div class="card-header">
           <h2>Description</h2>
           <span class="pill">Markdown accepté</span>
@@ -118,9 +102,11 @@
         <div class="card-body">
           <div class="form-field">
             <label for="attachments">Fichiers (au moins 1, 5 maximum) <span class="required">*</span></label>
-            <input type="file" name="attachments" id="attachments" multiple required>
+            <input type="file" name="attachments" id="attachments" multiple required
+                   accept="{% for ext in EVDP.ATTACHMENT_ALLOWED_EXTENSIONS %}.{{ ext }}{% if not forloop.last %},{% endif %}{% endfor %}">
             <div class="help">
-              Au moins une pièce jointe est obligatoire : captures, traces, PoC.
+              Au moins une pièce jointe est obligatoire : captures, traces, PoC,
+              documents PDF ou Word (.docx, .doc ; les fichiers à macros sont refusés).
               Une fois soumises, vos pièces sont en lecture seule pour tous. Les exécutables et scripts sont refusés.
               Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier.
               Chaque fichier est stocké sous un nom aléatoire, hashé en SHA-256 et
@@ -138,6 +124,8 @@
           {% endif %}
           <div class="checkbox-field">{{ form.is_anonymous }}<label for="{{ form.is_anonymous.id_for_label }}">{{ form.is_anonymous.label }}</label></div>
           <div class="checkbox-field">{{ form.wants_credit }}<label for="{{ form.wants_credit.id_for_label }}">{{ form.wants_credit.label }}</label></div>
+          {{ form.wants_credit.errors }}
+          <p class="small muted">L'anonymat et le crédit public s'excluent : cocher l'un décoche l'autre.</p>
           <div class="checkbox-field">{{ form.requests_cve }}<label for="{{ form.requests_cve.id_for_label }}">{{ form.requests_cve.label }}</label></div>
           {% include "partials/form_field.html" with field=form.pgp_payload %}
           <div class="checkbox-field">
@@ -184,4 +172,8 @@
     </div>
   </aside>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/report-form.js' %}" defer></script>
 {% endblock %}

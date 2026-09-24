@@ -6,9 +6,6 @@ from django.core.exceptions import ValidationError
 from apps.core.pgp import is_encrypted_blob
 from apps.organizations.models import Organization, OrganizationStatus
 from apps.programs.models import Program
-from apps.vulnerabilities.constants import Severity, VulnerabilityType
-from apps.vulnerabilities.cvss import CVSSError, base_score
-from apps.vulnerabilities.models import CWE
 
 from .models import VulnerabilityReport
 
@@ -16,7 +13,13 @@ MAX_TEXT = 20000
 
 
 class VulnerabilityReportForm(forms.ModelForm):
-    """Saisie d'un signalement. Le contenu est du Markdown assaini a l'affichage."""
+    """Saisie d'un signalement. Le contenu est du Markdown assaini a l'affichage.
+
+    La qualification technique (type, CWE, severite, vecteur CVSS, versions,
+    environnement) n'est pas demandee au declarant : elle releve de l'analyste
+    CSIRT a l'etape 3 (spec v2). Le rapport garde les valeurs par defaut du
+    modele (type « Autre », severite « Moyenne ») jusqu'a la qualification.
+    """
 
     accept_policy = forms.BooleanField(
         label="Je confirme avoir lu la politique de divulgation et m'engage à "
@@ -38,19 +41,11 @@ class VulnerabilityReportForm(forms.ModelForm):
             "affected_organization_name",
             "product",
             "target_url",
-            "vulnerability_type",
-            "cwe",
-            "cvss_vector",
-            "reported_severity",
             "description",
             "steps_to_reproduce",
             "impact",
             "proof_of_concept",
             "recommendations",
-            "affected_version",
-            "fixed_version",
-            "environment",
-            "external_reference",
             "requests_cve",
             "wants_credit",
             "is_anonymous",
@@ -77,7 +72,7 @@ class VulnerabilityReportForm(forms.ModelForm):
             "environment": "Environnement",
             "external_reference": "Référence externe",
             "requests_cve": "Je demande l'attribution d'un CVE",
-            "wants_credit": "Je souhaite être crédité publiquement",
+            "wants_credit": "Je souhaite être crédité publiquement (incompatible avec l'anonymat)",
             "is_anonymous": "Signaler de manière anonyme",
             "pgp_payload": "Rapport chiffré PGP (optionnel)",
         }
@@ -107,22 +102,8 @@ class VulnerabilityReportForm(forms.ModelForm):
             status=OrganizationStatus.ACTIVE, accepts_vdp=True
         )
         self.fields["affected_organization"].required = False
-        self.fields["cwe"].queryset = CWE.objects.all()
-        self.fields["cwe"].required = False
-        self.fields["vulnerability_type"].choices = VulnerabilityType.choices
-        self.fields["reported_severity"].choices = Severity.choices
         if user is not None and user.is_authenticated:
             self.fields.pop("contact_email", None)
-
-    def clean_cvss_vector(self):
-        vector = (self.cleaned_data.get("cvss_vector") or "").strip()
-        if not vector:
-            return ""
-        try:
-            base_score(vector)
-        except CVSSError as exc:
-            raise ValidationError(str(exc)) from exc
-        return vector
 
     def clean_pgp_payload(self):
         payload = (self.cleaned_data.get("pgp_payload") or "").strip()
@@ -147,6 +128,12 @@ class VulnerabilityReportForm(forms.ModelForm):
         cleaned = super().clean()
         anonymous = cleaned.get("is_anonymous")
         contact = (cleaned.get("contact_email") or "").strip()
+        if anonymous and cleaned.get("wants_credit"):
+            self.add_error(
+                "wants_credit",
+                "Un signalement anonyme ne peut pas être crédité publiquement : "
+                "décochez l'une des deux options.",
+            )
 
         # Le declarant doit etre porte par l'instance AVANT la validation du
         # modele (_post_clean), sinon VulnerabilityReport.clean() rejette un

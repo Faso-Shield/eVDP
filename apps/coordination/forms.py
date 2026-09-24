@@ -7,7 +7,7 @@ from apps.accounts.models import User
 from apps.accounts.roles import NATIONAL_ROLES
 from apps.organizations.models import Organization, OrganizationStatus
 from apps.programs.models import ProgramScope
-from apps.vulnerabilities.constants import Severity
+from apps.vulnerabilities.constants import Severity, VulnerabilityType
 from apps.vulnerabilities.cvss import CVSSError, base_score
 from apps.vulnerabilities.models import CVE, CWE
 
@@ -121,6 +121,9 @@ class TriageForm(forms.Form):
     """
 
     severity = forms.ChoiceField(label="Sévérité retenue", choices=Severity.choices)
+    vulnerability_type = forms.ChoiceField(
+        label="Type de vulnérabilité", choices=VulnerabilityType.choices, required=False
+    )
     scope = forms.ModelChoiceField(
         label="Actif du périmètre",
         queryset=ProgramScope.objects.none(),

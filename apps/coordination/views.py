@@ -255,6 +255,7 @@ def case_detail(request, case_id):
                 case=case,
                 initial={
                     "severity": case.severity,
+                    "vulnerability_type": case.vulnerability_type,
                     "cvss_vector": case.cvss_vector,
                     "cwe": case.cwe_id,
                     "organization": case.organization_id,
@@ -470,6 +471,9 @@ def triage(request, case_id):
             return redirect("coordination:case_detail", case_id=case.case_id)
 
         updates = []
+        if form.cleaned_data.get("vulnerability_type"):
+            case.vulnerability_type = form.cleaned_data["vulnerability_type"]
+            updates.append("vulnerability_type")
         if form.cleaned_data.get("cwe"):
             case.cwe = form.cleaned_data["cwe"]
             updates.append("cwe")
