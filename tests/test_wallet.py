@@ -731,3 +731,27 @@ def test_method_form_renders_a_paypal_group(client_for, researcher_a):
     content = client.get(reverse("wallet:home")).content.decode()
     assert 'data-method-group="PAYPAL"' in content
     assert "Adresse email PayPal" in content
+
+
+# --------------------------------------------------- identifiant en clair
+# full_identifier/full_summary existent pour un seul parcours restreint (voir
+# apps.coordination.views.case_detail) : jamais affiches par defaut, jamais
+# utilises par summary()/masked_identifier qui restent la voie normale.
+def test_full_identifier_is_never_masked(researcher_a):
+    method = _bank_method(account_number="BF1234567890123456")
+    assert method.full_identifier == "BF1234567890123456"
+    assert method.full_identifier != method.masked_identifier
+
+
+def test_full_summary_includes_the_holder_name(researcher_a):
+    method = _bank_method(
+        bank_name="Coris Bank",
+        account_holder_name="Awa Traore",
+        account_number="BF1234567890123456",
+    )
+    assert method.full_summary == "Coris Bank — BF1234567890123456 (Awa Traore)"
+
+
+def test_full_summary_for_paypal(researcher_a):
+    method = _paypal_method(paypal_email="awa.traore@example.com")
+    assert method.full_summary == "PayPal — awa.traore@example.com"

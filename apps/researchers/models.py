@@ -351,3 +351,40 @@ class PayoutMethod(BaseModel):
         if self.method_type == PayoutMethodType.PAYPAL:
             return f"PayPal — {self.masked_identifier}"
         return self.other_label or "Autre moyen"
+
+    @property
+    def full_identifier(self):
+        """Identifiant en clair, jamais masque.
+
+        Contrairement a `masked_identifier`, ne jamais afficher directement :
+        reserve aux parcours explicitement restreints au super-administrateur
+        (voir apps.coordination.views.case_detail), toujours journalises.
+        """
+        if self.method_type == PayoutMethodType.BANK_TRANSFER:
+            return self.account_number
+        if self.method_type == PayoutMethodType.MOBILE_MONEY:
+            return self.mobile_number
+        if self.method_type == PayoutMethodType.CRYPTO:
+            return self.crypto_wallet_address
+        if self.method_type == PayoutMethodType.PAYPAL:
+            return self.paypal_email
+        return self.other_reference or "—"
+
+    @property
+    def full_summary(self):
+        """Libelle complet en clair. Memes reserves que `full_identifier`."""
+        if self.method_type == PayoutMethodType.BANK_TRANSFER:
+            holder = self.account_holder_name or "—"
+            return f"{self.bank_name or 'Banque'} — {self.full_identifier} ({holder})"
+        if self.method_type == PayoutMethodType.MOBILE_MONEY:
+            operator = self.get_mobile_operator_display() if self.mobile_operator else "Mobile"
+            holder = self.mobile_holder_name or "—"
+            return f"{operator} — {self.full_identifier} ({holder})"
+        if self.method_type == PayoutMethodType.CRYPTO:
+            currency = self.crypto_currency or "Crypto"
+            if self.crypto_network:
+                return f"{currency} ({self.crypto_network}) — {self.full_identifier}"
+            return f"{currency} — {self.full_identifier}"
+        if self.method_type == PayoutMethodType.PAYPAL:
+            return f"PayPal — {self.full_identifier}"
+        return f"{self.other_label or 'Autre moyen'} — {self.full_identifier}"

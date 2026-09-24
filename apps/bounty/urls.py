@@ -12,4 +12,11 @@ urlpatterns = [
     path("<uuid:bounty_id>/approve/", views.approve, name="approve"),
     path("<uuid:bounty_id>/reject/", views.reject, name="reject"),
     path("<uuid:bounty_id>/payment/", views.payment, name="payment"),
+    path("payments/<uuid:payment_id>/settle/", views.settle_payment, name="settle_payment"),
+    path("payments/<uuid:payment_id>/fail/", views.fail_payment, name="fail_payment"),
+    path(
+        "payments/<uuid:payment_id>/proof/",
+        views.payment_proof_download,
+        name="payment_proof",
+    ),
 ]

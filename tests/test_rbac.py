@@ -169,3 +169,95 @@ def test_the_refusal_is_audited(client_for, researcher_a):
     assert AuditLog.objects.filter(
         action=AuditAction.PERMISSION_DENIED, actor=researcher_a
     ).exists()
+
+
+# ------------------------------------------ reference de paiement en clair
+# Reservee au super-administrateur (voir apps.coordination.views.case_detail),
+# meme portee que l'acces deja possible via l'administration Django - jamais
+# au coordinateur ni a l'analyste, toujours journalisee.
+@pytest.fixture
+def super_admin(db):
+    from apps.accounts.models import User
+
+    return User.objects.create_superuser(
+        email="admin@test.bf", password="x", full_name="Admin Test"
+    )
+
+
+def _give_researcher_a_a_wallet(researcher):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.researchers.models import PayoutMethod, PayoutMethodType
+    from apps.researchers.services import (
+        add_payout_method,
+        attach_id_document,
+        get_or_create_payout_profile,
+    )
+
+    profile = get_or_create_payout_profile(researcher)
+    profile.legal_full_name = "Awa Traore"
+    profile.contact_phone = "+22670000000"
+    profile.accepted_terms = True
+    profile.save()
+    attach_id_document(
+        profile,
+        researcher,
+        SimpleUploadedFile("cnib.pdf", b"%PDF-1.4 test", content_type="application/pdf"),
+    )
+    return add_payout_method(
+        profile,
+        researcher,
+        PayoutMethod(
+            method_type=PayoutMethodType.BANK_TRANSFER,
+            bank_name="Coris Bank",
+            account_holder_name="Awa Traore",
+            account_number="BF1234567890123456",
+        ),
+    )
+
+
+def test_super_admin_sees_the_payout_reference_in_clear(
+    client_for, super_admin, researcher_a, case_alpha
+):
+    from apps.audit.models import AuditAction, AuditLog
+
+    _give_researcher_a_a_wallet(researcher_a)
+
+    client = client_for(super_admin)
+    content = client.get(
+        reverse("coordination:case_detail", args=[case_alpha.case_id])
+    ).content.decode()
+
+    assert "BF1234567890123456" in content
+    assert "Awa Traore" in content  # nom legal du declarant, pas seulement le moyen
+    assert AuditLog.objects.filter(
+        action=AuditAction.PAYOUT_REFERENCE_VIEWED, actor=super_admin
+    ).exists()
+
+
+def test_coordinator_never_sees_the_payout_reference(client_for, coordinator, researcher_a):
+    """Meme role habilite a enregistrer un versement : jamais l'identifiant en clair."""
+    from apps.reports.services import submit_report
+    from tests.conftest import build_report
+
+    _give_researcher_a_a_wallet(researcher_a)
+    case = submit_report(
+        build_report(researcher_a, title="Cas visible du coordinateur"),
+        reporter=researcher_a,
+    )
+    # Le coordinateur voit tous les cases (is_national) : la carte de
+    # paiement doit rester absente independamment de la visibilite du case.
+    client = client_for(coordinator)
+    content = client.get(
+        reverse("coordination:case_detail", args=[case.case_id])
+    ).content.decode()
+
+    assert "BF1234567890123456" not in content
+
+
+def test_no_payout_card_without_a_wallet(client_for, super_admin, researcher_a, case_alpha):
+    client = client_for(super_admin)
+    content = client.get(
+        reverse("coordination:case_detail", args=[case_alpha.case_id])
+    ).content.decode()
+    assert "Référence de paiement" not in content

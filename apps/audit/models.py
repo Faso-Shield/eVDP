@@ -51,6 +51,10 @@ class AuditAction(models.TextChoices):
     BOUNTY_APPROVED = "BOUNTY_APPROVED", "Récompense approuvée"
     BOUNTY_REJECTED = "BOUNTY_REJECTED", "Récompense rejetée"
     BOUNTY_PAID = "BOUNTY_PAID", "Récompense payée"
+    BOUNTY_PAYMENT_RECORDED = "BOUNTY_PAYMENT_RECORDED", "Versement enregistré (non confirmé)"
+    BOUNTY_PAYMENT_SETTLED = "BOUNTY_PAYMENT_SETTLED", "Versement confirmé réglé"
+    BOUNTY_PAYMENT_FAILED = "BOUNTY_PAYMENT_FAILED", "Versement marqué en échec"
+    BOUNTY_PROOF_DOWNLOADED = "BOUNTY_PROOF_DOWNLOADED", "Preuve de versement téléchargée"
     EXPORT_GENERATED = "EXPORT_GENERATED", "Export généré"
     PERMISSION_DENIED = "PERMISSION_DENIED", "Accès refusé"
     SLA_BREACHED = "SLA_BREACHED", "SLA dépassé"
@@ -61,6 +65,10 @@ class AuditAction(models.TextChoices):
     PAYOUT_METHOD_REMOVED = "PAYOUT_METHOD_REMOVED", "Moyen de paiement retire"
     PAYOUT_DOCUMENT_UPLOADED = "PAYOUT_DOCUMENT_UPLOADED", "Piece d'identite televersee"
     PAYOUT_DOCUMENT_DOWNLOADED = "PAYOUT_DOCUMENT_DOWNLOADED", "Piece d'identite telechargee"
+    PAYOUT_REFERENCE_VIEWED = (
+        "PAYOUT_REFERENCE_VIEWED",
+        "Reference de paiement consultee en clair",
+    )
 
 
 class AuditResult(models.TextChoices):
