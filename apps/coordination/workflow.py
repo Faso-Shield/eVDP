@@ -125,6 +125,13 @@ ORG_VISIBLE_STATES = frozenset(
     }
 )
 
+#: Roles operationnels du CSIRT dont le perimetre suit l'etape en cours : ils
+#: ne voient un dossier (liste, fiche, API) que lorsqu'ils en sont
+#: responsables. Le Coordinateur garde la vue nationale (arbitrage, escalade,
+#: assignation) et l'auditeur ses metadonnees ; l'organisation voit ses
+#: dossiers a partir de l'etape 5, contenu limite a ses etapes.
+STEP_SCOPED_ROLES = frozenset({"TRIAGER", "CSIRT_ANALYST"})
+
 #: Etapes ou l'escalade (manuelle ou automatique sur SLA depasse) s'applique.
 ESCALATION_STATES = (CaseStatus.VENDOR_NOTIFIED, CaseStatus.REMEDIATION_IN_PROGRESS)
 
@@ -901,7 +908,7 @@ def step_owners(case, action):
     users = [
         user
         for user in User.objects.filter(condition, is_active=True)
-        if user.pk != excluded and case.is_visible_to(user)
+        if user.pk != excluded and case.in_role_scope(user)
     ]
     if action.kind != PRIMARY and action.owner_only:
         # Exception reservee au responsable de l'etape en cours.
@@ -912,6 +919,21 @@ def step_owners(case, action):
         if assigned:
             return assigned
     return users
+
+
+def statuses_owned_by(user):
+    """(statuts, statuts de prime) ou un bouton principal revient a `user`.
+
+    Pre-filtre large (tout statut ou l'une de ses actions principales peut
+    s'appliquer) : le controle exact reste celui de current_owner_ids.
+    """
+    statuses, stages = set(), set()
+    for action in ACTIONS:
+        if action.kind != PRIMARY or action.target is None or action.reporter_only:
+            continue
+        if user.has_capability(action.capability):
+            (stages if action.track == "bounty" else statuses).update(action.sources)
+    return statuses, stages
 
 
 def current_actions(case):
@@ -958,11 +980,17 @@ def available_actions(case, kind=None):
 
 
 def primary_action(case):
-    """Bouton principal de l'etape courante (chemin principal)."""
-    for action in available_actions(case, kind=PRIMARY):
-        if action.track == "case":
-            return action
-    return None
+    """Bouton principal de l'etape courante (chemin principal).
+
+    Apres une divulgation a echeance, l'etape attendue n'est plus le
+    correctif de l'organisation mais l'advisory de l'analyste.
+    """
+    actions = [a for a in available_actions(case, kind=PRIMARY) if a.track == "case"]
+    if case.deadline_disclosure_at:
+        for action in actions:
+            if action.key == "submit_advisory":
+                return action
+    return actions[0] if actions else None
 
 
 def bounty_action(case):

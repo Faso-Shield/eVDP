@@ -23,6 +23,7 @@ from .constants import (
 from .workflow import (
     DISMISSED_STATES,
     ORG_VISIBLE_STATES,
+    STEP_SCOPED_ROLES,
     TERMINAL_STATES,
     BountyStage,
     CaseStatus,
@@ -99,6 +100,10 @@ class CaseQuerySet(models.QuerySet):
         """
         if not user or not user.is_authenticated:
             return self.none()
+        if user.role in STEP_SCOPED_ROLES:
+            return self.filter(
+                models.Q(reporter=user) | models.Q(pk__in=self._owned_ids(user))
+            )
         if user.sees_all_cases:
             return self
         filters = models.Q(reporter=user)
@@ -118,6 +123,21 @@ class CaseQuerySet(models.QuerySet):
         else:
             filters |= models.Q(participants__user=user, participants__is_active=True)
         return self.filter(filters).distinct()
+
+    def _owned_ids(self, user):
+        """Dossiers dont `user` est responsable de l'etape en cours.
+
+        Pre-filtre SQL par statut (etapes dont le bouton porte une capacite
+        de l'utilisateur), puis controle exact par dossier : assignation,
+        quatre yeux et branche prime sont ceux de workflow.step_owners.
+        """
+        from .workflow import current_owner_ids, statuses_owned_by
+
+        statuses, stages = statuses_owned_by(user)
+        candidates = Case.objects.filter(
+            models.Q(status__in=statuses) | models.Q(bounty_stage__in=stages)
+        )
+        return [case.pk for case in candidates if user.pk in current_owner_ids(case)]
 
     def sla_breached(self):
         return self.filter(sla_events__state=SLAState.BREACHED).distinct()
@@ -333,7 +353,26 @@ class Case(BaseModel):
         )
 
     def is_visible_to(self, user):
-        """Verification unitaire cote objet (complement du queryset)."""
+        """Verification unitaire cote objet (complement du queryset).
+
+        Agent de triage et analyste CSIRT ne voient un dossier que lorsqu'ils
+        sont responsables de son etape en cours : une fois leur etape
+        franchie, il sort de leur perimetre (404).
+        """
+        if not self.in_role_scope(user):
+            return False
+        if self.reporter_id == user.id or user.role not in STEP_SCOPED_ROLES:
+            return True
+        from .workflow import current_owner_ids
+
+        return user.pk in current_owner_ids(self)
+
+    def in_role_scope(self, user):
+        """Perimetre du role, independamment de l'etape en cours.
+
+        Sert a determiner les responsables d'une etape (workflow.step_owners)
+        sans dependre, circulairement, de la regle d'etape elle-meme.
+        """
         if not user or not user.is_authenticated:
             return False
         if user.sees_all_cases:

@@ -203,6 +203,7 @@ def test_researcher_cannot_patch_severity(client_for, researcher_a, case_alpha):
 
 
 def test_analyst_can_patch_severity(client_for, analyst, case_alpha):
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)  # etape 3 : l'analyste est responsable
     client = client_for(analyst)
     response = client.patch(
         f"/api/v1/reports/{case_alpha.case_id}/",
@@ -215,7 +216,11 @@ def test_analyst_can_patch_severity(client_for, analyst, case_alpha):
 
 
 def test_analyst_cannot_patch_qualification_once_submitted(client_for, analyst, case_alpha):
-    """La qualification soumise a validation ne change plus sans renvoi."""
+    """La qualification soumise a validation ne change plus sans renvoi.
+
+    L'etape 4 revient au valideur : le dossier sort meme du perimetre de
+    l'analyste (404), qui ne peut donc plus la modifier.
+    """
     advance(case_alpha, CaseStatus.VALIDATION_PENDING)
     client = client_for(analyst)
     response = client.patch(
@@ -223,7 +228,7 @@ def test_analyst_cannot_patch_qualification_once_submitted(client_for, analyst, 
         data=json.dumps({"severity": "LOW"}),
         content_type="application/json",
     )
-    assert response.status_code == 400
+    assert response.status_code == 404
     case_alpha.refresh_from_db()
     assert case_alpha.severity != "LOW"
 

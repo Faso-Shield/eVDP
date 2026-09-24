@@ -455,7 +455,9 @@ def test_senior_analyst_cannot_validate_own_qualification(case_alpha, cwe):
     qualify(case_alpha, senior, cwe)
     perform_action(case_alpha, "submit_qualification", senior)
 
-    with pytest.raises(TransitionNotAllowed, match="quatre yeux"):
+    # Auteur de la qualification, il n'est pas responsable de l'etape 4 : le
+    # dossier sort meme de son perimetre (refus « introuvable »).
+    with pytest.raises(TransitionNotAllowed):
         perform_action(case_alpha, "validate_qualification", senior, data={"comment": "Ok"})
     perform_action(case_alpha, "validate_qualification", other, data={"comment": "Ok"})
     assert case_alpha.status == CaseStatus.VALIDATED
@@ -477,7 +479,7 @@ def test_advisory_author_cannot_publish(case_alpha, monkeypatch):
         ROLE_CAPABILITIES[Role.CSIRT_ANALYST] | {Capability.PUBLISH_ADVISORY},
     )
     data = {"comment": "Relu", "review_done": True}
-    with pytest.raises(TransitionNotAllowed, match="quatre yeux"):
+    with pytest.raises(TransitionNotAllowed):
         perform_action(case_alpha, "publish_and_close", author, data=data)
 
 
@@ -490,7 +492,7 @@ def test_rejection_proposer_cannot_confirm(case_alpha, triager, monkeypatch):
         Role.TRIAGER,
         ROLE_CAPABILITIES[Role.TRIAGER] | {Capability.ARBITRATE_CASE},
     )
-    with pytest.raises(TransitionNotAllowed, match="quatre yeux"):
+    with pytest.raises(TransitionNotAllowed):
         perform_action(case_alpha, "confirm_rejection", triager, data={"comment": "Ok"})
 
 
@@ -953,9 +955,9 @@ def test_web_action_refused_to_auditor(client_for, case_alpha, auditor):
     assert case_alpha.status == CaseStatus.SUBMITTED
 
 
-def test_detail_shows_waiting_owner_to_other_roles(client_for, case_alpha, triager):
+def test_detail_shows_waiting_owner_to_other_roles(client_for, case_alpha, coordinator):
     advance(case_alpha, CaseStatus.IN_ANALYSIS)
-    content = client_for(triager).get(f"/cases/{case_alpha.case_id}/").content.decode()
+    content = client_for(coordinator).get(f"/cases/{case_alpha.case_id}/").content.decode()
     assert "En attente de" in content
     assert "Analyste CSIRT" in content
 
@@ -966,3 +968,39 @@ def test_detail_lists_missing_prerequisites_to_owner(client_for, case_alpha, ana
     assert "Soumettre la qualification" in content
     assert "Vecteur CVSS manquant" in content
     assert "CWE manquant" in content
+
+
+# ------------------------------------------------ perimetre suivant l'etape
+def test_triager_loses_the_case_once_his_step_is_done(client_for, case_alpha, triager):
+    """Apres la reception, le dossier sort du perimetre de l'agent de triage."""
+    from apps.coordination.models import Case
+
+    url = f"/cases/{case_alpha.case_id}/"
+    client = client_for(triager)
+    assert client.get(url).status_code == 200
+    assert case_alpha in Case.objects.visible_to(triager)
+
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)
+    assert client.get(url).status_code == 404
+    assert case_alpha not in Case.objects.visible_to(triager)
+    assert case_alpha.case_id not in client.get("/cases/").content.decode()
+
+
+def test_analyst_sees_only_the_cases_of_his_steps(analyst, case_alpha):
+    from apps.coordination.models import Case
+
+    assert case_alpha not in Case.objects.visible_to(analyst)  # etape 1 : triage
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)
+    assert case_alpha in Case.objects.visible_to(analyst)
+    advance(case_alpha, CaseStatus.VALIDATION_PENDING)
+    assert case_alpha not in Case.objects.visible_to(analyst)
+    advance(case_alpha, CaseStatus.VALIDATED)
+    assert case_alpha in Case.objects.visible_to(analyst)
+
+
+def test_coordinator_keeps_the_national_view(coordinator, case_alpha):
+    from apps.coordination.models import Case
+
+    for status in (CaseStatus.SUBMITTED, CaseStatus.IN_ANALYSIS, CaseStatus.CLOSED):
+        advance(case_alpha, status)
+        assert case_alpha in Case.objects.visible_to(coordinator)

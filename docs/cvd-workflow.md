@@ -39,7 +39,12 @@ Code de référence : `apps/coordination/workflow.py` (table des actions et
    le dossier n'en lisent que les métadonnées (titre, statut, « En attente
    de », échéances). Le déclarant garde toujours l'accès à son propre rapport.
    Un dossier clos n'a plus de responsable : son contenu n'est plus lu par
-   personne côté métier. Les actions d'exception des étapes 1 à 3 et
+   personne côté métier. Pour l'agent de triage et l'analyste CSIRT, la règle
+   vaut aussi pour l'accès au dossier lui-même : ils ne le voient (liste,
+   Kanban, fiche, API) que lorsqu'ils sont responsables de son étape en cours
+   ; une fois leur étape franchie, il sort de leur périmètre (404). Le
+   Coordinateur garde la vue nationale (arbitrage, escalade, assignation) et
+   l'auditeur les métadonnées. Les actions d'exception des étapes 1 à 3 et
    « Correctif insuffisant » sont réservées à ce responsable.
 8. **Un avis par étape** — à chaque étape franchie (et dès la soumission), le
    responsable de l'étape suivante reçoit une notification et un email

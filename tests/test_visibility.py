@@ -135,7 +135,9 @@ def test_auditor_sees_pseudonymized_identity(auditor, case_alpha):
     assert "alpha" not in label
 
 
-def test_csirt_sees_real_identity(analyst, case_alpha):
+def test_csirt_sees_real_identity(triager, analyst, case_alpha):
+    assert reporter_label(case_alpha, triager) == case_alpha.report.reporter_display
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)
     assert reporter_label(case_alpha, analyst) == case_alpha.report.reporter_display
 
 
@@ -160,8 +162,9 @@ def test_dsi_sees_score_without_vector(client_for, dsi_alpha, notified_case):
 
 
 def test_analyst_writes_cvss_and_triager_reads(analyst, triager, case_alpha):
-    assert case_view(case_alpha, analyst)["cvss"] == "write"
     assert case_view(case_alpha, triager)["cvss"] == "read"
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)
+    assert case_view(case_alpha, analyst)["cvss"] == "write"
 
 
 # ------------------------------------------------------------ notes et canaux
@@ -263,12 +266,15 @@ def test_dsi_sees_no_bounty(bounty_case, analyst, triager, organization):
 def test_advisory_matrix(
     analyst, coordinator, auditor, triager, researcher_a, dsi_alpha, notified_case
 ):
-    assert case_view(notified_case, analyst)["advisory"] == "write"
     assert case_view(notified_case, coordinator)["advisory"] == "write"
     assert case_view(notified_case, dsi_alpha)["advisory"] == "read"
     assert case_view(notified_case, auditor)["advisory"] == "read"
     assert case_view(notified_case, triager)["advisory"] is None
     assert case_view(notified_case, researcher_a)["advisory"] is None
+    # Etape 6 : l'analyste n'est pas responsable, le dossier lui est ferme.
+    assert case_view(notified_case, analyst)["advisory"] is None
+    advance(notified_case, CaseStatus.FIX_VERIFIED)
+    assert case_view(notified_case, analyst)["advisory"] == "write"
 
 
 # -------------------------------------------------------------- journal d'audit

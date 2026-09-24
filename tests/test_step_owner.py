@@ -40,10 +40,15 @@ def _detail(client, case):
 def test_only_the_step_owner_reads_the_report(
     client_for, triager, analyst, coordinator, auditor, case_alpha
 ):
-    """Etape 1 : l'agent de triage lit le rapport, les autres ses metadonnees."""
+    """Etape 1 : l'agent de triage lit le rapport.
+
+    L'analyste, dont l'etape n'est pas venue, ne voit meme pas le dossier ;
+    coordinateur et auditeur (vue nationale) n'en lisent que les metadonnees.
+    """
     body = "Description suffisamment longue"
     assert body in _detail(client_for(triager), case_alpha).content.decode()
-    for other in (analyst, coordinator, auditor):
+    assert _detail(client_for(analyst), case_alpha).status_code == 404
+    for other in (coordinator, auditor):
         response = _detail(client_for(other), case_alpha)
         assert response.status_code == 200  # le dossier reste reperable
         content = response.content.decode()
@@ -91,13 +96,14 @@ def test_assigned_analyst_is_the_only_owner(analyst, coordinator, case_alpha):
 
     assert has_content_access(case_alpha, analyst)
     assert not has_content_access(case_alpha, other)
-    with pytest.raises(TransitionNotAllowed, match="responsable"):
+    assert not case_alpha.is_visible_to(other)
+    with pytest.raises(TransitionNotAllowed):
         perform_action(case_alpha, "submit_qualification", other)
 
 
 def test_non_owner_cannot_take_an_exception_action(analyst, case_alpha):
     """Etape 1 : l'analyste n'est pas responsable, il ne propose pas de rejet."""
-    with pytest.raises(TransitionNotAllowed, match="responsable"):
+    with pytest.raises(TransitionNotAllowed):
         perform_action(
             case_alpha, "propose_rejection", analyst, data={"comment": "Hors sujet"}
         )
@@ -109,7 +115,7 @@ def test_non_owner_cannot_post_or_upload(client_for, analyst, case_alpha):
     response = client_for(analyst).post(
         reverse("coordination:upload_attachment", args=[case_alpha.case_id]), {}
     )
-    assert response.status_code == 403
+    assert response.status_code == 404  # hors perimetre a cette etape
 
 
 def test_non_owner_gets_no_pdf_export(client_for, analyst, case_alpha):
@@ -119,9 +125,12 @@ def test_non_owner_gets_no_pdf_export(client_for, analyst, case_alpha):
     assert response.status_code == 404
 
 
-def test_api_hides_the_report_from_a_non_owner(client_for, analyst, triager, case_alpha):
+def test_api_hides_the_report_from_a_non_owner(
+    client_for, analyst, coordinator, triager, case_alpha
+):
     url = f"/api/v1/reports/{case_alpha.case_id}/"
-    report = client_for(analyst).get(url).json()["report"]
+    assert client_for(analyst).get(url).status_code == 404
+    report = client_for(coordinator).get(url).json()["report"]
     assert "description" not in report
     report = client_for(triager).get(url).json()["report"]
     assert report["description"].startswith("Description")
