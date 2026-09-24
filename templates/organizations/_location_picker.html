@@ -1,7 +1,7 @@
 {% comment %}
-  Carte de saisie de la position, synchronisee avec les champs latitude et
-  longitude du formulaire (static/js/org-location.js). Inclure aussi
-  _location_picker_assets dans les blocs head et scripts.
+  Carte de saisie de la position, synchronisee avec la case « Coordonnées GPS »
+  du formulaire (static/js/org-location.js). Le gabarit qui l'inclut charge
+  leaflet.css, leaflet.js et org-location.js.
 {% endcomment %}
 <div class="location-picker">
   <div class="flex-between">
@@ -14,7 +14,7 @@
   <div id="location-picker-map" class="location-picker-map"
        data-tiles="{{ MAP.tiles }}" data-attribution="{{ MAP.attribution }}"
        aria-label="Carte de sélection de la position"></div>
-  <div class="help">Cliquez sur la carte ou faites glisser le point pour renseigner la
-  latitude et la longitude, puis enregistrez. Sans position, l'organisation est placée
-  au chef-lieu de sa région.</div>
+  <div class="help">Collez les coordonnées Google Maps dans « Coordonnées GPS », ou
+  cliquez sur la carte / faites glisser le point, puis enregistrez. Sans position,
+  l'organisation est placée au chef-lieu de sa région.</div>
 </div>

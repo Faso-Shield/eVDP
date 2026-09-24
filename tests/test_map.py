@@ -204,8 +204,7 @@ def test_saved_coordinates_are_the_position_shown_on_the_map(
         "organization_type": organization.organization_type,
         "sector": organization.sector,
         "region": "Centre",
-        "latitude": "12.377635",
-        "longitude": "-1.487849",
+        "coordinates": "12.377635, -1.487849",
         "status": organization.status,
         "accepts_vdp": "on",
     }
@@ -214,3 +213,81 @@ def test_saved_coordinates_are_the_position_shown_on_the_map(
 
     alpha = _by_name(client.get(DATA).json())["Ministere Alpha"]
     assert (alpha["lat"], alpha["lon"], alpha["precise"]) == (12.377635, -1.487849, True)
+
+
+# ------------------------------------------------------ coordonnees collees
+@pytest.mark.parametrize(
+    "collage",
+    [
+        "12.377635, -1.487849",  # clic droit > copier, Google Maps
+        "  12.377635,-1.487849 ",
+        "12.377635 -1.487849",
+        "12,377635; -1,487849",
+        "12°22'39.5\"N 1°29'16.3\"W",
+        "12.377635° N, 1.487849° W",
+        "https://www.google.com/maps/place/ANSSI/@12.3776,-1.4878,17z/data=!3m1!4b1"
+        "!4m6!3m5!1s0x0:0x0!8m2!3d12.377635!4d-1.487849",
+        "https://www.google.com/maps/@12.377635,-1.487849,17z",
+        "https://maps.google.com/?q=12.377635,-1.487849",
+    ],
+)
+def test_pasted_coordinates_are_understood(collage):
+    lat, lon = geo.parse_coordinates(collage)
+    assert abs(lat - 12.377635) < 2e-5 and abs(lon + 1.487849) < 2e-5
+
+
+@pytest.mark.parametrize(
+    "collage, message",
+    [
+        ("-1.487849, 12.377635", "inversées"),
+        ("48.8566, 2.3522", "hors du Burkina"),
+        ("Ouagadougou", "Format non reconnu"),
+        ("12.37", "Format non reconnu"),
+    ],
+)
+def test_unusable_coordinates_are_explained(collage, message):
+    with pytest.raises(geo.CoordinatesError, match=message):
+        geo.parse_coordinates(collage)
+
+
+def test_the_form_shows_one_box_in_google_maps_format(organization):
+    from apps.organizations.forms import OrganizationForm
+
+    organization.latitude, organization.longitude = Decimal("12.377635"), Decimal("-1.487849")
+    form = OrganizationForm(instance=organization)
+    assert "latitude" not in form.fields and "longitude" not in form.fields
+    assert form["coordinates"].value() == "12.377635, -1.487849"
+
+
+def test_emptying_the_box_removes_the_position(client_for, coordinator, organization):
+    organization.latitude, organization.longitude = Decimal("12.377635"), Decimal("-1.487849")
+    organization.save()
+    form = {
+        "name": organization.name,
+        "organization_type": organization.organization_type,
+        "sector": organization.sector,
+        "status": organization.status,
+        "coordinates": "",
+    }
+    client_for(coordinator).post(
+        reverse("organizations:manage", args=[organization.slug]), form
+    )
+    organization.refresh_from_db()
+    assert organization.latitude is None and organization.longitude is None
+
+
+def test_an_invalid_paste_is_refused_on_the_form(client_for, coordinator, organization):
+    form = {
+        "name": organization.name,
+        "organization_type": organization.organization_type,
+        "sector": organization.sector,
+        "status": organization.status,
+        "coordinates": "-1.487849, 12.377635",
+    }
+    response = client_for(coordinator).post(
+        reverse("organizations:manage", args=[organization.slug]), form
+    )
+    assert response.status_code == 200
+    assert "inversées" in response.content.decode()
+    organization.refresh_from_db()
+    assert organization.latitude is None

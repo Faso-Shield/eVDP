@@ -1,16 +1,18 @@
 /* eVDP — choix de la position d'une organisation sur une carte.
  *
- * Les champs latitude / longitude du formulaire restent la source de verite :
- * la carte ne fait que les lire et les ecrire. Un clic ou un glisser place le
- * point ; une saisie au clavier le deplace.
+ * La case « Coordonnees GPS » du formulaire reste la source de verite : la
+ * carte ne fait que la lire et l'ecrire. Un clic ou un glisser place le
+ * point ; un collage (format Google Maps « 12.377635, -1.487849 », lien ou
+ * degres-minutes-secondes) le deplace aussitot. Le serveur refait l'analyse
+ * a l'enregistrement (apps/organizations/geo.py) : ce script n'est qu'un
+ * apercu.
  */
 (function () {
   "use strict";
 
   var box = document.getElementById("location-picker-map");
-  var latInput = document.getElementById("id_latitude");
-  var lonInput = document.getElementById("id_longitude");
-  if (!box || !latInput || !lonInput || typeof L === "undefined") return;
+  var input = document.getElementById("id_coordinates");
+  if (!box || !input || typeof L === "undefined") return;
 
   // Emprise du Burkina Faso (apps/organizations/geo.py).
   var BOUNDS = [[9.3, -5.6], [15.2, 2.5]];
@@ -26,15 +28,51 @@
     return lat >= BOUNDS[0][0] && lat <= BOUNDS[1][0] && lon >= BOUNDS[0][1] && lon <= BOUNDS[1][1];
   }
 
+  var NUM = "[-+]?\\d{1,3}(?:[.,]\\d+)?";
+  var URL_PATTERNS = [
+    new RegExp("!3d(" + NUM + ")!4d(" + NUM + ")"),
+    new RegExp("[?&](?:q|query|ll|center|destination)=(" + NUM + ")(?:,|%2C)\\s*(" + NUM + ")"),
+    new RegExp("@(" + NUM + "),(" + NUM + ")"),
+  ];
+  var DMS = /(\d{1,3}(?:[.,]\d+)?)\s*°\s*(?:(\d{1,2}(?:[.,]\d+)?)\s*['′’]\s*)?(?:(\d{1,2}(?:[.,]\d+)?)\s*(?:"|″|”|''|′′)\s*)?([NSEWO])/gi;
+
+  function num(text) { return parseFloat(String(text || "0").replace(",", ".")); }
+
+  function parse(text) {
+    text = String(text || "").trim();
+    if (!text) return null;
+    for (var i = 0; i < URL_PATTERNS.length; i++) {
+      var m = text.match(URL_PATTERNS[i]);
+      if (m) return [num(m[1]), num(m[2])];
+    }
+    var dms = [], d, lat = null, lon = null;
+    DMS.lastIndex = 0;
+    while ((d = DMS.exec(text))) dms.push(d);
+    if (dms.length === 2) {
+      dms.forEach(function (p) {
+        var v = num(p[1]) + num(p[2]) / 60 + num(p[3]) / 3600;
+        var h = p[4].toUpperCase();
+        if ("SWO".indexOf(h) >= 0) v = -v;
+        if (h === "N" || h === "S") lat = v; else lon = v;
+      });
+      if (lat !== null && lon !== null) return [lat, lon];
+    }
+    var chunks;
+    if (text.indexOf(";") >= 0) chunks = text.split(";");
+    else if (/\d,\s*[-+]?\d/.test(text) && text.split(",").length === 2) chunks = text.split(",");
+    else chunks = text.replace(/,/g, " ").split(/\s+/);
+    chunks = chunks.map(function (c) { return c.trim(); }).filter(Boolean);
+    var whole = new RegExp("^" + NUM + "$");
+    if (chunks.length !== 2 || !whole.test(chunks[0]) || !whole.test(chunks[1])) return null;
+    return [num(chunks[0]), num(chunks[1])];
+  }
+
   function readInputs() {
-    var lat = parseFloat(String(latInput.value).replace(",", "."));
-    var lon = parseFloat(String(lonInput.value).replace(",", "."));
-    return isNaN(lat) || isNaN(lon) ? null : [lat, lon];
+    return parse(input.value);
   }
 
   function writeInputs(latlng) {
-    latInput.value = latlng.lat.toFixed(6);
-    lonInput.value = latlng.lng.toFixed(6);
+    input.value = latlng.lat.toFixed(6) + ", " + latlng.lng.toFixed(6);
   }
 
   function placeMarker(position, zoom) {
@@ -64,14 +102,13 @@
     placeMarker(e.latlng);
     writeInputs(e.latlng);
   });
-  latInput.addEventListener("change", function () { syncFromInputs(15); });
-  lonInput.addEventListener("change", function () { syncFromInputs(15); });
+  // Le point suit la case des la saisie ou le collage.
+  input.addEventListener("input", function () { syncFromInputs(16); });
 
   var clear = document.getElementById("location-picker-clear");
   if (clear) {
     clear.addEventListener("click", function () {
-      latInput.value = "";
-      lonInput.value = "";
+      input.value = "";
       syncFromInputs();
       map.fitBounds(BOUNDS);
     });

@@ -11,6 +11,7 @@ regions). Les deux designations d'une meme region pointent sur le meme
 chef-lieu, pour qu'un changement de nom ne deplace rien sur la carte.
 """
 
+import re
 import unicodedata
 
 # Emprise du territoire, avec une marge : sert a valider une saisie et a
@@ -70,6 +71,105 @@ def region_label(name):
 
 def in_burkina(lat, lon):
     return LAT_MIN <= float(lat) <= LAT_MAX and LON_MIN <= float(lon) <= LON_MAX
+
+
+_NUMBER = r"[-+]?\d{1,3}(?:[.,]\d+)?"
+# Liens Google Maps : .../@12.37,-1.48,17z · ?q=12.37,-1.48 · !3d12.37!4d-1.48
+_URL_PATTERNS = [
+    re.compile(r"!3d(" + _NUMBER + r")!4d(" + _NUMBER + r")"),
+    re.compile(
+        r"[?&](?:q|query|ll|center|destination)=("
+        + _NUMBER
+        + r")(?:,|%2C)\s*("
+        + _NUMBER
+        + r")"
+    ),
+    re.compile(r"@(" + _NUMBER + r"),(" + _NUMBER + r")"),
+]
+# 12°22'39.5"N 1°29'16.3"W · 12.3776° N, 1.4878° W
+_DMS = re.compile(
+    r"(\d{1,3}(?:[.,]\d+)?)\s*°\s*(?:(\d{1,2}(?:[.,]\d+)?)\s*['′’]\s*)?"
+    r"(?:(\d{1,2}(?:[.,]\d+)?)\s*(?:\"|″|”|''|′′)\s*)?([NSEWO])",
+    re.IGNORECASE,
+)
+
+
+class CoordinatesError(ValueError):
+    pass
+
+
+def _to_float(text):
+    return float(text.replace(",", "."))
+
+
+def _pair_from_dms(text):
+    parts = _DMS.findall(text)
+    if len(parts) != 2:
+        return None
+    values = {}
+    for degrees, minutes, seconds, hemisphere in parts:
+        value = (
+            _to_float(degrees)
+            + _to_float(minutes or "0") / 60
+            + _to_float(seconds or "0") / 3600
+        )
+        hemisphere = hemisphere.upper()
+        if hemisphere in "SWO":  # O = Ouest
+            value = -value
+        values["lat" if hemisphere in "NS" else "lon"] = value
+    if set(values) != {"lat", "lon"}:
+        return None
+    return values["lat"], values["lon"]
+
+
+def _pair_from_decimals(text):
+    # « 12.377635, -1.487849 » (Google Maps) ; la virgule decimale n'est
+    # admise qu'avec un separateur non ambigu : « 12,377635; -1,487849 ».
+    if ";" in text:
+        chunks = text.split(";")
+    elif re.search(r"\d,\s*[-+]?\d", text) and text.count(",") == 1:
+        chunks = text.split(",")
+    else:
+        chunks = text.replace(",", " ").split()
+    numbers = [c.strip() for c in chunks if c.strip()]
+    if len(numbers) != 2 or not all(re.fullmatch(_NUMBER, n) for n in numbers):
+        return None
+    return _to_float(numbers[0]), _to_float(numbers[1])
+
+
+def parse_coordinates(text):
+    """Latitude et longitude depuis ce qu'on colle depuis une carte.
+
+    Accepte le format copie par Google Maps (« 12.377635, -1.487849 »), un
+    lien Google Maps, ou des degres-minutes-secondes. Rend `(lat, lon)`
+    arrondis au micro-degre (~10 cm), ou leve CoordinatesError.
+    """
+    text = (text or "").strip()
+    for pattern in _URL_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            pair = _to_float(match.group(1)), _to_float(match.group(2))
+            break
+    else:
+        pair = _pair_from_dms(text) or _pair_from_decimals(text)
+    if pair is None:
+        raise CoordinatesError(
+            "Format non reconnu. Collez les coordonnées copiées depuis Google Maps, "
+            "par exemple : 12.377635, -1.487849"
+        )
+    lat, lon = (round(value, 6) for value in pair)
+    if not in_burkina(lat, lon):
+        if in_burkina(lon, lat):
+            raise CoordinatesError(
+                "Latitude et longitude semblent inversées : la latitude (≈ 9 à 15) vient en premier."
+            )
+        raise CoordinatesError("Cette position est hors du Burkina Faso.")
+    return lat, lon
+
+
+def format_coordinates(lat, lon):
+    """Forme affichee et collable : celle de Google Maps."""
+    return f"{float(lat):.6f}, {float(lon):.6f}"
 
 
 def locate(organization):
