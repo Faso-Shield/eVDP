@@ -35,6 +35,13 @@
   </div>
 </div>
 
+{% if case.status == "NEEDS_INFORMATION" and information_request %}
+<div class="notice">
+  <strong>Compléments demandés par l'équipe de coordination :</strong>
+  <div class="prose small mt-1">{{ information_request|markdown }}</div>
+</div>
+{% endif %}
+
 {# ---- Un bouton, un role (workflow v2) --------------------------------- #}
 {% if button.kind != "none" and not is_reporter or button.kind == "button" %}
 <div class="card workflow-step">

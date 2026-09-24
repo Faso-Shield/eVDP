@@ -5,7 +5,11 @@ from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.accounts.verification import grace_deadline
-from apps.coordination.services import public_status_for, resolve_tracking_token
+from apps.coordination.services import (
+    provide_information_anonymously,
+    public_status_for,
+    resolve_tracking_token,
+)
 from apps.core.markdown_utils import render_markdown
 from apps.core.models import SiteSetting
 from apps.core.ratelimit import rate_limited
@@ -13,7 +17,7 @@ from apps.core.views import DEFAULT_DISCLOSURE_POLICY
 from apps.programs.models import Program
 from apps.vulnerabilities.constants import ReportSource
 
-from .forms import TrackingCodeForm, VulnerabilityReportForm
+from .forms import TrackingCodeForm, TrackingComplementForm, VulnerabilityReportForm
 from .services import submit_report
 
 
@@ -130,10 +134,31 @@ def track_status(request, token):
     case = resolve_tracking_token(token)
     if case is None:
         return render(request, "reports/track_status.html", {"found": False})
+
+    can_answer = case.status == "NEEDS_INFORMATION" and case.reporter_id is None
+    form = TrackingComplementForm() if can_answer else None
+    if request.method == "POST" and can_answer:
+        form = TrackingComplementForm(request.POST)
+        if form.is_valid():
+            try:
+                provide_information_anonymously(
+                    case,
+                    form.cleaned_data["body"],
+                    attachments=request.FILES.getlist("attachments"),
+                    request=request,
+                )
+            except ValidationError as exc:
+                messages.error(request, "; ".join(exc.messages))
+            else:
+                messages.success(
+                    request,
+                    "Merci : vos compléments ont été transmis à l'équipe de coordination.",
+                )
+                return redirect("reports:track_status", token=token)
     return render(
         request,
         "reports/track_status.html",
-        {"found": True, "status": public_status_for(case)},
+        {"found": True, "status": public_status_for(case), "form": form, "token": token},
     )
 
 

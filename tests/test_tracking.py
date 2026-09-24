@@ -171,3 +171,100 @@ def test_track_status_is_rate_limited(client, case_alpha):
         client.get(reverse("reports:track_status", args=[raw])).status_code for _ in range(25)
     ]
     assert 429 in statuses
+
+
+# ------------------------------------------------ code lisible et reponse
+def test_tracking_code_is_human_friendly(case_alpha):
+    import re
+
+    raw = generate_tracking_token(case_alpha)
+    assert re.fullmatch(r"([A-HJKMNP-Z2-9]{4}-){4}[A-HJKMNP-Z2-9]{4}", raw)
+
+
+def test_tracking_code_tolerates_case_spaces_and_missing_dashes(case_alpha):
+    raw = generate_tracking_token(case_alpha)
+    sloppy = " " + raw.replace("-", " ").lower() + " "
+    assert resolve_tracking_token(sloppy) == case_alpha
+    assert resolve_tracking_token(raw.replace("-", "")) == case_alpha
+
+
+def test_legacy_tracking_tokens_still_resolve(case_alpha):
+    """Les codes emis avant le nouveau format restent valables."""
+    from django.utils import timezone
+
+    from apps.coordination.models import CaseTrackingToken
+    from apps.core.utils import hash_text
+
+    legacy = "Xk3_9fQ-legacy-token_ABCdef123"
+    CaseTrackingToken.objects.update_or_create(
+        case=case_alpha,
+        defaults={
+            "token_hash": hash_text(legacy),
+            "expires_at": timezone.now().replace(year=2099),
+        },
+    )
+    assert resolve_tracking_token(legacy) == case_alpha
+
+
+def test_status_page_shows_progress_steps(client, case_alpha, advance):
+    advance(case_alpha, CaseStatus.VALIDATED)
+    raw = generate_tracking_token(case_alpha)
+    page = client.get(reverse("reports:track_status", args=[raw])).content.decode()
+    assert "En analyse" in page and "is-current" in page
+    status = public_status_for(case_alpha)
+    assert [s["done"] for s in status["steps"]] == [True, True, False, False, False]
+    assert status["steps"][2]["current"] is True
+
+
+def _anonymous_case_needing_information(client, advance, analyst):
+    from apps.coordination.models import Case
+    from apps.coordination.services import transition_case
+
+    response = client.post(
+        reverse("reports:submit"), form_payload(is_anonymous="on"), follow=True
+    )
+    code = response.context["tracking_code"]
+    case = Case.objects.get()
+    advance(case, CaseStatus.IN_ANALYSIS)
+    transition_case(
+        case, "request_information", analyst, comment="Quelle version du portail ?"
+    )
+    return case, code
+
+
+def test_anonymous_reporter_sees_the_question_and_answers(client, advance, analyst):
+    case, code = _anonymous_case_needing_information(client, advance, analyst)
+    page = client.get(reverse("reports:track_status", args=[code])).content.decode()
+    assert "Quelle version du portail ?" in page
+    assert "Envoyer les compléments" in page
+
+    response = client.post(
+        reverse("reports:track_status", args=[code]),
+        {"body": "Version 2.3.1, navigateur Firefox.", "attachments": evidence("capture.txt")},
+    )
+    assert response.status_code == 302
+    case.refresh_from_db()
+    assert case.status == CaseStatus.IN_ANALYSIS
+    assert case.messages.filter(body__contains="Version 2.3.1").exists()
+    assert case.attachments.filter(original_filename="capture.txt").exists()
+
+
+def test_answer_is_refused_when_nothing_is_requested(client, case_alpha):
+    from apps.coordination.models import CaseTrackingToken
+
+    case_alpha.reporter = None
+    case_alpha.save(update_fields=["reporter"])
+    raw = generate_tracking_token(case_alpha)
+    assert CaseTrackingToken.objects.count() == 1
+    client.post(reverse("reports:track_status", args=[raw]), {"body": "Hors propos"})
+    assert case_alpha.messages.count() == 0
+
+
+def test_answer_with_unknown_code_changes_nothing(client, advance, analyst):
+    case, _code = _anonymous_case_needing_information(client, advance, analyst)
+    client.post(
+        reverse("reports:track_status", args=["AAAA-BBBB-CCCC-DDDD-EEEE"]), {"body": "Intrus"}
+    )
+    case.refresh_from_db()
+    assert case.status == CaseStatus.NEEDS_INFORMATION
+    assert not case.messages.filter(body__contains="Intrus").exists()

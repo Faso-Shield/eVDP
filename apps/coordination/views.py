@@ -38,6 +38,7 @@ from .services import (
     assign_case,
     build_vendor_summary,
     escalate_case,
+    information_request_for,
     post_message,
     propose_duplicate,
     record_admissibility,
@@ -223,6 +224,9 @@ def case_detail(request, case_id):
         "profile": profile,
         "show_content": profile != "auditor",
         "researcher_status": public_status_bucket(case.status)[1],
+        "information_request": (
+            information_request_for(case) if case.status == S.NEEDS_INFORMATION else ""
+        ),
         "messages_list": visible_messages(case, user),
         # Declarant et organisation : jalons publics seulement.
         "timeline": (

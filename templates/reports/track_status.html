@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% load evdp_tags static %}
 {% block title %}Statut du signalement{% endblock %}
 {% block container_class %}container-narrow{% endblock %}
 {% block content %}
-<div class="card" style="max-width:560px;margin:2rem auto">
+<div class="card" style="max-width:720px;margin:2rem auto">
   <div class="card-body">
     {% if not found %}
       <h1 style="font-size:1.4rem">Code de suivi introuvable</h1>
@@ -14,27 +15,57 @@
       <h1 style="font-size:1.4rem">Dossier {{ status.case_id }}</h1>
       <p class="muted small">Signalé le {{ status.submitted_at|date:"d/m/Y" }}</p>
 
-      <div class="mt-2">
-        {% if status.is_dismissed %}
-          <span class="status status-rejected">{{ status.label }}</span>
-          <p class="small muted mt-1">Ce dossier n'a pas donné lieu à une correction
-          (doublon, hors périmètre, ou non retenu après analyse). Aucun détail
-          supplémentaire n'est communiqué sur cette page publique.</p>
-        {% elif status.is_resolved %}
-          <span class="status status-done">{{ status.label }}</span>
-          <p class="small muted mt-1">Le traitement de ce dossier est terminé. Merci
+      {% if status.is_dismissed %}
+        <span class="status status-rejected">{{ status.label }}</span>
+        <p class="small muted mt-1">Ce dossier n'a pas donné lieu à une correction
+        (doublon, hors périmètre, ou non retenu après analyse). Aucun détail
+        supplémentaire n'est communiqué sur cette page publique.</p>
+      {% else %}
+        <ol class="track-steps" aria-label="Avancement du dossier">
+          {% for step in status.steps %}
+            <li class="{% if step.done %}is-done{% elif step.current %}is-current{% endif %}"
+                {% if step.current %}aria-current="step"{% endif %}>
+              <span class="track-dot">{% if step.done %}✓{% else %}{{ forloop.counter }}{% endif %}</span>
+              <span class="track-label">{{ step.label }}</span>
+            </li>
+          {% endfor %}
+        </ol>
+        {% if status.is_resolved %}
+          <p class="small muted">Le traitement de ce dossier est terminé. Merci
           pour votre contribution à la sécurité de la plateforme.</p>
-        {% else %}
-          <span class="status status-progress">{{ status.label }}</span>
-          <p class="small muted mt-1">L'équipe de coordination poursuit son travail
+        {% elif not status.needs_information %}
+          <p class="small muted">L'équipe de coordination poursuit son travail
           sur ce dossier. Revenez consulter cette page à tout moment.</p>
         {% endif %}
-      </div>
+      {% endif %}
+
+      {% if status.needs_information %}
+        <div class="notice mt-2 text-left">
+          <strong>L'équipe de coordination a besoin de compléments.</strong>
+          {% if status.question %}
+            <div class="prose small mt-1">{{ status.question|markdown }}</div>
+          {% endif %}
+          <p class="small muted mb-0">Sans réponse sous 30 jours, le dossier pourra être clos.</p>
+        </div>
+        {% if form %}
+          <form method="post" enctype="multipart/form-data" class="mt-2 text-left">
+            {% csrf_token %}
+            {% include "partials/form_field.html" with field=form.body %}
+            <div class="form-field">
+              <label for="attachments">Pièces jointes (facultatif, 5 maximum)</label>
+              <input type="file" name="attachments" id="attachments" multiple
+                     accept="{% for ext in EVDP.ATTACHMENT_ALLOWED_EXTENSIONS %}.{{ ext }}{% if not forloop.last %},{% endif %}{% endfor %}">
+            </div>
+            <button class="btn btn-accent" type="submit">Envoyer les compléments</button>
+          </form>
+        {% else %}
+          <p class="small mt-1">Connectez-vous à votre compte pour répondre depuis la fiche du dossier.</p>
+        {% endif %}
+      {% endif %}
 
       <div class="notice text-left mt-2">
-        Ceci est un statut simplifié, en lecture seule. Pour toute question,
-        l'équipe de coordination vous contactera directement si nécessaire —
-        cette page ne permet pas d'envoyer de message.
+        Ceci est un statut simplifié. Conservez votre code de suivi : il est le seul
+        moyen de revenir sur cette page si vous avez signalé sans compte.
       </div>
     {% endif %}
   </div>

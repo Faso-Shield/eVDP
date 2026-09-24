@@ -528,3 +528,17 @@ table.table tbody tr:hover { background: var(--surface-alt); }
 .sla-green { color: #1a7f37; }
 .sla-orange { color: #d97706; }
 .sla-red { color: #cf222e; }
+
+/* ---- Suivi public d'un signalement : paliers ---------------------------- */
+.track-steps { list-style: none; display: flex; gap: .25rem; padding: 0; margin: 1rem 0; counter-reset: none; }
+.track-steps li { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; position: relative; color: #5b6b7f; font-size: .8rem; }
+.track-steps li::before { content: ""; position: absolute; top: .9rem; left: -50%; width: 100%; height: 2px; background: #d5dce5; z-index: 0; }
+.track-steps li:first-child::before { display: none; }
+.track-dot { width: 1.8rem; height: 1.8rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #e5eaf0; font-weight: 700; position: relative; z-index: 1; }
+.track-label { margin-top: .35rem; }
+.track-steps li.is-done { color: #0d7a5f; }
+.track-steps li.is-done .track-dot { background: #0d7a5f; color: #fff; }
+.track-steps li.is-done::before, .track-steps li.is-current::before { background: #0d7a5f; }
+.track-steps li.is-current { color: #0b2a4a; font-weight: 700; }
+.track-steps li.is-current .track-dot { background: #0b2a4a; color: #fff; }
+@media (max-width: 520px) { .track-label { font-size: .68rem; } }

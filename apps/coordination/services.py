@@ -910,15 +910,30 @@ def default_severity_for(report):
     return report.reported_severity or Severity.MEDIUM
 
 
-def generate_tracking_token(case):
-    """Cree (ou renouvelle) le jeton de suivi public d'un case sans compte.
+#: Alphabet du code de suivi : sans caracteres ambigus (0/O, 1/I/L), pour
+#: qu'un declarant anonyme puisse le recopier a la main sans erreur.
+TRACKING_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+#: 20 caracteres parmi 31 : environ 99 bits d'entropie, en 5 groupes de 4.
+TRACKING_CODE_LENGTH = 20
 
-    La valeur en clair n'est jamais persistee : seul son hash est stocke,
-    au meme titre que les cles d'API. Elle est renvoyee a l'appelant pour
-    etre transmise une seule fois (email ou affichage a l'ecran), puis
-    perdue cote serveur.
+
+def normalize_tracking_code(raw):
+    """Forme canonique d'un code saisi : majuscules, groupes de 4 separes par
+    des tirets. Tolere espaces, tirets manquants et minuscules."""
+    compact = "".join(ch for ch in (raw or "").upper() if ch.isalnum())
+    return "-".join(compact[i : i + 4] for i in range(0, len(compact), 4))
+
+
+def generate_tracking_token(case):
+    """Cree (ou renouvelle) le code de suivi public d'un case sans compte.
+
+    Format XXXX-XXXX-XXXX-XXXX-XXXX, facile a noter et a recopier. La valeur
+    en clair n'est jamais persistee : seul son hash est stocke, au meme titre
+    que les cles d'API. Elle est renvoyee a l'appelant pour etre transmise
+    une seule fois (email ou affichage a l'ecran), puis perdue cote serveur.
     """
-    raw = secrets.token_urlsafe(32)
+    compact = "".join(secrets.choice(TRACKING_ALPHABET) for _ in range(TRACKING_CODE_LENGTH))
+    raw = normalize_tracking_code(compact)
     CaseTrackingToken.objects.update_or_create(
         case=case,
         defaults={
@@ -930,17 +945,19 @@ def generate_tracking_token(case):
 
 
 def resolve_tracking_token(raw_token):
-    """Retrouve le case associe a un jeton de suivi valide, ou None.
+    """Retrouve le case associe a un code de suivi valide, ou None.
 
-    Ne distingue jamais "jeton inconnu" de "jeton expire" dans la reponse
-    appelante : les deux doivent produire le meme message generique cote vue,
-    pour ne rien laisser deviner sur l'existence d'un jeton proche.
+    Accepte le code tel que saisi (anciens jetons, sensibles a la casse) ou
+    sous sa forme canonique (casse et tirets indifferents). Ne distingue
+    jamais "code inconnu" de "code expire" dans la reponse appelante : les
+    deux doivent produire le meme message generique cote vue.
     """
     if not raw_token or not raw_token.strip():
         return None
+    candidates = {hash_text(raw_token.strip()), hash_text(normalize_tracking_code(raw_token))}
     token = (
         CaseTrackingToken.objects.select_related("case")
-        .filter(token_hash=hash_text(raw_token.strip()))
+        .filter(token_hash__in=candidates)
         .first()
     )
     if token is None or not token.is_valid:
@@ -949,9 +966,37 @@ def resolve_tracking_token(raw_token):
     return token.case
 
 
+#: Paliers affiches au declarant, dans l'ordre (barre de progression).
+PUBLIC_STEPS = [
+    ("RECEIVED", "Reçu"),
+    ("ANALYSIS", "En analyse"),
+    ("VALIDATED", "Validé"),
+    ("IN_PROGRESS", "En correction"),
+    ("RESOLVED", "Publié"),
+]
+
+
+def information_request_for(case):
+    """Question posee au declarant lors de la derniere demande de complements."""
+    entry = (
+        case.status_history.filter(to_status=CaseStatus.NEEDS_INFORMATION)
+        .order_by("-created_at")
+        .first()
+    )
+    return entry.comment if entry else ""
+
+
 def public_status_for(case):
-    """(cle, libelle, resultat) simplifies pour la page de suivi publique."""
+    """Statut simplifie (5 paliers) pour la page de suivi publique."""
     key, label = public_status_bucket(case.status)
+    keys = [k for k, _ in PUBLIC_STEPS]
+    # Une demande de complements intervient pendant l'analyse.
+    current = (
+        keys.index("ANALYSIS")
+        if key == "NEEDS_INFORMATION"
+        else (keys.index(key) if key in keys else -1)
+    )
+    needs_information = key == "NEEDS_INFORMATION"
     return {
         "key": key,
         "label": label,
@@ -959,7 +1004,63 @@ def public_status_for(case):
         "submitted_at": case.created_at,
         "is_dismissed": key == "DISMISSED",
         "is_resolved": key == "RESOLVED",
+        "needs_information": needs_information,
+        "question": information_request_for(case) if needs_information else "",
+        "steps": [
+            {"label": step_label, "done": i < current, "current": i == current}
+            for i, (_k, step_label) in enumerate(PUBLIC_STEPS)
+        ],
     }
+
+
+@transaction.atomic
+def provide_information_anonymously(case, body, attachments=(), request=None):
+    """Reponse d'un declarant SANS compte a une demande de complements.
+
+    Le code de suivi tient lieu d'authentification (possession du code).
+    Le message rejoint le canal chercheur, les pieces jointes deviennent des
+    preuves en lecture seule, et le dossier revient a son etape d'origine,
+    exactement comme le bouton « Envoyer les compléments » d'un compte.
+    """
+    from apps.attachments.services import store_attachment, validate_upload
+
+    from .workflow import find_transition
+
+    transition = find_transition(case.status, "provide_information")
+    if transition is None or case.reporter_id is not None:
+        raise ValidationError("Aucune demande de compléments n'attend de réponse.")
+    body = (body or "").strip()
+    if not body:
+        raise ValidationError({"body": "Votre réponse ne peut pas être vide."})
+    attachments = list(attachments or [])[:5]
+    for uploaded in attachments:
+        validate_upload(uploaded)
+
+    CaseMessage.objects.create(
+        case=case,
+        author=None,
+        body=f"**Compléments du déclarant (lien de suivi)**\n\n{body}",
+        confidentiality=Confidentiality.PARTICIPANTS,
+    )
+    for uploaded in attachments:
+        store_attachment(uploaded, None, case=case, report=case.report, request=request)
+    log_action(
+        AuditAction.MESSAGE_SENT,
+        obj=case,
+        request=request,
+        via="tracking_code",
+        attachments=len(attachments),
+    )
+    _apply_transition(
+        case,
+        transition,
+        resolve_target(case, transition),
+        None,
+        "Compléments envoyés par le déclarant via son code de suivi.",
+        request,
+        case.status,
+    )
+    return case
 
 
 __all__ = [
@@ -984,5 +1085,6 @@ __all__ = [
     "generate_tracking_token",
     "resolve_tracking_token",
     "public_status_for",
+    "provide_information_anonymously",
     "WorkflowType",
 ]

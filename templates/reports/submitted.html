@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Signalement enregistré{% endblock %}
 {% block container_class %}container-narrow{% endblock %}
 {% block content %}
@@ -16,7 +17,11 @@
     {% if tracking_code %}
     <div class="notice text-left mt-2">
       <strong>Notez ce code de suivi maintenant — il ne sera plus jamais affiché :</strong>
-      <p class="mono" style="font-size:1.3rem;font-weight:700;color:var(--evdp-navy);word-break:break-all">{{ tracking_code }}</p>
+      <p class="mono" id="tracking-code" style="font-size:1.5rem;font-weight:700;letter-spacing:.06em;color:var(--evdp-navy);word-break:break-all">{{ tracking_code }}</p>
+      <div class="btn-row">
+        <button class="btn btn-sm btn-outline" type="button" data-copy-target="tracking-code">Copier le code</button>
+        <a class="btn btn-sm" href="{% url 'reports:track_status' tracking_code %}">Voir le suivi maintenant</a>
+      </div>
       <p class="small">Vous avez signalé de manière anonyme : ce code est le
       <strong>seul moyen</strong> de consulter l'avancement de votre dossier plus tard,
       sur la page <a href="{% url 'reports:track_lookup' %}">Suivre mon signalement</a>.
@@ -40,4 +45,8 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/copy-code.js' %}" defer></script>
 {% endblock %}

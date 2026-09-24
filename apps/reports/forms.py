@@ -180,7 +180,15 @@ class TrackingCodeForm(forms.Form):
     code = forms.CharField(
         label="Code ou lien de suivi",
         max_length=120,
-        widget=forms.TextInput(attrs={"placeholder": "Collez ici votre code de suivi"}),
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "ABCD-EFGH-JKMN-PQRS-TUVW",
+                "autocomplete": "off",
+                "autocapitalize": "characters",
+                "spellcheck": "false",
+            }
+        ),
+        help_text="Majuscules, minuscules, espaces ou tirets : peu importe.",
     )
 
     def clean_code(self):
@@ -189,7 +197,19 @@ class TrackingCodeForm(forms.Form):
         # colle par erreur (ex. https://.../suivi/<code>/).
         if "/" in value:
             value = value.rstrip("/").rsplit("/", 1)[-1]
+        if not value:
+            raise ValidationError("Saisissez votre code de suivi.")
         return value
+
+
+class TrackingComplementForm(forms.Form):
+    """Reponse d'un declarant anonyme a une demande de complements."""
+
+    body = forms.CharField(
+        label="Votre réponse",
+        max_length=MAX_TEXT,
+        widget=forms.Textarea(attrs={"rows": 6}),
+    )
 
 
 class AttachmentUploadForm(forms.Form):
