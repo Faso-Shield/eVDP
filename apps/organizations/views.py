@@ -13,7 +13,7 @@ from apps.audit.services import log_action
 from apps.coordination import selectors
 
 from .forms import OrganizationForm, OrganizationMemberForm
-from .models import Organization, OrganizationMember, OrganizationStatus
+from .models import MembershipRole, Organization, OrganizationMember, OrganizationStatus
 
 
 def organization_list(request):
@@ -139,11 +139,18 @@ def organization_member_add(request, slug):
             if invited:
                 from apps.accounts.models import User
 
+                # Le role du compte suit son role dans l'organisation : une
+                # personne invitee comme DSI recoit un compte DSI.
+                invited_role = (
+                    Role.DSI_ADMIN
+                    if form.cleaned_data["membership_role"] == MembershipRole.DSI
+                    else Role.ORGANIZATION_MANAGER
+                )
                 target_user = User.objects.create_user(
                     email=form.cleaned_data["email"],
                     password=None,
                     full_name=form.cleaned_data["full_name"],
-                    role=Role.ORGANIZATION_MANAGER,
+                    role=invited_role,
                 )
                 log_action(
                     AuditAction.USER_CREATED,

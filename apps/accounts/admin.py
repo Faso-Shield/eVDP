@@ -14,14 +14,68 @@ administrations le referencent en `autocomplete_fields`, ce qui exige un
 troisieme liste, melangee, qui aurait vide le decoupage de son sens.
 """
 
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
+from apps.organizations.models import OrganizationMember
 
 from .models import ApiKey, BusinessAccount, ReporterAccount, User, UserToken
-from .roles import BUSINESS_ROLES, RESEARCHER_ROLES
+from .roles import BUSINESS_ROLES, ORGANIZATION_ROLES, RESEARCHER_ROLES, Role
+
+
+def membership_role_for(role):
+    """Role d'appartenance correspondant au role RBAC d'un compte d'organisation."""
+    from apps.organizations.models import MembershipRole
+
+    return MembershipRole.DSI if role == Role.DSI_ADMIN else MembershipRole.MANAGER
+
+
+class BusinessAccountCreationForm(DjangoUserAdmin.add_form):
+    """Creation d'un compte metier, rattache d'emblee a son organisation.
+
+    Un compte DSI ou responsable d'organisation sans organisation ne voit
+    aucun dossier, meme aux etapes 6 et 7 qui lui reviennent : le
+    rattachement est donc exige des la creation pour ces deux roles.
+    """
+
+    organization = forms.ModelChoiceField(
+        label="Organisation",
+        queryset=None,
+        required=False,
+        help_text="Obligatoire pour un compte DSI ou responsable d'organisation.",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.organizations.models import Organization, OrganizationStatus
+
+        self.fields["organization"].queryset = Organization.objects.filter(
+            status=OrganizationStatus.ACTIVE
+        ).order_by("name")
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("role") in ORGANIZATION_ROLES and not cleaned.get("organization"):
+            self.add_error(
+                "organization",
+                "Un compte DSI ou responsable d'organisation doit etre rattache a "
+                "son organisation : sans elle, il ne verrait aucun dossier.",
+            )
+        return cleaned
+
+
+class OrganizationMembershipInline(admin.TabularInline):
+    """Organisations du compte, modifiables apres la creation."""
+
+    model = OrganizationMember
+    fk_name = "user"
+    extra = 0
+    fields = ("organization", "membership_role", "is_primary", "is_active")
+    verbose_name = "Organisation rattachée"
+    verbose_name_plural = "Organisations rattachées"
 
 
 @admin.register(User)
@@ -132,15 +186,64 @@ class BusinessAccountAdmin(BaseAccountAdmin):
         ),
         ("Horodatage", {"fields": ("last_login", "created_at", "updated_at")}),
     )
+    add_form = BusinessAccountCreationForm
     add_fieldsets = (
         (
             None,
             {
                 "classes": ("wide",),
-                "fields": ("email", "full_name", "role", "password1", "password2"),
+                "fields": (
+                    "email",
+                    "full_name",
+                    "role",
+                    "organization",
+                    "password1",
+                    "password2",
+                ),
             },
         ),
     )
+    inlines = [OrganizationMembershipInline]
+
+    def get_inline_instances(self, request, obj=None):
+        # A la creation, l'organisation se choisit dans le formulaire lui-meme.
+        return super().get_inline_instances(request, obj) if obj is not None else []
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        organization = None if change else form.cleaned_data.get("organization")
+        if organization is None:
+            return
+        member, _ = OrganizationMember.objects.get_or_create(
+            organization=organization,
+            user=obj,
+            defaults={
+                "membership_role": membership_role_for(obj.role),
+                "is_primary": True,
+                "invited_by": request.user,
+            },
+        )
+        log_action(
+            AuditAction.MEMBERSHIP_CHANGED,
+            actor=request.user,
+            obj=organization,
+            request=request,
+            member_email=obj.email,
+            membership_role=member.membership_role,
+        )
+
+    def save_formset(self, request, form, formset, change):
+        instances = formset.save()
+        for member in list(instances) + list(formset.deleted_objects):
+            log_action(
+                AuditAction.MEMBERSHIP_CHANGED,
+                actor=request.user,
+                obj=member.organization,
+                request=request,
+                member_email=form.instance.email,
+                membership_role=member.membership_role,
+                active=member.is_active,
+            )
 
     @admin.display(description="Organisation")
     def organisation(self, obj):
