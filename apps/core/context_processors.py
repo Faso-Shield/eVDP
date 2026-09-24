@@ -19,4 +19,5 @@ def evdp_context(request):
         "PROJECT_CODE": settings.EVDP["PROJECT_CODE"],
         "unread_notifications": unread,
         "sidebar_sections": sidebar_sections(user),
+        "MAP": {"tiles": settings.MAP_TILE_URL, "attribution": settings.MAP_ATTRIBUTION},
     }

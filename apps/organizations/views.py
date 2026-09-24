@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability, Role
@@ -14,6 +15,20 @@ from apps.coordination import selectors
 
 from .forms import OrganizationForm, OrganizationMemberForm
 from .models import Organization, OrganizationMember, OrganizationStatus
+
+
+def _map_url(user, organization):
+    """Lien vers l'organisation sur la carte, pour qui peut ouvrir la carte.
+
+    Meme garde que dashboard.views.map_view : un lien qui menerait a un refus
+    n'est pas propose.
+    """
+    if not (
+        user.has_capability(Capability.VIEW_CSIRT_DASHBOARD)
+        or user.has_capability(Capability.VIEW_NATIONAL_DASHBOARD)
+    ):
+        return None
+    return f"{reverse('dashboard:map')}?org={organization.id}"
 
 
 def organization_list(request):
@@ -119,6 +134,7 @@ def organization_manage(request, slug):
                 :15
             ],
             "member_form": OrganizationMemberForm(),
+            "map_url": _map_url(request.user, organization),
         },
     )
 

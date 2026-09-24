@@ -1,10 +1,16 @@
 {% extends "base_dashboard.html" %}
-{% load evdp_tags %}
+{% load evdp_tags static %}
 {% block title %}{{ organization.name }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">
+{% endblock %}
 {% block dashboard_content %}
 <div class="flex-between mb-2">
   <h1 class="mb-0">{{ organization.name }}</h1>
-  <a class="btn btn-sm btn-outline" href="{% url 'organizations:detail' organization.slug %}">Fiche publique</a>
+  <div class="btn-row">
+    {% if map_url %}<a class="btn btn-sm" href="{{ map_url }}">Voir sur la carte</a>{% endif %}
+    <a class="btn btn-sm btn-outline" href="{% url 'organizations:detail' organization.slug %}">Fiche publique</a>
+  </div>
 </div>
 
 <div class="card">
@@ -13,6 +19,7 @@
     <form method="post" novalidate>
       {% csrf_token %}
       <div class="form-grid">{% for field in form %}{% include "partials/form_field.html" %}{% endfor %}</div>
+      {% include "organizations/_location_picker.html" %}
       <button class="btn btn-accent" type="submit">Enregistrer</button>
     </form>
   </div>
@@ -55,4 +62,9 @@
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% static 'js/org-location.js' %}"></script>
 {% endblock %}

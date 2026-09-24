@@ -284,11 +284,33 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
+# Cartographie : fond de carte. Les tuiles sont chargees par le navigateur,
+# pas par le serveur ; leur origine doit donc figurer dans `img-src`. Pour un
+# fonctionnement hors ligne ou souverain, pointer vers un serveur de tuiles
+# interne ; une URL vide affiche la carte sans fond (regions seules).
+MAP_TILE_URL = env(
+    "EVDP_MAP_TILE_URL", default="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+)
+MAP_ATTRIBUTION = env("EVDP_MAP_ATTRIBUTION", default="&copy; contributeurs OpenStreetMap")
+
+
+def _tile_origin(url):
+    """Origine CSP des tuiles : `{s}` (sous-domaine tournant) devient `*`."""
+    if not url.startswith(("https://", "http://")):
+        return ""
+    scheme, _, rest = url.partition("://")
+    host = rest.split("/", 1)[0].replace("{s}", "*")
+    return f"{scheme}://{host}"
+
+
+MAP_TILE_ORIGIN = _tile_origin(MAP_TILE_URL)
+_IMG_SRC = " ".join(filter(None, ["'self' data:", MAP_TILE_ORIGIN]))
+
 CSP_DIRECTIVES = {
     "default-src": "'self'",
     "script-src": "'self' 'unsafe-inline'",
     "style-src": "'self' 'unsafe-inline'",
-    "img-src": "'self' data:",
+    "img-src": _IMG_SRC,
     "font-src": "'self' data:",
     "connect-src": "'self'",
     "frame-ancestors": "'none'",

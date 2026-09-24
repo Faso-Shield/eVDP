@@ -1,0 +1,20 @@
+{% comment %}
+  Carte de saisie de la position, synchronisee avec les champs latitude et
+  longitude du formulaire (static/js/org-location.js). Inclure aussi
+  _location_picker_assets dans les blocs head et scripts.
+{% endcomment %}
+<div class="location-picker">
+  <div class="flex-between">
+    <label>Position sur la carte</label>
+    <div class="btn-row">
+      {% if map_url %}<a class="btn btn-sm btn-outline" href="{{ map_url }}">Voir sur la carte des signalements</a>{% endif %}
+      <button type="button" class="btn btn-sm btn-outline" id="location-picker-clear">Effacer la position</button>
+    </div>
+  </div>
+  <div id="location-picker-map" class="location-picker-map"
+       data-tiles="{{ MAP.tiles }}" data-attribution="{{ MAP.attribution }}"
+       aria-label="Carte de sélection de la position"></div>
+  <div class="help">Cliquez sur la carte ou faites glisser le point pour renseigner la
+  latitude et la longitude, puis enregistrez. Sans position, l'organisation est placée
+  au chef-lieu de sa région.</div>
+</div>

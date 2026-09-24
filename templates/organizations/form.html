@@ -1,12 +1,22 @@
 {% extends "base_dashboard.html" %}
+{% load static %}
 {% block title %}Organisation{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">
+{% endblock %}
 {% block dashboard_content %}
 <h1>{% if creating %}Créer une organisation{% else %}Modifier{% endif %}</h1>
 <div class="card"><div class="card-body">
   <form method="post" novalidate>
     {% csrf_token %}
     <div class="form-grid">{% for field in form %}{% include "partials/form_field.html" %}{% endfor %}</div>
+    {% include "organizations/_location_picker.html" %}
     <button class="btn btn-accent" type="submit">Enregistrer</button>
   </form>
 </div></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% static 'js/org-location.js' %}"></script>
 {% endblock %}

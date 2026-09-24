@@ -81,9 +81,8 @@
       <div class="flex-between"><span>Taux de validation</span><strong>{{ stats.validation_rate }} %</strong></div>
       <div class="flex-between"><span>Dossiers en remédiation</span><strong>{{ stats.in_remediation }}</strong></div>
       <div class="flex-between"><span>Récompenses versées</span><strong>{{ rewards_count }}</strong></div>
-      <p class="muted mt-2">Une carte du Burkina Faso par région est prévue dans une
-      version ultérieure (données de localisation déjà collectées au niveau des
-      organisations).</p>
+      <p class="mt-2"><a href="{% url 'dashboard:map' %}">Voir la carte du Burkina Faso</a>
+      — organisations et signalements par région.</p>
     </div>
   </div>
 
