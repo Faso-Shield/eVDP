@@ -224,3 +224,27 @@ docker compose ps
 docker compose logs --tail=100 evdp-web
 docker compose exec evdp-web python manage.py check --deploy
 ```
+
+---
+
+## Dépannage : un signalement échoue (erreur 500 ou « stockage indisponible »)
+
+Chaque signalement exige au moins une pièce jointe, enregistrée dans MinIO.
+Le stockage est donc le premier suspect.
+
+```bash
+docker compose exec evdp-web python manage.py check_storage
+```
+
+La commande écrit, relit puis supprime un fichier de test avec la
+configuration réelle de l'application, et nomme l'étape qui échoue :
+
+| Erreur affichée | Cause | Correction |
+|-----------------|-------|------------|
+| `NoSuchBucket` | Bucket non créé | `docker compose up evdp-minio-init` puis `docker compose logs evdp-minio-init` |
+| `InvalidAccessKeyId`, `SignatureDoesNotMatch` | Identifiants MinIO incohérents | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` du `.env`, puis `docker compose up -d` |
+| `EndpointConnectionError` | MinIO arrêté | `docker compose ps`, `docker compose logs evdp-minio` |
+| `evdp-minio-init` : `Unknown xl meta version` | Volume écrit par une version plus récente de MinIO | Supprimer le volume `evdp_evdp-minio-data` (les pièces jointes stockées sont perdues) puis `docker compose up -d` |
+
+Si le stockage est opérationnel, la cause exacte d'une erreur 500 figure
+dans les journaux : `docker compose logs evdp-web --tail 200`.

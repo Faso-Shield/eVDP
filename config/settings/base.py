@@ -187,7 +187,25 @@ STORAGES = {
 }
 
 if USE_S3:
+    from botocore.config import Config as _BotoConfig
+
     # MinIO / S3 : stockage prive des pieces jointes, jamais expose publiquement.
+    #
+    # Depuis botocore 1.36, boto3 ajoute par defaut des sommes de controle
+    # CRC32 en « trailer » (aws-chunked) a chaque envoi. Des stockages
+    # compatibles S3, dont des versions de MinIO, les refusent et l'envoi de
+    # la piece jointe echoue. On revient au comportement historique : somme
+    # de controle seulement quand l'operation l'exige. L'integrite reste
+    # garantie par le SHA-256 calcule et stocke par eVDP.
+    _S3_CLIENT_CONFIG = _BotoConfig(
+        s3={"addressing_style": "path"},
+        signature_version="s3v4",
+        request_checksum_calculation="when_required",
+        response_checksum_validation="when_required",
+        connect_timeout=5,
+        read_timeout=30,
+        retries={"max_attempts": 3, "mode": "standard"},
+    )
     STORAGES["default"] = {
         "BACKEND": "storages.backends.s3.S3Storage",
         "OPTIONS": {
@@ -201,6 +219,7 @@ if USE_S3:
             "file_overwrite": False,
             "signature_version": "s3v4",
             "addressing_style": "path",
+            "client_config": _S3_CLIENT_CONFIG,
         },
     }
 

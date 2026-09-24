@@ -222,3 +222,51 @@ def test_storage_failure_gives_a_clear_error_and_no_orphan_case(client, monkeypa
     assert response.status_code == 200
     assert "stockage des pièces jointes" in response.content.decode()
     assert Case.objects.count() == 0
+
+
+def test_scan_dispatch_failure_does_not_break_the_submission(client, monkeypatch):
+    """Courtier Celery (Redis) injoignable apres enregistrement : pas de 500,
+    le signalement reste enregistre avec sa piece « en attente d'analyse »."""
+    from apps.attachments.tasks import scan_attachment
+    from apps.coordination.models import Case
+
+    def panne(*args, **kwargs):
+        raise ConnectionError("Redis injoignable")
+
+    monkeypatch.setattr(scan_attachment, "delay", panne)
+    response = client.post(
+        reverse("reports:submit"),
+        {
+            "title": "Faille avec courtier en panne",
+            "affected_organization_name": "Ministere Alpha",
+            "description": "Une description assez longue pour passer la validation.",
+            "accept_policy": "on",
+            "contact_email": "x@exemple.bf",
+            "attachments": upload("preuve.txt"),
+        },
+    )
+    assert response.status_code == 200
+    assert Case.objects.get().attachments.get().scan_status == "PENDING"
+
+
+def test_check_storage_command_reports_success(settings, tmp_path):
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    settings.MEDIA_ROOT = tmp_path
+    sortie = StringIO()
+    call_command("check_storage", stdout=sortie)
+    assert "operationnel" in sortie.getvalue()
+
+
+def test_check_storage_command_names_the_failing_step(monkeypatch):
+    from django.core.files.storage import FileSystemStorage
+    from django.core.management import CommandError, call_command
+
+    def panne(*args, **kwargs):
+        raise PermissionError("acces refuse")
+
+    monkeypatch.setattr(FileSystemStorage, "_save", panne)
+    with pytest.raises(CommandError, match="ecriture"):
+        call_command("check_storage")

@@ -203,10 +203,27 @@ def store_attachment(
         filename=attachment.original_filename,
     )
 
+    transaction.on_commit(lambda: _dispatch_scan(attachment.pk))
+    return attachment
+
+
+def _dispatch_scan(attachment_pk):
+    """Programme l'analyse antivirus sans jamais faire echouer la requete.
+
+    Appelee apres validation de la transaction : le signalement est deja
+    enregistre. Un courtier Celery (Redis) injoignable ne doit pas le
+    transformer en erreur 500 : la piece reste « en attente d'analyse » et
+    l'incident est journalise pour l'exploitant.
+    """
     from .tasks import scan_attachment
 
-    transaction.on_commit(lambda: scan_attachment.delay(str(attachment.pk)))
-    return attachment
+    try:
+        scan_attachment.delay(str(attachment_pk))
+    except Exception as exc:
+        logger.exception(
+            "attachment_scan_dispatch_failed",
+            extra={"attachment": str(attachment_pk), "error": exc.__class__.__name__},
+        )
 
 
 def authorize_download(attachment, user, request=None):
