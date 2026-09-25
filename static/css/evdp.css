@@ -547,3 +547,65 @@ table.table tbody tr:hover { background: var(--surface-alt); }
 .wf-secondary summary { cursor: pointer; font-weight: 600; }
 .wf-secondary details { margin-top: .5rem; }
 .btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+/* ---------------------------------------------------------------------------
+   Pages d'erreur (400, 403, 404, 500)
+   --------------------------------------------------------------------------- */
+.error-page { padding: 3rem 0 2rem; }
+.error-card {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 2rem;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 2.4rem 2.6rem;
+  position: relative;
+  overflow: hidden;
+}
+.error-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 5px;
+  background: linear-gradient(90deg, var(--evdp-navy-light), var(--evdp-accent));
+}
+.error-visual { display: flex; justify-content: center; }
+.error-visual svg { max-width: 100%; height: auto; }
+.error-code {
+  margin: 0;
+  font-size: 4.2rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -.02em;
+  background: linear-gradient(120deg, var(--evdp-navy-light), var(--evdp-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.error-title { font-size: 1.55rem; margin: .5rem 0 .8rem; }
+.error-message p { color: var(--text); }
+.error-note {
+  font-size: .9rem;
+  color: var(--text-muted);
+  background: var(--surface-alt);
+  border-left: 3px solid var(--evdp-accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: .6rem .8rem;
+}
+.error-path { font-size: .85rem; margin: .2rem 0 1rem; word-break: break-all; }
+.error-path code { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 4px; padding: .1rem .35rem; }
+.error-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1.2rem 0 .9rem; }
+.error-links { list-style: none; display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; padding: 0; margin: 0; font-size: .9rem; }
+.error-links a::before { content: "→ "; color: var(--evdp-accent); }
+.error-footnote { text-align: center; color: var(--text-muted); font-size: .8rem; margin-top: 1.4rem; }
+@media (max-width: 700px) {
+  .error-page { padding: 1.5rem 0; }
+  .error-card { grid-template-columns: 1fr; text-align: center; padding: 1.8rem 1.3rem; gap: 1rem; }
+  .error-visual svg { width: 170px; }
+  .error-code { font-size: 3.2rem; }
+  .error-actions, .error-links { justify-content: center; }
+  .error-note { text-align: left; }
+}

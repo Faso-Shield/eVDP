@@ -3,7 +3,7 @@
 from django.conf import settings
 from django.core.cache import cache
 from django.db import connection
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 
@@ -166,6 +166,18 @@ def error_404(request, exception=None):
 
 def error_500(request):
     return render(request, "errors/500.html", status=500)
+
+
+def error_preview(request, code):
+    """Apercu des pages d'erreur, en developpement seulement (voir config/urls.py).
+
+    Avec DEBUG=True, Django remplace les pages 404 et 500 par ses pages
+    techniques : cette route permet de voir celles du projet telles qu'un
+    visiteur les verra en production.
+    """
+    if code not in (400, 403, 404, 500):
+        raise Http404("Code non prévu.")
+    return render(request, f"errors/{code}.html", status=code)
 
 
 DEFAULT_DISCLOSURE_POLICY = """

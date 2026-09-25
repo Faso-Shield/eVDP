@@ -44,3 +44,5 @@ handler500 = "apps.core.views.error_500"
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    # Apercu des pages d'erreur (masquees par les pages techniques en DEBUG).
+    urlpatterns += [path("__erreurs/<int:code>/", core_views.error_preview)]

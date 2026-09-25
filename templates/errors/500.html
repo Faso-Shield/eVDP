@@ -1,8 +1,31 @@
-{% extends "base.html" %}
+{% extends "errors/_error.html" %}
 {% block title %}Erreur interne{% endblock %}
-{% block container_class %}container-narrow{% endblock %}
-{% block content %}
-<h1>500 — Erreur interne</h1>
-<p>Une erreur est survenue. L'incident a été journalisé.</p>
-<a class="btn" href="{% url 'core:home' %}">Retour à l'accueil</a>
+{% block code %}500{% endblock %}
+{% block heading %}Un incident est survenu de notre côté{% endblock %}
+{% block message %}
+  <p>
+    La plateforme n'a pas pu traiter votre demande. Aucune donnée de votre
+    signalement n'a été exposée.
+  </p>
+  <p class="error-note">
+    L'incident a été journalisé et l'équipe technique en est informée.
+    Réessayez dans quelques instants.
+  </p>
+{% endblock %}
+{% block illustration %}
+<svg viewBox="0 0 220 180" width="220" height="180" role="presentation">
+  <defs>
+    <linearGradient id="e500-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#123f6d"/>
+      <stop offset="1" stop-color="#0d7a5f"/>
+    </linearGradient>
+  </defs>
+  <circle cx="110" cy="90" r="78" fill="#e6f4ef"/>
+  <rect x="48" y="52" width="124" height="86" rx="10" fill="#fff" stroke="#b6c4d3" stroke-width="2"/>
+  <rect x="48" y="52" width="124" height="18" rx="9" fill="url(#e500-g)"/>
+  <circle cx="60" cy="61" r="3" fill="#fff"/><circle cx="70" cy="61" r="3" fill="#fff"/><circle cx="80" cy="61" r="3" fill="#fff"/>
+  <path d="M110 84 L136 128 H84 Z" fill="#c8901e"/>
+  <rect x="107.5" y="98" width="5" height="16" rx="2.5" fill="#fff"/>
+  <circle cx="110" cy="120" r="3" fill="#fff"/>
+</svg>
 {% endblock %}
