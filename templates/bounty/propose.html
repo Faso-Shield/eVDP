@@ -6,10 +6,10 @@
 <p class="muted">Dossier <span class="mono">{{ case.case_id }}</span> — {{ case.title }}</p>
 
 <div class="notice">
-  Montant suggéré par la matrice du programme pour une sévérité
-  <strong>{{ case.get_severity_display }}</strong> :
-  <strong>{{ suggested|floatformat:0 }} {{ currency }}</strong>.
-  Ce montant provient de la configuration du programme, jamais du code.
+  Montant suggéré pour la sévérité validée
+  <strong>{{ case.get_severity_display }}</strong>{% if case.cvss_score is not None %} (CVSS {{ case.cvss_score }}){% endif %} :
+  <strong>{{ suggested|money }} {{ currency }}</strong>, déjà saisi dans le formulaire.
+  {% include "bounty/_suggestion_basis.html" with suggestion=suggestion currency=currency severity=case.get_severity_display %}
 </div>
 
 <div class="card"><div class="card-body">

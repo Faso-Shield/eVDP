@@ -58,7 +58,16 @@ def suggested_amount(case):
     policy = getattr(program, "reward_policy", None) if program else None
     if not policy or not policy.is_active:
         return Decimal("0"), "XOF"
-    return policy.suggested_amount(case.severity, case.scope), policy.currency
+    return policy.suggested_amount(case.severity, case.scope, case.cvss_score), policy.currency
+
+
+def suggestion_for(case):
+    """Detail du montant propose : palier, score, position dans le palier."""
+    program = case.program
+    policy = getattr(program, "reward_policy", None) if program else None
+    if not policy or not policy.is_active:
+        return None
+    return policy.suggestion(case.severity, case.scope, case.cvss_score)
 
 
 def amount_outside_tier(case, amount):
@@ -193,6 +202,7 @@ def bounty_context(case):
         "tier": tier,
         "currency": currency,
         "suggested": suggested,
+        "suggestion": suggestion_for(case),
         "bounty": bounty,
         "within_policy": bounty.within_policy() if bounty else True,
         "budget": budget_status(bounty) if bounty else None,
@@ -752,6 +762,7 @@ def wallet_balance(researcher):
 
 
 __all__ = [
+    "suggestion_for",
     "payout_readiness",
     "request_payout_details",
     "bounty_context",

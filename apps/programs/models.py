@@ -433,10 +433,49 @@ class RewardPolicy(BaseModel):
                 return specifique
         return self.tiers.filter(severity=severity, scope__isnull=True).first()
 
-    def suggested_amount(self, severity, scope=None):
-        """Montant propose par defaut : borne haute du palier applicable."""
+    #: Plage de score CVSS de chaque severite qualitative.
+    SCORE_BANDS = {
+        Severity.LOW: (Decimal("0.1"), Decimal("3.9")),
+        Severity.MEDIUM: (Decimal("4.0"), Decimal("6.9")),
+        Severity.HIGH: (Decimal("7.0"), Decimal("8.9")),
+        Severity.CRITICAL: (Decimal("9.0"), Decimal("10.0")),
+    }
+
+    def suggestion(self, severity, scope=None, score=None):
+        """Montant propose pour une severite validee, avec son explication.
+
+        Le palier du programme fixe la fourchette ; le score CVSS situe le
+        montant dans cette fourchette : un 6,9 vaut plus qu'un 4,0 dans le
+        meme palier « Moyenne ». Un score hors de la plage de la severite
+        (severite revue a la validation) est ramene a la borne la plus
+        proche. Sans score, la borne haute s'applique. Le montant est
+        arrondi a un pas lisible, sans jamais sortir du palier.
+        """
         tier = self.tier_for(severity, scope)
-        return tier.max_amount if tier else Decimal("0")
+        if tier is None:
+            return {"amount": Decimal("0"), "tier": None, "position": None, "score": score}
+        band = self.SCORE_BANDS.get(severity)
+        if score is None or band is None:
+            position = Decimal("1")
+        else:
+            low, high = band
+            score = Decimal(str(score))
+            position = (min(max(score, low), high) - low) / (high - low)
+        low_amount, high_amount = tier.min_amount, tier.max_amount
+        amount = low_amount + (high_amount - low_amount) * position
+        step = _rounding_step(high_amount)
+        amount = (amount / step).quantize(Decimal("1")) * step
+        amount = min(max(amount, low_amount), high_amount)
+        return {
+            "amount": amount,
+            "tier": tier,
+            "position": int(round(position * 100)),
+            "score": score,
+        }
+
+    def suggested_amount(self, severity, scope=None, score=None):
+        """Montant propose par defaut (voir `suggestion`)."""
+        return self.suggestion(severity, scope, score)["amount"]
 
     def scopes_with_tiers(self):
         """Actifs dotes d'une grille propre, pour l'affichage public."""
@@ -458,6 +497,17 @@ class RewardPolicy(BaseModel):
             ],
         ).aggregate(total=models.Sum("approved_amount"))["total"]
         return total or Decimal("0")
+
+
+def _rounding_step(maximum):
+    """Pas d'arrondi : un vingtieme de l'ordre de grandeur du plafond.
+
+    2 000 000 -> 50 000 ; 300 000 -> 5 000 ; 500 -> 5.
+    """
+    if maximum <= 0:
+        return Decimal("1")
+    magnitude = Decimal(10) ** (len(str(int(maximum))) - 1)
+    return max(magnitude / 20, Decimal("1"))
 
 
 class RewardTier(BaseModel):

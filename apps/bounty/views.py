@@ -41,6 +41,7 @@ from .services import (
     request_payout_details,
     review_bounty,
     suggested_amount,
+    suggestion_for,
     visible_bounties,
 )
 
@@ -254,7 +255,13 @@ def propose(request, case_id):
     return render(
         request,
         "bounty/propose.html",
-        {"case": case, "form": form, "suggested": default_amount, "currency": currency},
+        {
+            "case": case,
+            "form": form,
+            "suggested": default_amount,
+            "currency": currency,
+            "suggestion": suggestion_for(case),
+        },
     )
 
 

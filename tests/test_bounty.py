@@ -1267,3 +1267,48 @@ def test_reward_list_hides_other_researchers_column(
 
     assert "<th>Chercheur</th>" not in page_chercheur
     assert "<th>Chercheur</th>" in page_analyste
+
+
+# ------------------------------------------- montant propose selon le CVSS
+def _set_score(case, severity, score):
+    Case.objects.filter(pk=case.pk).update(severity=severity, cvss_score=score)
+    case.refresh_from_db()
+
+
+def test_suggestion_scales_with_the_cvss_score_within_the_tier(bounty_case):
+    """Palier Moyenne 100 000 - 300 000 : le score situe le montant."""
+    _set_score(bounty_case, Severity.MEDIUM, Decimal("4.0"))
+    assert suggested_amount(bounty_case)[0] == Decimal("100000")
+    _set_score(bounty_case, Severity.MEDIUM, Decimal("6.5"))
+    assert suggested_amount(bounty_case)[0] == Decimal("270000")
+    _set_score(bounty_case, Severity.MEDIUM, Decimal("6.9"))
+    assert suggested_amount(bounty_case)[0] == Decimal("300000")
+
+
+def test_score_outside_the_validated_severity_is_clamped(bounty_case):
+    """Severite revue a la baisse : le montant reste dans le palier valide."""
+    _set_score(bounty_case, Severity.MEDIUM, Decimal("9.8"))
+    assert suggested_amount(bounty_case)[0] == Decimal("300000")
+    _set_score(bounty_case, Severity.HIGH, Decimal("5.0"))
+    assert suggested_amount(bounty_case)[0] == Decimal("300000")
+
+
+def test_without_score_the_upper_bound_is_suggested(bounty_case):
+    _set_score(bounty_case, Severity.CRITICAL, None)
+    assert suggested_amount(bounty_case)[0] == Decimal("2000000")
+
+
+def test_propose_dialog_explains_and_prefills_the_amount(client_for, bounty_case, analyst):
+    from .conftest import claim
+
+    _set_score(bounty_case, Severity.MEDIUM, Decimal("6.5"))
+    claim(bounty_case, analyst)
+    content = client_for(analyst).get(bounty_case.get_absolute_url()).content.decode()
+    assert 'value="270000' in content
+    assert "place le montant à 86 %" in content
+
+
+def test_proposal_without_amount_uses_the_suggestion(bounty_case, analyst):
+    _set_score(bounty_case, Severity.MEDIUM, Decimal("6.5"))
+    bounty = propose_bounty(bounty_case, analyst)
+    assert bounty.proposed_amount == Decimal("270000")

@@ -6,8 +6,9 @@ Reperes de decision d'une prime (fenetres B1 « Proposer la prime » et B2
 <div class="bounty-ctx">
   <div class="bounty-ctx-grid">
     <div>
-      <span class="bounty-ctx-label">Sévérité retenue</span>
+      <span class="bounty-ctx-label">Sévérité validée</span>
       <strong>{{ ctx.severity }}</strong>
+      {% if ctx.suggestion.score is not None %}<span class="small muted">CVSS {{ ctx.suggestion.score }}</span>{% endif %}
     </div>
     <div>
       <span class="bounty-ctx-label">Palier du programme</span>
@@ -19,6 +20,7 @@ Reperes de decision d'une prime (fenetres B1 « Proposer la prime » et B2
     <div>
       <span class="bounty-ctx-label">Montant suggéré</span>
       <strong>{{ ctx.suggested|money }} {{ ctx.currency }}</strong>
+      <span class="small muted">prérempli ci-dessous</span>
     </div>
     {% elif ctx.bounty %}
     <div>
@@ -28,6 +30,10 @@ Reperes de decision d'une prime (fenetres B1 « Proposer la prime » et B2
     </div>
     {% endif %}
   </div>
+
+  {% if action.key == "propose_bounty" %}
+    {% include "bounty/_suggestion_basis.html" with suggestion=ctx.suggestion currency=ctx.currency severity=ctx.severity %}
+  {% endif %}
 
   {% if action.key == "approve_bounty" and ctx.bounty %}
     {% if not ctx.within_policy %}
@@ -42,8 +48,6 @@ Reperes de decision d'une prime (fenetres B1 « Proposer la prime » et B2
         {% if ctx.budget.exceeded %}<span class="badge sev-critical">Dépassé</span>{% endif %}
       </p>
     {% endif %}
-  {% else %}
-    <p class="small muted mb-1">Hors palier, une justification écrite est obligatoire.</p>
   {% endif %}
 
   <p class="small mb-0">
