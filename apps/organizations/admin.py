@@ -1,6 +1,34 @@
 from django.contrib import admin
 
+from apps.accounts.roles import Capability
+
 from .models import Organization, OrganizationMember, SecurityContact
+
+
+class OrganizationManagersOnlyMixin:
+    """Gestion des organisations : analyste et Coordinateur seulement.
+
+    Le super admin (ou tout compte staff) n'y accede pas par ce seul
+    drapeau : la gestion des organisations est un geste metier.
+    """
+
+    def _allowed(self, request):
+        return request.user.has_capability(Capability.MANAGE_ALL_ORGANIZATIONS)
+
+    def has_module_permission(self, request):
+        return self._allowed(request)
+
+    def has_view_permission(self, request, obj=None):
+        return self._allowed(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self._allowed(request)
+
+    def has_add_permission(self, request, obj=None):
+        return self._allowed(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self._allowed(request)
 
 
 class OrganizationMemberInline(admin.TabularInline):
@@ -15,7 +43,7 @@ class SecurityContactInline(admin.TabularInline):
 
 
 @admin.register(Organization)
-class OrganizationAdmin(admin.ModelAdmin):
+class OrganizationAdmin(OrganizationManagersOnlyMixin, admin.ModelAdmin):
     list_display = ("name", "acronym", "organization_type", "sector", "status", "accepts_vdp")
     list_filter = ("organization_type", "sector", "status", "accepts_vdp")
     search_fields = ("name", "acronym", "domain", "official_email")
@@ -33,7 +61,7 @@ class OrganizationAdmin(admin.ModelAdmin):
 
 
 @admin.register(OrganizationMember)
-class OrganizationMemberAdmin(admin.ModelAdmin):
+class OrganizationMemberAdmin(OrganizationManagersOnlyMixin, admin.ModelAdmin):
     list_display = ("user", "organization", "membership_role", "is_active", "is_primary")
     list_filter = ("membership_role", "is_active")
     search_fields = ("user__email", "organization__name")
@@ -41,7 +69,7 @@ class OrganizationMemberAdmin(admin.ModelAdmin):
 
 
 @admin.register(SecurityContact)
-class SecurityContactAdmin(admin.ModelAdmin):
+class SecurityContactAdmin(OrganizationManagersOnlyMixin, admin.ModelAdmin):
     list_display = ("name", "organization", "email", "is_primary")
     list_filter = ("is_primary",)
     search_fields = ("name", "email", "organization__name")

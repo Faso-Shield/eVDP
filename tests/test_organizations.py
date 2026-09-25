@@ -23,27 +23,29 @@ def manage_payload(organization, **overrides):
 
 
 # --------------------------------------------------------------- isolation
-def test_dsi_cannot_manage_another_organization(client_for, dsi_alpha, other_organization):
+def test_manager_cannot_manage_another_organization(
+    client_for, manager_alpha, other_organization
+):
     """Regression : aucun test ne couvrait l'isolation multi-organisation
     pour la gestion (uniquement pour les cases)."""
-    client = client_for(dsi_alpha)
+    client = client_for(manager_alpha)
     response = client.get(reverse("organizations:manage", args=[other_organization.slug]))
     assert response.status_code == 404
 
 
-def test_dsi_can_manage_own_organization(client_for, dsi_alpha, organization):
-    client = client_for(dsi_alpha)
+def test_manager_can_manage_own_organization(client_for, manager_alpha, organization):
+    client = client_for(manager_alpha)
     response = client.get(reverse("organizations:manage", args=[organization.slug]))
     assert response.status_code == 200
 
 
-def test_dsi_cannot_update_another_organization_via_post(
-    client_for, dsi_beta, organization, other_organization
+def test_manager_cannot_update_another_organization_via_post(
+    client_for, manager_beta, organization, other_organization
 ):
-    """dsi_beta appartient a other_organization : toute tentative de POST
+    """manager_beta appartient a other_organization : toute tentative de POST
     sur `organization` (qui n'est pas la sienne) doit etre refusee, pas
     seulement le GET."""
-    client = client_for(dsi_beta)
+    client = client_for(manager_beta)
     response = client.post(
         reverse("organizations:manage", args=[organization.slug]),
         manage_payload(organization, name="Nom modifie par un tiers"),
@@ -54,9 +56,9 @@ def test_dsi_cannot_update_another_organization_via_post(
 
 
 def test_manage_list_only_shows_own_organizations(
-    client_for, dsi_alpha, organization, other_organization
+    client_for, manager_alpha, organization, other_organization
 ):
-    client = client_for(dsi_alpha)
+    client = client_for(manager_alpha)
     response = client.get(reverse("organizations:manage_list"))
     content = response.content.decode()
     assert organization.name in content
@@ -117,10 +119,12 @@ def test_organization_count_unaffected_by_query_injection_attempt(client):
 
 
 # --------------------------------------------------------------- membres
-def test_manager_can_add_existing_user_as_member(client_for, dsi_alpha, organization, analyst):
+def test_manager_can_add_existing_user_as_member(
+    client_for, manager_alpha, organization, analyst
+):
     from apps.organizations.models import MembershipRole, OrganizationMember
 
-    client = client_for(dsi_alpha)
+    client = client_for(manager_alpha)
     response = client.post(
         reverse("organizations:member_add", args=[organization.slug]),
         {"email": analyst.email, "membership_role": MembershipRole.ANALYST, "is_primary": ""},
@@ -129,14 +133,14 @@ def test_manager_can_add_existing_user_as_member(client_for, dsi_alpha, organiza
     assert OrganizationMember.objects.filter(organization=organization, user=analyst).exists()
 
 
-def test_dsi_cannot_add_member_to_another_organization(
-    client_for, dsi_alpha, other_organization, analyst
+def test_manager_cannot_add_member_to_another_organization(
+    client_for, manager_alpha, other_organization, analyst
 ):
     """Isolation multi-organisation : une DSI ne doit pas pouvoir rattacher
     quelqu'un a une organisation dont elle n'est pas gestionnaire."""
     from apps.organizations.models import MembershipRole, OrganizationMember
 
-    client = client_for(dsi_alpha)
+    client = client_for(manager_alpha)
     response = client.post(
         reverse("organizations:member_add", args=[other_organization.slug]),
         {"email": analyst.email, "membership_role": MembershipRole.ANALYST, "is_primary": ""},
@@ -147,10 +151,12 @@ def test_dsi_cannot_add_member_to_another_organization(
     ).exists()
 
 
-def test_add_member_with_unknown_email_creates_nothing(client_for, dsi_alpha, organization):
+def test_add_member_with_unknown_email_creates_nothing(
+    client_for, manager_alpha, organization
+):
     from apps.organizations.models import MembershipRole, OrganizationMember
 
-    client = client_for(dsi_alpha)
+    client = client_for(manager_alpha)
     response = client.post(
         reverse("organizations:member_add", args=[organization.slug]),
         {
@@ -162,6 +168,44 @@ def test_add_member_with_unknown_email_creates_nothing(client_for, dsi_alpha, or
     assert response.status_code == 302
     assert (
         not OrganizationMember.objects.filter(organization=organization)
-        .exclude(user=dsi_alpha)
+        .exclude(user=manager_alpha)
         .exists()
     )
+
+
+# ------------------------------------------------ qui gere les organisations
+def test_analyst_manages_any_organization(client_for, analyst, other_organization):
+    client = client_for(analyst)
+    assert client.get(reverse("organizations:manage_list")).status_code == 200
+    assert (
+        client.get(reverse("organizations:manage", args=[other_organization.slug])).status_code
+        == 200
+    )
+    assert client.get(reverse("organizations:create")).status_code == 200
+
+
+def test_dsi_no_longer_manages_its_organization(client_for, dsi_alpha, organization):
+    """La DSI traite la remediation ; la fiche revient au responsable."""
+    client = client_for(dsi_alpha)
+    assert client.get(reverse("organizations:manage_list")).status_code == 403
+    assert (
+        client.get(reverse("organizations:manage", args=[organization.slug])).status_code
+        == 403
+    )
+
+
+@pytest.mark.parametrize("role", ["TRIAGER", "AUDITOR", "SECURITY_RESEARCHER"])
+def test_other_roles_cannot_manage_organizations(client_for, role, organization):
+    from .conftest import make_user
+
+    user = make_user(f"autre-{role.lower()}@test.bf", role)
+    assert client_for(user).get(reverse("organizations:manage_list")).status_code == 403
+
+
+def test_super_admin_cannot_manage_organizations(client_for, organization):
+    from apps.accounts.models import User
+
+    root = User.objects.create_superuser(email="root-org@test.bf", password="Xx-123456789!")
+    client = client_for(root)
+    assert client.get(reverse("organizations:manage_list")).status_code == 403
+    assert client.get("/admin/organizations/organization/").status_code in (302, 403)

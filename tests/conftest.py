@@ -166,6 +166,25 @@ def dsi_beta(db, other_organization):
     return user
 
 
+@pytest.fixture
+def manager_alpha(db, organization):
+    """Responsable d'organisation : seul compte d'organisation qui la gere."""
+    user = make_user("resp-alpha@test.bf", Role.ORGANIZATION_MANAGER)
+    OrganizationMember.objects.create(
+        organization=organization, user=user, membership_role=MembershipRole.MANAGER
+    )
+    return user
+
+
+@pytest.fixture
+def manager_beta(db, other_organization):
+    user = make_user("resp-beta@test.bf", Role.ORGANIZATION_MANAGER)
+    OrganizationMember.objects.create(
+        organization=other_organization, user=user, membership_role=MembershipRole.MANAGER
+    )
+    return user
+
+
 # ------------------------------------------------------------------ programmes
 @pytest.fixture
 def vdp_program(db, organization, sla_policy):

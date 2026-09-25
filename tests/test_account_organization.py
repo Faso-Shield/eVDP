@@ -128,9 +128,9 @@ def test_organizations_are_editable_after_creation(admin_client, dsi_alpha):
 
 
 # ------------------------------------------ fiche de l'organisation (appli)
-def test_manage_page_shows_the_member_form(client_for, dsi_alpha, organization):
+def test_manage_page_shows_the_member_form(client_for, manager_alpha, organization):
     content = (
-        client_for(dsi_alpha)
+        client_for(manager_alpha)
         .get(reverse("organizations:manage", args=[organization.slug]))
         .content.decode()
     )
