@@ -23,10 +23,7 @@ def _map_url(user, organization):
     Meme garde que dashboard.views.map_view : un lien qui menerait a un refus
     n'est pas propose.
     """
-    if not (
-        user.has_capability(Capability.VIEW_CSIRT_DASHBOARD)
-        or user.has_capability(Capability.VIEW_NATIONAL_DASHBOARD)
-    ):
+    if not user.has_capability(Capability.VIEW_MAP):
         return None
     return f"{reverse('dashboard:map')}?org={organization.id}"
 

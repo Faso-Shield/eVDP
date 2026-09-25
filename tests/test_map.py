@@ -7,13 +7,21 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 
+from apps.accounts.roles import Role
+from apps.core.navigation import sidebar_sections
 from apps.organizations import geo
 from apps.organizations.models import Organization, Sector
+
+from .conftest import make_user
 
 pytestmark = pytest.mark.django_db
 
 MAP = reverse("dashboard:map")
 DATA = reverse("dashboard:map_data")
+
+
+def _menu_labels(user):
+    return [lien["label"] for _, liens in sidebar_sections(user) for lien in liens]
 
 
 def _by_name(payload):
@@ -70,18 +78,25 @@ def test_a_lone_coordinate_is_rejected():
 
 
 # --------------------------------------------------------------------- acces
-@pytest.mark.parametrize("fixture", ["analyst", "coordinator", "auditor"])
-def test_csirt_and_national_roles_open_the_map(request, client_for, fixture):
-    client = client_for(request.getfixturevalue(fixture))
-    assert client.get(MAP).status_code == 200
-    assert client.get(DATA).status_code == 200
+#: Roles autorises a consulter la carte ; tous les autres sont refuses.
+MAP_ROLES = {Role.SUPER_ADMIN, Role.NATIONAL_COORDINATOR, Role.CSIRT_ANALYST, Role.AUDITOR}
 
 
-@pytest.mark.parametrize("fixture", ["researcher_a", "dsi_alpha"])
-def test_other_roles_are_refused(request, client_for, fixture):
-    client = client_for(request.getfixturevalue(fixture))
+@pytest.mark.parametrize("role", list(Role))
+def test_only_the_designated_roles_open_the_map(client_for, role):
+    user = make_user(f"carte-{role.lower()}@test.bf", role=role)
+    client = client_for(user)
+    expected = 200 if role in MAP_ROLES else 403
+    assert client.get(MAP).status_code == expected
+    assert client.get(DATA).status_code == expected
+    assert ("Cartographie" in _menu_labels(user)) is (role in MAP_ROLES)
+
+
+def test_the_triager_keeps_the_csirt_view_but_not_the_map(client_for, triager):
+    """La carte ne suit plus le tableau de bord CSIRT."""
+    client = client_for(triager)
+    assert client.get(reverse("dashboard:csirt")).status_code == 200
     assert client.get(MAP).status_code == 403
-    assert client.get(DATA).status_code == 403
 
 
 def test_anonymous_visitor_is_redirected_to_login(client):

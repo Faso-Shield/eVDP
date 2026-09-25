@@ -43,6 +43,10 @@ class Capability(models.TextChoices):
     VIEW_AUDIT_LOG = "VIEW_AUDIT_LOG", "Consulter le journal d'audit"
     VIEW_NATIONAL_DASHBOARD = "VIEW_NATIONAL_DASHBOARD", "Tableau de bord national"
     VIEW_CSIRT_DASHBOARD = "VIEW_CSIRT_DASHBOARD", "Tableau de bord CSIRT"
+    # Carte des organisations et de leurs vulnerabilites : une liste de
+    # cibles si elle fuit. Capacite propre, pour ne pas suivre les tableaux
+    # de bord : le trieur a la vue CSIRT mais pas la carte.
+    VIEW_MAP = "VIEW_MAP", "Consulter la cartographie"
     EXPORT_DATA = "EXPORT_DATA", "Exporter des données"
     IMPORT_CSAF = "IMPORT_CSAF", "Importer du CSAF"
     MANAGE_USERS = "MANAGE_USERS", "Gérer les utilisateurs"
@@ -71,6 +75,7 @@ ROLE_CAPABILITIES = {
         C.VIEW_AUDIT_LOG,
         C.VIEW_NATIONAL_DASHBOARD,
         C.VIEW_CSIRT_DASHBOARD,
+        C.VIEW_MAP,
         C.EXPORT_DATA,
         C.IMPORT_CSAF,
         C.MANAGE_USERS,
@@ -86,6 +91,7 @@ ROLE_CAPABILITIES = {
         C.PROPOSE_BOUNTY,
         C.DRAFT_ADVISORY,
         C.VIEW_CSIRT_DASHBOARD,
+        C.VIEW_MAP,
         C.EXPORT_DATA,
         C.IMPORT_CSAF,
     },
@@ -120,6 +126,7 @@ ROLE_CAPABILITIES = {
         C.VIEW_AUDIT_LOG,
         C.VIEW_NATIONAL_DASHBOARD,
         C.VIEW_CSIRT_DASHBOARD,
+        C.VIEW_MAP,
         C.EXPORT_DATA,
     },
     Role.PUBLIC_USER: {C.SUBMIT_REPORT},

@@ -186,7 +186,7 @@ def national_dashboard(request):
 
 
 @login_required
-@require_capability(Capability.VIEW_CSIRT_DASHBOARD, Capability.VIEW_NATIONAL_DASHBOARD)
+@require_capability(Capability.VIEW_MAP)
 def map_view(request):
     """Carte du Burkina Faso : organisations et signalements afferents.
 
@@ -198,7 +198,7 @@ def map_view(request):
 
 
 @login_required
-@require_capability(Capability.VIEW_CSIRT_DASHBOARD, Capability.VIEW_NATIONAL_DASHBOARD)
+@require_capability(Capability.VIEW_MAP)
 def map_data(request):
     params = request.GET
     return JsonResponse(

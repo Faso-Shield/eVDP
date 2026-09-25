@@ -73,7 +73,7 @@ def sidebar_sections(user):
         if ouverte and route != atterrissage:
             espace.append(_lien(libelle, route))
     # Meme garde que la vue : dashboard.views.map_view.
-    if peut(C.VIEW_CSIRT_DASHBOARD) or peut(C.VIEW_NATIONAL_DASHBOARD):
+    if peut(C.VIEW_MAP):
         espace.append(_lien("Cartographie", "dashboard:map"))
     # Le portefeuille de versement est une page a part, pas un tableau de
     # bord : il est liste meme quand « Espace chercheur » est l'atterrissage.
