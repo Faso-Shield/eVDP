@@ -73,8 +73,8 @@
 </div>
 {% endif %}
 
-<div class="split-layout">
-  <div>
+<div class="split-layout case-layout">
+  <div class="case-main">
     <div class="card">
       <div class="card-header"><h2>Rapport</h2><span class="pill">Privé</span></div>
       <div class="card-body prose">
@@ -224,8 +224,9 @@
     {% endif %}
   </div>
 
-  <aside>
-    <div class="card">
+  <aside class="case-side">
+    {# Sur mobile, cette fiche remonte en tete de page (voir .case-layout). #}
+    <div class="card action-card">
       <div class="card-header"><h3>Prochaine étape</h3></div>
       <div class="card-body">
         {% if primary_panel %}

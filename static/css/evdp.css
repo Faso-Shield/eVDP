@@ -773,3 +773,12 @@ table.table td { overflow-wrap: normal; }
   .stat-value { font-size: 1.4rem; }
   .stat-label { font-size: .68rem; letter-spacing: .03em; }
 }
+
+/* Fiche dossier sur mobile : la fiche « Prochaine étape » passe avant le
+   rapport. Les deux colonnes s'effacent (display: contents) pour que leurs
+   cartes deviennent des elements de la grille, que `order` peut deplacer. */
+@media (max-width: 1000px) {
+  .case-layout { row-gap: 0; }
+  .case-layout > .case-main, .case-layout > .case-side { display: contents; }
+  .case-layout .action-card { order: -1; }
+}
