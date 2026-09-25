@@ -202,10 +202,11 @@ def test_other_roles_cannot_manage_organizations(client_for, role, organization)
     assert client_for(user).get(reverse("organizations:manage_list")).status_code == 403
 
 
-def test_super_admin_cannot_manage_organizations(client_for, organization):
+def test_super_admin_manages_organizations(client_for, organization):
+    """Le super admin garde la gestion, dans l'application et l'admin Django."""
     from apps.accounts.models import User
 
     root = User.objects.create_superuser(email="root-org@test.bf", password="Xx-123456789!")
     client = client_for(root)
-    assert client.get(reverse("organizations:manage_list")).status_code == 403
-    assert client.get("/admin/organizations/organization/").status_code in (302, 403)
+    assert client.get(reverse("organizations:manage_list")).status_code == 200
+    assert client.get("/admin/organizations/organization/").status_code == 200

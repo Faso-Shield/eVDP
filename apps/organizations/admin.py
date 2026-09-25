@@ -6,10 +6,11 @@ from .models import Organization, OrganizationMember, SecurityContact
 
 
 class OrganizationManagersOnlyMixin:
-    """Gestion des organisations : analyste et Coordinateur seulement.
+    """Gestion des organisations dans l'administration Django.
 
-    Le super admin (ou tout compte staff) n'y accede pas par ce seul
-    drapeau : la gestion des organisations est un geste metier.
+    Ouverte aux comptes portant MANAGE_ALL_ORGANIZATIONS : super admin,
+    et Coordinateur ou analyste s'ils ont acces a l'administration. Un
+    simple compte staff sans cette capacite n'y accede pas.
     """
 
     def _allowed(self, request):

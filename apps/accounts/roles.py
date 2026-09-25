@@ -67,11 +67,12 @@ C = Capability
 #: DSI_ADMIN (et ORGANIZATION_MANAGER, memes boutons).
 ROLE_CAPABILITIES = {
     # L'administration technique est separee du metier (ISO/IEC 27001 A.5.3) :
-    # comptes, programmes et matrices de prime, mais aucun acces au contenu
-    # des dossiers, aucun bouton de workflow, ni la gestion des organisations
-    # (reservee a l'analyste, au Coordinateur et au responsable d'organisation).
+    # comptes, organisations, programmes et matrices de prime, mais aucun
+    # acces au contenu des dossiers ni aucun bouton de workflow.
     Role.SUPER_ADMIN: {
         C.MANAGE_USERS,
+        C.MANAGE_ALL_ORGANIZATIONS,
+        C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
     },
     Role.NATIONAL_COORDINATOR: {
