@@ -12,6 +12,7 @@ from apps.accounts.roles import Capability, Role
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination import selectors
+from apps.dashboard.maps import can_view_map, is_national_scope
 
 from .forms import OrganizationForm, OrganizationMemberForm
 from .models import Organization, OrganizationMember, OrganizationStatus
@@ -21,9 +22,12 @@ def _map_url(user, organization):
     """Lien vers l'organisation sur la carte, pour qui peut ouvrir la carte.
 
     Meme garde que dashboard.views.map_view : un lien qui menerait a un refus
-    n'est pas propose.
+    n'est pas propose. Un DSI n'a de lien que vers ses propres organisations :
+    sa carte ne montre qu'elles.
     """
-    if not user.has_capability(Capability.VIEW_MAP):
+    if not can_view_map(user):
+        return None
+    if not is_national_scope(user) and organization.id not in set(user.organization_ids()):
         return None
     return f"{reverse('dashboard:map')}?org={organization.id}"
 

@@ -186,7 +186,7 @@ def national_dashboard(request):
 
 
 @login_required
-@require_capability(Capability.VIEW_MAP)
+@require_capability(Capability.VIEW_MAP, Capability.VIEW_ORG_MAP)
 def map_view(request):
     """Carte du Burkina Faso : organisations et signalements afferents.
 
@@ -194,11 +194,18 @@ def map_view(request):
     les filtres sans recharger la page (et reste compatible avec la CSP de
     production, qui interdit les scripts en ligne).
     """
-    return render(request, "dashboard/map.html", {"options": maps.filter_options()})
+    return render(
+        request,
+        "dashboard/map.html",
+        {
+            "options": maps.filter_options(),
+            "national": maps.is_national_scope(request.user),
+        },
+    )
 
 
 @login_required
-@require_capability(Capability.VIEW_MAP)
+@require_capability(Capability.VIEW_MAP, Capability.VIEW_ORG_MAP)
 def map_data(request):
     params = request.GET
     return JsonResponse(

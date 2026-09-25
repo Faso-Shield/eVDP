@@ -78,25 +78,68 @@ def test_a_lone_coordinate_is_rejected():
 
 
 # --------------------------------------------------------------------- acces
-#: Roles autorises a consulter la carte ; tous les autres sont refuses.
-MAP_ROLES = {Role.SUPER_ADMIN, Role.NATIONAL_COORDINATOR, Role.CSIRT_ANALYST, Role.AUDITOR}
+#: Carte nationale ; DSI et responsables d'organisation ont une carte reduite
+#: a leurs organisations ; les signaleurs n'ont aucune carte.
+NATIONAL_MAP_ROLES = {
+    Role.SUPER_ADMIN,
+    Role.NATIONAL_COORDINATOR,
+    Role.CSIRT_ANALYST,
+    Role.TRIAGER,
+    Role.AUDITOR,
+}
+ORG_MAP_ROLES = {Role.DSI_ADMIN, Role.ORGANIZATION_MANAGER}
 
 
 @pytest.mark.parametrize("role", list(Role))
-def test_only_the_designated_roles_open_the_map(client_for, role):
+def test_map_access_per_role(client_for, role):
     user = make_user(f"carte-{role.lower()}@test.bf", role=role)
     client = client_for(user)
-    expected = 200 if role in MAP_ROLES else 403
+    allowed = role in NATIONAL_MAP_ROLES | ORG_MAP_ROLES
+    expected = 200 if allowed else 403
     assert client.get(MAP).status_code == expected
     assert client.get(DATA).status_code == expected
-    assert ("Cartographie" in _menu_labels(user)) is (role in MAP_ROLES)
+    assert ("Cartographie" in _menu_labels(user)) is allowed
+    if allowed:
+        scope = client.get(DATA).json()["scope"]
+        assert scope == ("national" if role in NATIONAL_MAP_ROLES else "organization")
 
 
-def test_the_triager_keeps_the_csirt_view_but_not_the_map(client_for, triager):
-    """La carte ne suit plus le tableau de bord CSIRT."""
-    client = client_for(triager)
-    assert client.get(reverse("dashboard:csirt")).status_code == 200
-    assert client.get(MAP).status_code == 403
+def test_the_triager_sees_the_national_map(
+    client_for, triager, organization, other_organization
+):
+    for org in (organization, other_organization):
+        org.region = "Centre"
+        org.save()
+    payload = client_for(triager).get(DATA).json()
+    assert set(_by_name(payload)) == {"Ministere Alpha", "Ministere Beta"}
+
+
+def test_a_dsi_only_sees_its_own_site(
+    client_for, dsi_alpha, organization, other_organization, case_alpha, case_beta
+):
+    for org in (organization, other_organization):
+        org.region = "Centre"
+        org.save()
+    client = client_for(dsi_alpha)
+
+    payload = client.get(DATA).json()
+    assert set(_by_name(payload)) == {"Ministere Alpha"}
+    assert {r["name"] for r in payload["regions"]} == {"Kadiogo"}
+    # Aucun filtre ne rouvre les autres organisations.
+    assert not client.get(DATA, {"q": "beta"}).json()["organizations"]
+    assert not client.get(DATA, {"sector": Sector.EDUCATION}).json()["organizations"]
+    assert "Cartographie de mes sites" in client.get(MAP).content.decode()
+
+
+def test_a_dsi_gets_a_map_link_for_its_own_organization_only(
+    client_for, dsi_alpha, organization
+):
+    body = (
+        client_for(dsi_alpha)
+        .get(reverse("organizations:manage", args=[organization.slug]))
+        .content.decode()
+    )
+    assert f"{MAP}?org={organization.id}" in body
 
 
 def test_anonymous_visitor_is_redirected_to_login(client):
@@ -196,15 +239,12 @@ def test_manage_page_offers_a_position_picker_and_a_map_link(
     assert f"{MAP}?org={organization.id}" in body
 
 
-def test_no_map_link_for_those_who_cannot_open_the_map(client_for, dsi_alpha, organization):
-    """Le DSI gere sa fiche mais n'a pas acces a la carte nationale."""
-    body = (
-        client_for(dsi_alpha)
-        .get(reverse("organizations:manage", args=[organization.slug]))
-        .content.decode()
-    )
-    assert 'id="location-picker-map"' in body
-    assert f"{MAP}?org=" not in body
+def test_no_map_link_for_those_who_cannot_open_the_map(client_for, organization):
+    """Un chercheur n'a pas de carte : aucune page ne doit lui proposer le lien."""
+    from apps.organizations.views import _map_url
+
+    researcher = make_user("sans-carte@test.bf", role=Role.SECURITY_RESEARCHER)
+    assert _map_url(researcher, organization) is None
 
 
 def test_saved_coordinates_are_the_position_shown_on_the_map(

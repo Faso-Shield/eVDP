@@ -269,6 +269,7 @@
 
   // Lien direct depuis la fiche d'une organisation : /dashboard/carte/?org=<id>
   var pendingFocus = new URLSearchParams(window.location.search).get("org");
+  var framed = false;
 
   function load() {
     var url = mapEl.dataset.url + "?" + query();
@@ -287,6 +288,13 @@
         if (pendingFocus) {
           focusOrganization(pendingFocus);
           pendingFocus = null;
+        } else if (payload.scope === "organization" && !framed && payload.organizations.length) {
+          // Carte d'un DSI : cadrer sur ses sites plutot que sur le pays.
+          framed = true;
+          map.fitBounds(
+            payload.organizations.map(function (o) { return [o.lat, o.lon]; }),
+            { padding: [60, 60], maxZoom: 15 }
+          );
         }
       })
       .catch(function () {

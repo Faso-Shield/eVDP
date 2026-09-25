@@ -44,9 +44,11 @@ class Capability(models.TextChoices):
     VIEW_NATIONAL_DASHBOARD = "VIEW_NATIONAL_DASHBOARD", "Tableau de bord national"
     VIEW_CSIRT_DASHBOARD = "VIEW_CSIRT_DASHBOARD", "Tableau de bord CSIRT"
     # Carte des organisations et de leurs vulnerabilites : une liste de
-    # cibles si elle fuit. Capacite propre, pour ne pas suivre les tableaux
-    # de bord : le trieur a la vue CSIRT mais pas la carte.
-    VIEW_MAP = "VIEW_MAP", "Consulter la cartographie"
+    # cibles si elle fuit. Capacites propres, qui ne suivent pas les
+    # tableaux de bord. VIEW_MAP ouvre la carte nationale ; VIEW_ORG_MAP la
+    # meme carte reduite aux organisations dont le compte est membre.
+    VIEW_MAP = "VIEW_MAP", "Consulter la cartographie nationale"
+    VIEW_ORG_MAP = "VIEW_ORG_MAP", "Consulter la cartographie de son organisation"
     EXPORT_DATA = "EXPORT_DATA", "Exporter des données"
     IMPORT_CSAF = "IMPORT_CSAF", "Importer du CSAF"
     MANAGE_USERS = "MANAGE_USERS", "Gérer les utilisateurs"
@@ -102,9 +104,11 @@ ROLE_CAPABILITIES = {
         C.SET_SEVERITY,
         C.POST_INTERNAL_MESSAGE,
         C.VIEW_CSIRT_DASHBOARD,
+        C.VIEW_MAP,
     },
     Role.DSI_ADMIN: {
         C.VIEW_ORG_CASES,
+        C.VIEW_ORG_MAP,
         C.CHANGE_CASE_STATUS,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
@@ -113,6 +117,7 @@ ROLE_CAPABILITIES = {
     },
     Role.ORGANIZATION_MANAGER: {
         C.VIEW_ORG_CASES,
+        C.VIEW_ORG_MAP,
         C.CHANGE_CASE_STATUS,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,

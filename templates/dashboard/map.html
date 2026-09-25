@@ -11,8 +11,13 @@
 {% block dashboard_content %}
 <div class="flex-between map-head">
   <div>
+    {% if national %}
     <h1>Cartographie des signalements</h1>
     <p class="muted">Organisations du Burkina Faso et vulnérabilités qui les concernent.</p>
+    {% else %}
+    <h1>Cartographie de mes sites</h1>
+    <p class="muted">Vos organisations et les vulnérabilités qui les concernent.</p>
+    {% endif %}
   </div>
   <div class="btn-row">
     <div class="seg" role="group" aria-label="Représentation">

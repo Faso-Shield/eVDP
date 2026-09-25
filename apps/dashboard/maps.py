@@ -41,6 +41,17 @@ HEAT_WEIGHT = {
 RECENT_CASES = 3
 
 
+def can_view_map(user):
+    return user.has_capability(Capability.VIEW_MAP) or user.has_capability(
+        Capability.VIEW_ORG_MAP
+    )
+
+
+def is_national_scope(user):
+    """Carte nationale, ou reduite aux organisations du compte (DSI...)."""
+    return user.has_capability(Capability.VIEW_MAP)
+
+
 def _dominant(by_severity):
     """Severite la plus grave presente, ou None sans dossier."""
     for severity in SEVERITY_ORDER:
@@ -77,7 +88,14 @@ def build_map_data(
 
     `scope` vaut "open" (dossiers non clos, par defaut) ou "all".
     """
+    national = is_national_scope(user)
+    own_org_ids = None if national else user.organization_ids()
+
     cases = selectors.visible_cases(user).exclude(organization__isnull=True)
+    if not national:
+        # visible_cases le garantit deja ; le filtre explicite garde la carte
+        # sure si ce perimetre venait a s'elargir.
+        cases = cases.filter(organization_id__in=own_org_ids)
     if scope != "all":
         cases = cases.exclude(status__in=TERMINAL_STATES)
     if severity:
@@ -127,6 +145,8 @@ def build_map_data(
             )
 
     organizations = Organization.objects.filter(status=OrganizationStatus.ACTIVE)
+    if not national:
+        organizations = organizations.filter(id__in=own_org_ids)
     if sector:
         organizations = organizations.filter(sector=sector)
     if query:
@@ -225,6 +245,7 @@ def build_map_data(
     return {
         "center": list(geo.DEFAULT_CENTER),
         "bounds": [[geo.LAT_MIN, geo.LON_MIN], [geo.LAT_MAX, geo.LON_MAX]],
+        "scope": "national" if national else "organization",
         "tiles": settings.MAP_TILE_URL,
         "attribution": settings.MAP_ATTRIBUTION,
         "organizations": markers,
