@@ -1,0 +1,56 @@
+{% load evdp_tags %}
+{% comment %}
+Reperes de decision d'une prime (fenetres B1 « Proposer la prime » et B2
+« Approuver et créditer le Wallet »). `ctx` vient de bounty.services.bounty_context.
+{% endcomment %}
+<div class="bounty-ctx">
+  <div class="bounty-ctx-grid">
+    <div>
+      <span class="bounty-ctx-label">Sévérité retenue</span>
+      <strong>{{ ctx.severity }}</strong>
+    </div>
+    <div>
+      <span class="bounty-ctx-label">Palier du programme</span>
+      {% if ctx.tier %}
+        <strong>{{ ctx.tier.min_amount|money }} – {{ ctx.tier.max_amount|money }} {{ ctx.currency }}</strong>
+      {% else %}<strong>Aucun palier</strong>{% endif %}
+    </div>
+    {% if action.key == "propose_bounty" %}
+    <div>
+      <span class="bounty-ctx-label">Montant suggéré</span>
+      <strong>{{ ctx.suggested|money }} {{ ctx.currency }}</strong>
+    </div>
+    {% elif ctx.bounty %}
+    <div>
+      <span class="bounty-ctx-label">Montant proposé</span>
+      <strong>{{ ctx.bounty.proposed_amount|money }} {{ ctx.bounty.currency }}</strong>
+      <span class="small muted">par {{ ctx.bounty.proposed_by.display_name|default:"—" }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if action.key == "approve_bounty" and ctx.bounty %}
+    {% if not ctx.within_policy %}
+      <p class="bounty-ctx-warn">Montant hors palier : la justification ci-dessous doit l'expliquer.</p>
+    {% endif %}
+    {% if ctx.bounty.justification %}
+      <div class="bounty-ctx-quote prose">{{ ctx.bounty.justification|markdown }}</div>
+    {% endif %}
+    {% if ctx.budget %}
+      <p class="small mb-1">Budget du programme après approbation :
+        <strong>{{ ctx.budget.projected|money }} / {{ ctx.budget.total|money }} {{ ctx.budget.currency }}</strong>
+        {% if ctx.budget.exceeded %}<span class="badge sev-critical">Dépassé</span>{% endif %}
+      </p>
+    {% endif %}
+  {% else %}
+    <p class="small muted mb-1">Hors palier, une justification écrite est obligatoire.</p>
+  {% endif %}
+
+  <p class="small mb-0">
+    Portefeuille du chercheur :
+    {% if ctx.payout.ready %}<span class="status status-done">Complet</span>
+    {% else %}<span class="status status-progress">Incomplet</span>
+      <span class="muted">— il sera relancé automatiquement à l'approbation.</span>
+    {% endif %}
+  </p>
+</div>

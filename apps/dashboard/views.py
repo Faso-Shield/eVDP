@@ -10,7 +10,7 @@ from apps.accounts.permissions import require_capability
 from apps.accounts.roles import Capability
 from apps.accounts.verification import accounts_losing_access
 from apps.bounty.models import Bounty, BountyStatus
-from apps.bounty.services import wallet_balance
+from apps.bounty.services import payout_readiness, wallet_balance
 from apps.coordination import selectors
 from apps.coordination.models import Case
 from apps.core.navigation import landing_route
@@ -67,6 +67,20 @@ def researcher_dashboard(request):
             "rewards_total": rewards_total,
             "rewards_pending": rewards_pending,
             "wallet_balance": wallet_balance(user),
+            # Prime attribuee mais portefeuille incomplet : le chercheur est
+            # averti des l'accueil, sans attendre une relance.
+            "payout_missing": (
+                payout_readiness(user)["missing"]
+                if bounties.filter(
+                    status__in=[
+                        BountyStatus.PENDING,
+                        BountyStatus.UNDER_REVIEW,
+                        BountyStatus.APPROVED,
+                        BountyStatus.PAYMENT_PENDING,
+                    ]
+                ).exists()
+                else []
+            ),
             "programs": Program.objects.public()[:6],
             "advisories": Advisory.objects.published().filter(case__reporter=user)[:5],
         },

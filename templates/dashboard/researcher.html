@@ -3,6 +3,13 @@
 {% block title %}Mon espace chercheur{% endblock %}
 
 {% block dashboard_content %}
+{% if payout_missing %}
+<div class="notice payout-alert mb-2">
+  <strong>Une récompense vous attend : complétez votre portefeuille.</strong>
+  Il manque : {{ payout_missing|join:", " }}.
+  <a class="btn btn-sm btn-accent" href="{% url 'wallet:home' %}">Compléter mon portefeuille</a>
+</div>
+{% endif %}
 <div class="flex-between mb-2">
   <h1 class="mb-0">Mon espace chercheur</h1>
   <a class="btn btn-accent" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>

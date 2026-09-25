@@ -29,11 +29,16 @@ from .models import BountyPayment
 from .services import (
     SETTLEMENT_ELIGIBLE_CASE_STATUSES,
     authorize_proof_download,
+    bounty_context,
     budget_status,
+    can_request_payout_details,
     confirm_settlement,
+    last_payout_request,
     mark_payment_failed,
+    payout_readiness,
     record_payment,
     reject_bounty,
+    request_payout_details,
     review_bounty,
     suggested_amount,
     visible_bounties,
@@ -60,6 +65,48 @@ def _get_payment(request, payment_id):
         pk=payment_id,
         bounty__in=_visible_bounties(request.user),
     )
+
+
+#: Etapes d'une recompense, dans l'ordre (libelle, statuts atteints).
+_TRACK = [
+    ("Proposée", ("PENDING", "UNDER_REVIEW")),
+    ("Approuvée et créditée", ("APPROVED",)),
+    ("Versement enregistré", ("PAYMENT_PENDING",)),
+    ("Réglée", ("PAID",)),
+]
+
+
+def _bounty_track(bounty):
+    """Frise d'avancement de la recompense (etapes faites, en cours, a venir)."""
+    order = [statuses for _label, statuses in _TRACK]
+    current = next((i for i, st in enumerate(order) if bounty.status in st), None)
+    return [
+        {
+            "label": label,
+            "done": current is not None and index < current,
+            "current": index == current,
+        }
+        for index, (label, _statuses) in enumerate(_TRACK)
+    ]
+
+
+@require_POST
+@login_required
+@require_not_read_only
+def request_payout(request, bounty_id):
+    """Relance le chercheur pour qu'il complete ses coordonnees de paiement."""
+    bounty = _get_bounty(request, bounty_id)
+    try:
+        request_payout_details(bounty, request.user, request=request)
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(
+            request,
+            "Le chercheur a été notifié (plateforme et email) de compléter ses "
+            "coordonnées de paiement.",
+        )
+    return redirect("bounty:detail", bounty_id=bounty.pk)
 
 
 def _instruit_les_recompenses(user):
@@ -110,7 +157,15 @@ def bounty_detail(request, bounty_id):
             and bounty.proposed_by_id != request.user.pk
         ),
         "can_pay": can_pay,
+        "track": _bounty_track(bounty),
     }
+    if peut_instruire or can_pay or bounty.researcher_id == request.user.pk:
+        # Etat du portefeuille : le beneficiaire voit ce qui lui manque, qui
+        # instruit ou paie voit s'il faut le relancer.
+        contexte["payout"] = payout_readiness(bounty.researcher)
+    if can_request_payout_details(request.user) and bounty.researcher_id:
+        contexte["can_request_payout"] = not contexte["payout"]["ready"]
+        contexte["last_payout_request"] = last_payout_request(bounty)
     # Les elements d'instruction ne sont pas seulement masques par le gabarit :
     # ils ne quittent pas la base pour un compte qui n'a pas a les lire. Le
     # budget du programme en fait partie - il ne regarde pas le beneficiaire.
@@ -125,6 +180,7 @@ def bounty_detail(request, bounty_id):
                 "payment_form": PaymentForm(initial={"amount": bounty.approved_amount}),
                 "within_policy": bounty.within_policy(),
                 "budget": budget_status(bounty),
+                "decision": bounty_context(bounty.case),
             }
         )
     # Le portefeuille du chercheur ne regarde que qui va effectivement payer :

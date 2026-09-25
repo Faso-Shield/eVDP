@@ -106,13 +106,26 @@ def action_panel(case, action, user):
     missing = action.missing(case) if owner else []
     if owner and not action.reporter_only and must_claim(case, user):
         missing = [CLAIM_REQUIRED_MESSAGE, *missing]
+    context = None
+    form = WorkflowActionForm(action=action) if owner else None
+    if owner and action.track == "bounty":
+        from apps.bounty.services import bounty_context
+
+        context = bounty_context(case)
+        if action.key == "propose_bounty":
+            form = WorkflowActionForm(action=action, initial={"amount": context["suggested"]})
+        elif context["bounty"] is not None:
+            form = WorkflowActionForm(
+                action=action, initial={"amount": context["bounty"].proposed_amount}
+            )
     return {
         "action": action,
         "owner": owner,
         "missing": missing,
+        "context": context,
         "four_eyes_blocked": blocked_by_four_eyes,
         "enabled": owner and not missing and not blocked_by_four_eyes,
-        "form": WorkflowActionForm(action=action) if owner else None,
+        "form": form,
     }
 
 

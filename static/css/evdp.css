@@ -609,3 +609,51 @@ table.table tbody tr:hover { background: var(--surface-alt); }
   .error-actions, .error-links { justify-content: center; }
   .error-note { text-align: left; }
 }
+
+
+/* ---------------------------------------------------------------------------
+   Recompenses : fiche, reperes de decision, portefeuille
+   --------------------------------------------------------------------------- */
+.bounty-hero {
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem;
+  flex-wrap: wrap; margin-bottom: 1rem; padding: 1.2rem 1.4rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  border-left: 5px solid var(--evdp-accent); box-shadow: var(--shadow-sm);
+}
+.bounty-hero-amount { text-align: right; }
+.bounty-amount {
+  display: block; font-size: 2rem; font-weight: 800; color: var(--evdp-navy);
+  letter-spacing: -.01em; line-height: 1.1; margin-bottom: .35rem;
+}
+.bounty-track { margin-bottom: 1.2rem; }
+.bounty-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; margin-bottom: 1rem; }
+.bounty-figure { background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: .7rem .8rem; }
+.bounty-figure strong { display: block; font-size: 1.1rem; color: var(--evdp-navy); }
+.bounty-ctx-label { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: .15rem; }
+.budget-bar { height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; margin: .2rem 0 .35rem; }
+.budget-bar-fill { height: 100%; max-width: 100%; background: linear-gradient(90deg, var(--evdp-navy-light), var(--evdp-accent)); }
+.budget-bar-fill.over { background: var(--evdp-red); }
+.bounty-ctx { background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: .8rem .9rem; margin: .6rem 0 1rem; }
+.bounty-ctx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .6rem; margin-bottom: .6rem; }
+.bounty-ctx-grid strong { display: block; color: var(--evdp-navy); }
+.bounty-ctx-quote { border-left: 3px solid var(--evdp-accent); padding: .4rem .7rem; background: var(--surface); border-radius: 0 var(--radius) var(--radius) 0; margin-bottom: .6rem; }
+.bounty-ctx-warn { color: var(--sev-high); font-weight: 600; font-size: .85rem; }
+.decision-card .card-header { background: var(--evdp-accent-light); }
+.decision-reject { color: var(--evdp-red); border-color: #f0c4bf; }
+.decision-reject:hover { background: #fbe9e7; color: var(--evdp-red); }
+.payout-card.incomplete { border-color: #ecdcae; }
+.payout-card.incomplete .card-header { background: #fdf6e0; }
+.payout-missing { margin: 0 0 .8rem; padding-left: 1.1rem; color: var(--sev-high); }
+.payout-alert { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; }
+@media (max-width: 620px) { .bounty-hero-amount { text-align: left; } }
+
+/* La zone de contenu du tableau de bord peut retrecir : sans cela, une
+   grille interieure (fiche, cartes laterales) deborde a droite. */
+.layout > section { min-width: 0; }
+.bounty-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 1rem; align-items: start; }
+.bounty-layout.single { grid-template-columns: minmax(0, 1fr); }
+.bounty-layout > * { min-width: 0; }
+@media (max-width: 1000px) { .bounty-layout { grid-template-columns: minmax(0, 1fr); } }
+.bounty-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .7rem 1.2rem; margin: 0 0 1rem; }
+.bounty-meta dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.bounty-meta dd { margin: .1rem 0 0; font-weight: 600; color: var(--evdp-navy); }

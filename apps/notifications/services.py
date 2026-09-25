@@ -79,6 +79,13 @@ DEFAULT_TEMPLATES = {
         "Le dossier {case_id} a été escaladé : l'organisation n'a pas tenu "
         "l'échéance de remédiation. Une décision de coordination est attendue.\n\n{link}",
     ),
+    NotificationKind.PAYOUT_DETAILS_REQUESTED: (
+        "[eVDP] Complétez vos coordonnées de paiement",
+        "Une récompense vous a été attribuée pour le dossier {case_id}. Pour que "
+        "le versement puisse être réalisé, complétez vos coordonnées de paiement "
+        "dans votre portefeuille eVDP (informations personnelles, pièce d'identité "
+        "et moyen de paiement principal).\n\n{link}",
+    ),
     NotificationKind.CLAIM_REMINDER: (
         "[eVDP] Rappel : dossier {case_id} pris en charge",
         "Vous avez pris en charge le dossier {case_id} ({status}) sans y avoir encore "

@@ -11,16 +11,34 @@ vue ne charge même pas les avis pour un bénéficiaire.
 {% endcomment %}
 
 {% block dashboard_content %}
-<div class="flex-between mb-2">
-  <div>
-    <span class="mono muted">{{ bounty.case.case_id }}</span>
-    <h1 class="mb-0">Récompense — {{ bounty.display_amount }}</h1>
+<div class="bounty-hero">
+  <div class="bounty-hero-main">
+    <a class="mono muted small" href="{{ bounty.case.get_absolute_url }}">{{ bounty.case.case_id }}</a>
+    <h1 class="mb-0">Récompense</h1>
+    <p class="muted mb-0">{{ bounty.case.title }}</p>
   </div>
-  <div class="flex">
-    <span class="badge {{ bounty.severity|severity_class }}">{{ bounty.get_severity_display }}</span>
-    <span class="status">{{ bounty.get_status_display }}</span>
+  <div class="bounty-hero-amount">
+    <span class="bounty-amount">{{ bounty.display_amount }}</span>
+    <div class="flex" style="justify-content:flex-end">
+      <span class="badge {{ bounty.severity|severity_class }}">{{ bounty.get_severity_display }}</span>
+      <span class="status">{{ bounty.get_status_display }}</span>
+    </div>
   </div>
 </div>
+
+{% if bounty.status != "REJECTED" and bounty.status != "CANCELLED" %}
+<ol class="wf-stepper bounty-track" aria-label="Avancement de la récompense">
+  {% for step in track %}<li class="{% if step.done %}done{% elif step.current %}current{% endif %}">{{ step.label }}</li>{% endfor %}
+</ol>
+{% endif %}
+
+{% if payout and not payout.ready and bounty.researcher_id == user.pk %}
+<div class="notice payout-alert">
+  <strong>Complétez votre portefeuille pour recevoir cette récompense.</strong>
+  Il manque : {{ payout.missing|join:", " }}.
+  <a class="btn btn-sm btn-accent" href="{% url 'wallet:home' %}">Compléter mon portefeuille</a>
+</div>
+{% endif %}
 
 {% if peut_instruire and not within_policy %}
 <div class="notice">
@@ -30,20 +48,13 @@ vue ne charge même pas les avis pour un bénéficiaire.
 </div>
 {% endif %}
 
-{% if peut_instruire %}
-  {% if budget and budget.exceeded %}
-  <div class="notice">
-    <strong>Budget du programme dépassé.</strong> Ce montant porte la consommation à
-    {{ budget.projected|floatformat:0 }} {{ budget.currency }} pour un budget de
-    {{ budget.total|floatformat:0 }} {{ budget.currency }}. La décision reste possible
-    mais elle est explicitement journalisée.
-  </div>
-  {% elif budget %}
-  <p class="small muted">
-    Budget du programme : {{ budget.consumed|floatformat:0 }} /
-    {{ budget.total|floatformat:0 }} {{ budget.currency }} consommés.
-  </p>
-  {% endif %}
+{% if peut_instruire and budget and budget.exceeded %}
+<div class="notice">
+  <strong>Budget du programme dépassé.</strong> Ce montant porte la consommation à
+  {{ budget.projected|floatformat:0 }} {{ budget.currency }} pour un budget de
+  {{ budget.total|floatformat:0 }} {{ budget.currency }}. La décision reste possible
+  mais elle est explicitement journalisée.
+</div>
 {% endif %}
 
 {% if not peut_instruire %}
@@ -72,31 +83,54 @@ vue ne charge même pas les avis pour un bénéficiaire.
 </div>
 {% endif %}
 
-<div class="grid" style="grid-template-columns:{% if peut_instruire %}2fr 1fr{% else %}1fr{% endif %}">
+<div class="bounty-layout {% if not peut_instruire %}single{% endif %}">
   <div>
     <div class="card">
       <div class="card-header"><h2>{% if peut_instruire %}Proposition{% else %}Votre récompense{% endif %}</h2></div>
       <div class="card-body">
-        <dl class="dl-inline">
-          <dt>Dossier</dt><dd><a href="{{ bounty.case.get_absolute_url }}">{{ bounty.case.title }}</a></dd>
-          <dt>Programme</dt><dd>{{ bounty.program.name|default:"—" }}</dd>
-          {% if peut_instruire %}
-            <dt>Chercheur</dt><dd>{{ bounty.researcher.display_name|default:"—" }}</dd>
+        <div class="bounty-figures">
+          <div class="bounty-figure">
+            <span class="bounty-ctx-label">Montant proposé</span>
+            <strong>{{ bounty.proposed_amount|money }} {{ bounty.currency }}</strong>
+          </div>
+          <div class="bounty-figure">
+            <span class="bounty-ctx-label">Montant approuvé</span>
+            <strong>{% if bounty.approved_amount %}{{ bounty.approved_amount|money }} {{ bounty.currency }}{% else %}—{% endif %}</strong>
+          </div>
+          {% if peut_instruire and decision.tier %}
+          <div class="bounty-figure">
+            <span class="bounty-ctx-label">Palier {{ decision.severity|lower }}</span>
+            <strong>{{ decision.tier.min_amount|money }} – {{ decision.tier.max_amount|money }} {{ decision.currency }}</strong>
+          </div>
           {% endif %}
-          <dt>Sévérité retenue</dt><dd>{{ bounty.get_severity_display }}</dd>
-          <dt>Montant proposé</dt><dd class="mono">{{ bounty.proposed_amount|floatformat:0 }} {{ bounty.currency }}</dd>
-          <dt>Montant approuvé</dt><dd class="mono">{% if bounty.approved_amount %}{{ bounty.approved_amount|floatformat:0 }} {{ bounty.currency }}{% else %}—{% endif %}</dd>
+        </div>
+        {% if peut_instruire and budget %}
+          <div class="budget-bar" title="Budget du programme">
+            <div class="budget-bar-fill {% if budget.exceeded %}over{% endif %}" style="width: {% widthratio budget.consumed budget.total 100 %}%"></div>
+          </div>
+          <p class="small muted mb-2">Budget du programme : {{ budget.consumed|money }} / {{ budget.total|money }} {{ budget.currency }} consommés.</p>
+        {% endif %}
+        <dl class="bounty-meta">
+          <div><dt>Dossier</dt><dd><a href="{{ bounty.case.get_absolute_url }}">{{ bounty.case.title }}</a></dd></div>
+          <div><dt>Programme</dt><dd>{{ bounty.program.name|default:"—" }}</dd></div>
           {% if peut_instruire %}
-            <dt>Proposé par</dt><dd>{{ bounty.proposed_by.display_name|default:"—" }}</dd>
-            <dt>Décidé par</dt><dd>{{ bounty.decided_by.display_name|default:"—" }}</dd>
-            <dt>Décidé le</dt><dd>{{ bounty.decided_at|date:"d/m/Y H:i"|default:"—" }}</dd>
+            <div><dt>Chercheur</dt><dd>{{ bounty.researcher.display_name|default:"—" }}</dd></div>
+          {% endif %}
+          <div><dt>Sévérité retenue</dt><dd>{{ bounty.get_severity_display }}</dd></div>
+          {% if peut_instruire %}
+            <div><dt>Proposé par</dt><dd>{{ bounty.proposed_by.display_name|default:"—" }}</dd></div>
+            <div><dt>Décidé par</dt><dd>{{ bounty.decided_by.display_name|default:"—" }}</dd></div>
+            <div><dt>Décidé le</dt><dd>{{ bounty.decided_at|date:"d/m/Y H:i"|default:"—" }}</dd></div>
           {% endif %}
         </dl>
         {% if peut_instruire %}
-          {% if bounty.justification %}<div class="prose">{{ bounty.justification|markdown }}</div>{% endif %}
+          {% if bounty.justification %}
+            <h3>Justification</h3>
+            <div class="bounty-ctx-quote prose">{{ bounty.justification|markdown }}</div>
+          {% endif %}
           {% if bounty.decision_note %}
             <h3>Note de décision</h3>
-            <div class="prose">{{ bounty.decision_note|markdown }}</div>
+            <div class="bounty-ctx-quote prose">{{ bounty.decision_note|markdown }}</div>
           {% endif %}
         {% endif %}
       </div>
@@ -201,20 +235,51 @@ vue ne charge même pas les avis pour un bénéficiaire.
 
   {% if peut_instruire %}
   <aside>
-    {% if can_approve and not bounty.is_final %}
-    <div class="card">
-      <div class="card-header"><h3>Décision</h3></div>
+    {% if can_approve and not bounty.is_final and bounty.status != "APPROVED" and bounty.status != "PAYMENT_PENDING" %}
+    <div class="card decision-card">
+      <div class="card-header"><h3>Décision</h3><span class="pill">Étape B2</span></div>
       <div class="card-body">
+        <p class="small muted">
+          Approuver crédite le Wallet du chercheur du montant retenu. Vous ne
+          pouvez pas statuer sur une prime que vous avez proposée.
+        </p>
         <form method="post" action="{% url 'bounty:approve' bounty.id %}" class="mb-2">
           {% csrf_token %}
           {% for field in decision_form %}{% include "partials/form_field.html" %}{% endfor %}
-          <button class="btn btn-accent btn-block" type="submit">Approuver</button>
+          <button class="btn btn-accent btn-block" type="submit">Approuver et créditer</button>
         </form>
         <form method="post" action="{% url 'bounty:reject' bounty.id %}">
           {% csrf_token %}
           <input type="hidden" name="note" value="Rejet après revue">
-          <button class="btn btn-danger btn-block" type="submit">Rejeter</button>
+          <button class="btn btn-outline btn-block decision-reject" type="submit">Rejeter la prime</button>
         </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if payout and user.pk != bounty.researcher_id %}
+    <div class="card payout-card {% if payout.ready %}ready{% else %}incomplete{% endif %}">
+      <div class="card-header"><h3>Portefeuille du chercheur</h3>
+        {% if payout.ready %}<span class="status status-done">Complet</span>{% else %}<span class="status status-progress">Incomplet</span>{% endif %}
+      </div>
+      <div class="card-body small">
+        {% if payout.ready %}
+          <p class="mb-0">Toutes les coordonnées nécessaires au versement sont renseignées.</p>
+        {% else %}
+          <p class="mb-1">Il manque :</p>
+          <ul class="payout-missing">{% for item in payout.missing %}<li>{{ item }}</li>{% endfor %}</ul>
+          {% if can_request_payout %}
+            <form method="post" action="{% url 'bounty:request_payout' bounty.id %}">
+              {% csrf_token %}
+              <button class="btn btn-accent btn-block" type="submit">Demander au chercheur de compléter</button>
+            </form>
+            <p class="muted mt-1 mb-0">
+              {% if last_payout_request %}Dernière relance : {{ last_payout_request.created_at|date:"d/m/Y H:i" }}.
+              {% else %}Aucune relance envoyée pour l'instant.{% endif %}
+              Notification et email, au plus une fois par jour.
+            </p>
+          {% endif %}
+        {% endif %}
       </div>
     </div>
     {% endif %}

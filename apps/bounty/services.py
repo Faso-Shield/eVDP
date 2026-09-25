@@ -1,6 +1,7 @@
 """Cycle de vie des recompenses Bug Bounty."""
 
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -70,6 +71,133 @@ def amount_outside_tier(case, amount):
     if tier is None:
         return False
     return not tier.contains(Decimal(amount))
+
+
+# ---------------------------------------------------------------------------
+# Coordonnees de paiement du chercheur
+# ---------------------------------------------------------------------------
+def payout_readiness(researcher):
+    """Etat du portefeuille : peut-on payer ce chercheur ?
+
+    Rend {"ready": bool, "missing": [libelles], "method": moyen principal}.
+    Les elements exiges sont ceux de PayoutProfile.is_complete, plus un moyen
+    de paiement principal actif.
+    """
+    if researcher is None:
+        return {"ready": False, "missing": ["Aucun chercheur identifié"], "method": None}
+    profile = getattr(researcher, "payout_profile", None)
+    method = (
+        profile.methods.filter(is_primary=True, is_active=True).first() if profile else None
+    )
+    missing = []
+    if profile is None:
+        missing += [
+            "Nom légal",
+            "Téléphone de contact",
+            "Pièce d'identité",
+            "Attestation d'exactitude",
+        ]
+    else:
+        if not profile.legal_full_name.strip():
+            missing.append("Nom légal")
+        if not profile.contact_phone.strip():
+            missing.append("Téléphone de contact")
+        if not profile.id_document_file:
+            missing.append("Pièce d'identité")
+        if not profile.accepted_terms:
+            missing.append("Attestation d'exactitude")
+    if method is None:
+        missing.append("Moyen de paiement principal")
+    return {"ready": not missing, "missing": missing, "method": method}
+
+
+#: Delai minimal entre deux relances d'un meme chercheur pour une prime.
+PAYOUT_REQUEST_COOLDOWN = timedelta(hours=24)
+
+
+def last_payout_request(bounty):
+    from apps.notifications.models import Notification
+
+    if not bounty.researcher_id:
+        return None
+    return (
+        Notification.objects.filter(
+            recipient_id=bounty.researcher_id,
+            case_id=bounty.case_id,
+            kind=NotificationKind.PAYOUT_DETAILS_REQUESTED,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def can_request_payout_details(user):
+    return user.has_capability(Capability.RECORD_PAYMENT) or user.has_capability(
+        Capability.APPROVE_BOUNTY
+    )
+
+
+@transaction.atomic
+def request_payout_details(bounty, actor, request=None, automatic=False):
+    """Demande au chercheur de completer ses coordonnees de paiement.
+
+    Notification dans la plateforme et email, avec la liste de ce qui manque
+    et un lien vers son portefeuille. Au plus une relance par jour et par
+    prime ; refusee si le portefeuille est deja complet. `automatic=True` :
+    relance declenchee par l'approbation de la prime.
+    """
+    if not automatic and not can_request_payout_details(actor):
+        raise PermissionDenied("Capacité requise pour relancer le chercheur.")
+    readiness = payout_readiness(bounty.researcher)
+    if bounty.researcher_id is None:
+        raise ValidationError("Aucun chercheur identifié pour cette récompense.")
+    if readiness["ready"]:
+        raise ValidationError("Le portefeuille du chercheur est déjà complet.")
+    previous = last_payout_request(bounty)
+    if previous and timezone.now() - previous.created_at < PAYOUT_REQUEST_COOLDOWN:
+        raise ValidationError(
+            f"Le chercheur a déjà été relancé le {timezone.localtime(previous.created_at):%d/%m/%Y à %H:%M}."
+        )
+    from django.urls import reverse
+
+    notification = notify(
+        bounty.researcher,
+        NotificationKind.PAYOUT_DETAILS_REQUESTED,
+        case=bounty.case,
+        title=f"[{bounty.case.case_id}] Complétez vos coordonnées de paiement",
+        body="À compléter : " + ", ".join(readiness["missing"]),
+        url=reverse("wallet:home"),
+    )
+    log_action(
+        AuditAction.PAYOUT_DETAILS_REQUESTED,
+        actor=actor,
+        obj=bounty,
+        request=request,
+        case=bounty.case.case_id,
+        missing=readiness["missing"],
+        automatic=automatic,
+    )
+    return notification
+
+
+def bounty_context(case):
+    """Reperes de decision d'une prime : matrice, montants, budget, portefeuille."""
+    program = case.program
+    policy = getattr(program, "reward_policy", None) if program else None
+    tier = policy.tier_for(case.severity, case.scope) if policy else None
+    bounty = getattr(case, "bounty", None)
+    suggested, currency = suggested_amount(case)
+    return {
+        "severity": case.get_severity_display(),
+        "scope": case.scope,
+        "tier": tier,
+        "currency": currency,
+        "suggested": suggested,
+        "bounty": bounty,
+        "within_policy": bounty.within_policy() if bounty else True,
+        "budget": budget_status(bounty) if bounty else None,
+        "payout": payout_readiness(case.reporter),
+    }
 
 
 def budget_status(bounty, amount=None):
@@ -144,7 +272,9 @@ def propose_bounty(case, actor, amount=None, justification="", request=None):
         raise ValidationError({"amount": "Montant négatif interdit."})
     if amount_outside_tier(case, amount) and not (justification or "").strip():
         raise ValidationError(
-            {"justification": "Montant hors palier : une justification écrite est obligatoire."}
+            {
+                "justification": "Montant hors palier : une justification écrite est obligatoire."
+            }
         )
 
     bounty = getattr(case, "bounty", None)
@@ -275,6 +405,13 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
         currency=bounty.currency,
     )
     credit_wallet(bounty, approver)
+    # Portefeuille incomplet : le chercheur est relance d'office, sans quoi le
+    # versement resterait bloque sans qu'il le sache.
+    if bounty.researcher_id and not payout_readiness(bounty.researcher)["ready"]:
+        try:
+            request_payout_details(bounty, approver, request=request, automatic=True)
+        except ValidationError:
+            pass
     bounty.case.bounty_stage = BountyStage.CREDITED
     bounty.case.save(update_fields=["bounty_stage", "updated_at"])
     add_timeline_event(
@@ -516,6 +653,8 @@ def authorize_proof_download(payment, user, request=None):
         case=payment.bounty.case.case_id,
     )
     return True
+
+
 # ---------------------------------------------------------------------------
 # Wallet : grand livre d'ecritures, solde calcule
 # ---------------------------------------------------------------------------
@@ -613,6 +752,9 @@ def wallet_balance(researcher):
 
 
 __all__ = [
+    "payout_readiness",
+    "request_payout_details",
+    "bounty_context",
     "visible_bounties",
     "amount_outside_tier",
     "adjust_wallet",

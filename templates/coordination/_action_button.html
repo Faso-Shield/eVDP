@@ -24,6 +24,7 @@ l'etape). Le serveur refait tous ces controles.
       {% csrf_token %}
       <h3 class="mt-0">{{ action.label }}</h3>
       <p class="small muted">Dossier {{ case.case_id }}. Cette action est tracée dans le journal d'audit.</p>
+      {% if panel.context %}{% include "bounty/_decision_context.html" with ctx=panel.context action=action %}{% endif %}
       {% for field in panel.form %}{% include "partials/form_field.html" %}{% endfor %}
       <div class="btn-row mt-2">
         <button class="btn btn-accent" type="submit">Confirmer</button>

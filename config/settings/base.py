@@ -285,6 +285,8 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 CSRF_COOKIE_HTTPONLY = False  # requis pour que HTMX lise le jeton
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_NAME = "evdp_csrftoken"
+# Echec CSRF : page d'erreur du projet (formulaire expire), pas la page brute.
+CSRF_FAILURE_VIEW = "apps.core.views.csrf_failure"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 X_FRAME_OPTIONS = "DENY"

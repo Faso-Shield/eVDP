@@ -69,6 +69,10 @@ class AuditAction(models.TextChoices):
         "PAYOUT_REFERENCE_VIEWED",
         "Reference de paiement consultee en clair",
     )
+    PAYOUT_DETAILS_REQUESTED = (
+        "PAYOUT_DETAILS_REQUESTED",
+        "Coordonnees de paiement demandees au chercheur",
+    )
 
 
 class AuditResult(models.TextChoices):
