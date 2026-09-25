@@ -20,7 +20,12 @@
       <img class="brand-lockup" src="{% static 'img/logo-evdp-tile.png' %}"
            alt="{{ PLATFORM_NAME }} — {{ PLATFORM_TAGLINE }}" width="409" height="159">
     </a>
-    <nav class="nav-links" aria-label="Navigation principale">
+    {# Menu mobile sans JavaScript (compatible CSP) : la case pilote l'affichage. #}
+    <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Afficher le menu" aria-controls="nav-principale">
+    <label for="nav-toggle" class="nav-burger" title="Menu">
+      <span></span><span></span><span></span>
+    </label>
+    <nav class="nav-links" id="nav-principale" aria-label="Navigation principale">
       {% if can_report %}<a href="{% url 'reports:submit' %}">Signaler</a>{% endif %}
       <a href="{% url 'programs:list' %}">Programmes</a>
       <a href="{% url 'disclosures:advisory_list' %}">Advisories</a>
@@ -30,9 +35,9 @@
         <a href="{% url 'dashboard:home' %}">Tableau de bord</a>
         <a href="{% url 'notifications:list' %}">Notifications{% if unread_notifications %}<span class="badge-count">{{ unread_notifications }}</span>{% endif %}</a>
         <a href="{% url 'accounts:profile' %}">{{ user.display_name|default:user.email }}</a>
-        <form method="post" action="{% url 'accounts:logout' %}" style="display:inline">
+        <form method="post" action="{% url 'accounts:logout' %}" class="nav-logout">
           {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.45)">Déconnexion</button>
+          <button type="submit" class="btn btn-sm btn-outline">Déconnexion</button>
         </form>
       {% else %}
         <a href="{% url 'accounts:login' %}">Connexion</a>

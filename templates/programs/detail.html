@@ -50,7 +50,7 @@
   </div>
 {% endif %}
 
-<div class="grid" style="grid-template-columns:2fr 1fr">
+<div class="split-layout">
   <div>
     <div class="card">
       <div class="card-header"><h2>Description</h2></div>
@@ -129,6 +129,7 @@
         {% if reward_scopes %}<span class="pill">Variable par actif</span>{% endif %}
       </div>
       <div class="card-body">
+        <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Sévérité</th><th class="text-right">Montant</th></tr></thead>
           <tbody>
@@ -140,6 +141,7 @@
           {% endfor %}
           </tbody>
         </table>
+        </div>
         {% if reward_scopes %}
           <h4 class="mt-2">Montants propres à un actif</h4>
           <p class="small muted">Ces actifs dérogent à la grille ci-dessus ; tous les
@@ -147,6 +149,7 @@
           {% for scope in reward_scopes %}
             <div class="reward-scope">
               <div class="mono small">{{ scope.identifier }}</div>
+              <div class="table-wrap">
               <table class="table">
                 <tbody>
                 {% for tier in scope.reward_tiers.all %}
@@ -157,6 +160,7 @@
                 {% endfor %}
                 </tbody>
               </table>
+              </div>
             </div>
           {% endfor %}
         {% endif %}

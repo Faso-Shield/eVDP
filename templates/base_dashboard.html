@@ -6,10 +6,15 @@
 {% block content %}
 <div class="layout">
   <aside class="sidebar">
+    {# Sous 940px le menu lateral se replie derriere ce bouton. #}
+    <input type="checkbox" id="sidebar-toggle" class="sidebar-toggle" aria-label="Afficher le menu de l'espace">
+    <label for="sidebar-toggle" class="sidebar-burger">Menu de l'espace</label>
+    <div class="sidebar-links">
     {% for titre, liens in sidebar_sections %}
       {% if titre %}<div class="sidebar-title">{{ titre }}</div>{% endif %}
       {% for lien in liens %}<a href="{{ lien.url }}">{{ lien.label }}</a>{% endfor %}
     {% endfor %}
+    </div>
   </aside>
 
   <section>

@@ -657,3 +657,119 @@ table.table tbody tr:hover { background: var(--surface-alt); }
 .bounty-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .7rem 1.2rem; margin: 0 0 1rem; }
 .bounty-meta dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .bounty-meta dd { margin: .1rem 0 0; font-weight: 600; color: var(--evdp-navy); }
+
+
+/* ---------------------------------------------------------------------------
+   Adaptation mobile
+   Menus repliables sans JavaScript (la CSP n'autorise pas de script en ligne) :
+   une case a cocher, visuellement masquee mais atteignable au clavier, pilote
+   l'affichage de la navigation et du menu lateral.
+   --------------------------------------------------------------------------- */
+.nav-toggle, .sidebar-toggle {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); border: 0; opacity: 0;
+}
+.nav-burger, .sidebar-burger { display: none; }
+.nav-logout { display: inline; margin: 0; }
+.nav-logout .btn { color: #fff; border-color: rgba(255,255,255,.45); }
+
+/* Fiche a deux colonnes (contenu + colonne laterale). */
+.split-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 1.1rem; align-items: start; }
+.split-layout > * { min-width: 0; }
+@media (max-width: 1000px) { .split-layout { grid-template-columns: minmax(0, 1fr); } }
+
+/* Aucun contenu ne doit elargir la page. */
+img, video, iframe { max-width: 100%; height: auto; }
+.prose, .card-body { overflow-wrap: anywhere; }
+table.table td { overflow-wrap: normal; }
+
+@media (max-width: 900px) {
+  .nav-burger {
+    display: inline-flex; flex-direction: column; justify-content: center; gap: 5px;
+    margin-left: auto; width: 44px; height: 44px; padding: 0 10px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,.35); border-radius: var(--radius);
+  }
+  .nav-burger span { display: block; height: 2px; background: #fff; border-radius: 2px; transition: transform .2s, opacity .2s; }
+  .nav-toggle:focus-visible + .nav-burger { outline: 2px solid var(--evdp-gold); outline-offset: 2px; }
+  .nav-toggle:checked + .nav-burger span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .nav-toggle:checked + .nav-burger span:nth-child(2) { opacity: 0; }
+  .nav-toggle:checked + .nav-burger span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+  .navbar-inner { gap: .6rem; }
+  .nav-links {
+    display: none; flex-basis: 100%; flex-direction: column; align-items: stretch;
+    gap: .1rem; margin: 0; padding: .4rem 0 .6rem; border-top: 1px solid rgba(255,255,255,.14);
+  }
+  .nav-toggle:checked ~ .nav-links { display: flex; }
+  .nav-links a { padding: .7rem .6rem; font-size: 1rem; }
+  .nav-links .btn { justify-content: center; }
+  .nav-logout { display: block; margin-top: .4rem; }
+  .nav-logout .btn { width: 100%; padding: .6rem; }
+}
+
+@media (max-width: 940px) {
+  .sidebar { position: static; padding: .4rem; }
+  .sidebar-burger {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: .6rem .7rem; font-weight: 600; cursor: pointer; color: var(--evdp-navy);
+    border-radius: var(--radius); min-height: 44px;
+  }
+  .sidebar-burger::after { content: "▾"; transition: transform .2s; }
+  .sidebar-toggle:checked + .sidebar-burger::after { transform: rotate(180deg); }
+  .sidebar-toggle:focus-visible + .sidebar-burger { outline: 2px solid var(--evdp-accent); }
+  .sidebar-links { display: none; padding-bottom: .3rem; }
+  .sidebar-toggle:checked ~ .sidebar-links { display: block; }
+  .sidebar a { padding: .6rem .7rem; }
+}
+
+@media (max-width: 700px) {
+  .container, .container-narrow { padding: 0 1rem; }
+  .main { padding: 1.1rem 0 2.4rem; }
+  h1 { font-size: 1.55rem; }
+  h2 { font-size: 1.25rem; }
+  .hero h1 { font-size: 1.75rem; }
+  .card-header { padding: .7rem .85rem; }
+  .card-body { padding: .85rem; }
+  /* Cibles tactiles confortables ; 16px evite le zoom automatique d'iOS. */
+  .btn { min-height: 42px; }
+  .btn-sm { min-height: 36px; }
+  input[type=text], input[type=email], input[type=password], input[type=url],
+  input[type=number], input[type=date], input[type=datetime-local], input[type=search],
+  select, textarea { font-size: 16px; }
+  .filters { flex-direction: column; align-items: stretch; }
+  .filters .form-field { min-width: 0; width: 100%; }
+  .filters-actions { margin-left: 0; }
+  .filters-actions .btn { flex: 1; }
+  .flex-between > .btn-row { width: 100%; }
+  table.table { font-size: .84rem; }
+  table.table th, table.table td { padding: .5rem .55rem; }
+  .footer .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .footer-bottom { flex-direction: column; align-items: flex-start; }
+}
+@media (max-width: 460px) {
+  .footer .grid-4 { grid-template-columns: 1fr; }
+  .brand-lockup { height: 50px; }
+}
+
+/* Kanban sur telephone : les colonnes defilent horizontalement, une par ecran,
+   avec calage, plutot qu'une pile interminable. */
+@media (max-width: 620px) {
+  .kanban {
+    display: grid; grid-auto-flow: column; grid-template-columns: none;
+    grid-auto-columns: 85%; overflow-x: auto; scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch; padding-bottom: .8rem;
+  }
+  .kanban-col { scroll-snap-align: start; max-height: calc(100vh - 12rem); }
+}
+@media (max-width: 620px) {
+  .wf-dialog { width: calc(100% - 1rem); max-height: calc(100vh - 2rem); overflow-y: auto; padding: 1rem; }
+  .wf-stepper { flex-wrap: nowrap; overflow-x: auto; padding-bottom: .3rem; }
+  .wf-stepper li { white-space: nowrap; }
+}
+/* Indicateurs chiffres : deux par ligne sur telephone plutot qu'une pile. */
+@media (max-width: 620px) {
+  .grid:has(> .stat) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+  .stat { padding: .7rem .8rem; }
+  .stat-value { font-size: 1.4rem; }
+  .stat-label { font-size: .68rem; letter-spacing: .03em; }
+}
