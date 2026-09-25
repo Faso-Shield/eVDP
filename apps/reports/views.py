@@ -1,17 +1,19 @@
 """Vue publique de signalement d'une vulnerabilite."""
 
+import json
+
+from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 
-from apps.accounts.verification import grace_deadline
 from apps.attachments.services import store_attachment
 from apps.coordination.services import public_status_for, resolve_tracking_token
 from apps.core.markdown_utils import render_markdown
 from apps.core.models import SiteSetting
 from apps.core.ratelimit import rate_limited
 from apps.core.views import DEFAULT_DISCLOSURE_POLICY
-from apps.programs.models import Program
+from apps.programs.models import Program, ProgramType
 from apps.vulnerabilities.constants import ReportSource
 
 from .forms import TrackingCodeForm, VulnerabilityReportForm
@@ -49,10 +51,11 @@ def submit(request):
                 if request.user.is_authenticated:
                     messages.success(
                         request,
-                        f"Signalement enregistre sous la référence {case.case_id}. "
+                        f"Signalement enregistré sous la référence {case.case_id}. "
                         "Suivez son traitement dans votre espace.",
                     )
                     return redirect("coordination:case_detail", case_id=case.case_id)
+
                 tracking_token_raw = getattr(case, "tracking_token_raw", None)
                 # Le code n'est affiche a l'ecran que lorsqu'aucun email n'a
                 # ete fourni : sinon le lien de suivi est deja parti par
@@ -64,7 +67,7 @@ def submit(request):
                     {
                         "case_id": case.case_id,
                         "report": report,
-                        "tracking_code": (tracking_token_raw if show_tracking_code else None),
+                        "tracking_code": tracking_token_raw if show_tracking_code else None,
                         "emailed_link": bool(tracking_token_raw)
                         and bool(report.reporter_email),
                     },
@@ -80,6 +83,17 @@ def submit(request):
         )
 
     policy = SiteSetting.get_value("disclosure_policy", DEFAULT_DISCLOSURE_POLICY)
+    program_anonymity_rules = {
+        str(p.pk): {
+            "anonymous_allowed": (
+                p.allows_anonymous_reports and p.program_type != ProgramType.BUG_BOUNTY
+            ),
+            "is_bounty": p.program_type == ProgramType.BUG_BOUNTY,
+        }
+        for p in Program.objects.public().only(
+            "id", "allows_anonymous_reports", "program_type"
+        )
+    }
     return render(
         request,
         "reports/submit.html",
@@ -87,21 +101,23 @@ def submit(request):
             "form": form,
             "program": program,
             "policy_excerpt": render_markdown(policy[:1200]),
-            "delai_verification": grace_deadline(request.user),
-            # Meme annonce que sur la fiche du programme : un visiteur sans
-            # compte arrivant sur un Bug Bounty doit le savoir avant de
-            # rediger, pas au moment de l'envoi.
-            "refus_participation": (
-                program.reporter_rejection(request.user) if program is not None else None
-            ),
+            "program_anonymity_rules_json": json.dumps(program_anonymity_rules),
+            "max_attachments": settings.EVDP["MAX_ATTACHMENTS_PER_SUBMISSION"],
         },
     )
 
 
 def _attach_files(request, case, report):
     """Enregistre les pieces jointes fournies avec le formulaire."""
+    limit = settings.EVDP["MAX_ATTACHMENTS_PER_SUBMISSION"]
     files = request.FILES.getlist("attachments")
-    for uploaded in files[:5]:
+    if len(files) > limit:
+        messages.warning(
+            request,
+            f"Seuls les {limit} premiers fichiers ont été pris en compte "
+            f"({len(files)} proposés) : la limite par envoi est de {limit}.",
+        )
+    for uploaded in files[:limit]:
         try:
             store_attachment(
                 uploaded,

@@ -1,12 +1,18 @@
 {% extends "base.html" %}
-{% load evdp_tags %}
+{% load static evdp_tags %}
 {% block title %}Signaler une vulnérabilité{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/vendor/tom-select.default.min.css' %}">
+{% endblock %}
 
 {% block content %}
 <h1>Signaler une vulnérabilité</h1>
 <p class="muted">
   Ce formulaire est le canal officiel de signalement. Votre rapport est
   <strong>privé par défaut</strong> et ne sera jamais publié automatiquement.
+  Seuls le titre et la description sont obligatoires — le reste peut être
+  complété plus tard par l'équipe de triage.
 </p>
 
 {% if program %}
@@ -17,50 +23,24 @@
 </div>
 {% endif %}
 
-{% if refus_participation %}
-<div class="notice">
-  {{ refus_participation }}
-  {% if user.is_authenticated %}
-    <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
-  {% else %}
-    <a href="{% url 'accounts:login' %}?next={{ request.get_full_path|urlencode }}">Se connecter</a> ·
-    <a href="{% url 'accounts:register' %}">Créer un compte</a>
-  {% endif %}
-</div>
-{% endif %}
-
-{% if user.is_authenticated and not user.email_verified and not refus_participation %}
-<div class="notice">
-  {% if delai_verification %}
-    Votre adresse email n'est pas encore vérifiée. Vous pouvez encore signaler
-    sur les programmes Bug Bounty <strong>jusqu'au
-    {{ delai_verification|date:"d/m/Y" }}</strong>, après quoi ils refuseront
-    votre signalement.
-  {% else %}
-    Votre adresse email n'est pas encore vérifiée. Les programmes qui exigent un
-    compte vérifié — tous les Bug Bounty — refuseront votre signalement.
-  {% endif %}
-  <a href="{% url 'accounts:resend_verification' %}">Renvoyer le lien de vérification</a>
-</div>
-{% endif %}
-
-{% if not user.is_authenticated and not refus_participation %}
-<div class="notice">
-  Vous n'êtes pas connecté. Vous pouvez signaler sans compte, mais un compte
-  vous permet de suivre le traitement et d'échanger avec le CSIRT.
+{% if not user.is_authenticated %}
+<div class="notice" id="account-notice">
+  <span id="account-notice-text">Vous n'êtes pas connecté. Vous pouvez signaler sans compte, mais un
+  compte vous permet de suivre le traitement et d'échanger avec le CSIRT.</span>
   <a href="{% url 'accounts:register' %}">Créer un compte</a> ·
   <a href="{% url 'accounts:login' %}">Se connecter</a>
 </div>
 {% endif %}
 
-<div class="grid" style="grid-template-columns: 2fr 1fr">
+<div class="grid split-layout">
   <div>
-    <form method="post" enctype="multipart/form-data" novalidate>
+    <form method="post" enctype="multipart/form-data" novalidate id="report-form"
+          data-anonymity-rules="{{ program_anonymity_rules_json }}"
+          data-max-attachments="{{ max_attachments|default:5 }}"
+          data-authenticated="{{ user.is_authenticated|yesno:'1,0' }}"
+          data-email-verified="{{ user.email_verified|yesno:'1,0' }}"
+          data-mfa-enabled="{{ user.mfa_enabled|yesno:'1,0' }}">
       {% csrf_token %}
-      <p class="form-legend">
-        Les champs suivis d'une <abbr class="required" title="Champ obligatoire">*</abbr>
-        sont obligatoires. Les autres accelerent le triage sans etre exiges.
-      </p>
       {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
 
       <div class="card">
@@ -70,62 +50,104 @@
           <div class="form-grid">
             {% include "partials/form_field.html" with field=form.program %}
             {% include "partials/form_field.html" with field=form.affected_organization %}
+          </div>
+          <div id="org-name-field">
             {% include "partials/form_field.html" with field=form.affected_organization_name %}
-            {% include "partials/form_field.html" with field=form.product %}
           </div>
-          <div class="help">
-            <abbr class="required" title="Champ obligatoire">*</abbr>
-            Renseignez au moins l'un de ces trois champs : le programme, l'organisation
-            affectee, ou son nom si elle n'est pas dans la liste. Sans cela, le
-            signalement ne peut pas etre oriente.
-          </div>
-          {% include "partials/form_field.html" with field=form.target_url %}
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h2>Qualification technique</h2></div>
-        <div class="card-body">
           <div class="form-grid">
-            {% include "partials/form_field.html" with field=form.vulnerability_type %}
-            {% include "partials/form_field.html" with field=form.cwe %}
-            {% include "partials/form_field.html" with field=form.reported_severity %}
-            {% include "partials/form_field.html" with field=form.cvss_vector %}
-            {% include "partials/form_field.html" with field=form.affected_version %}
-            {% include "partials/form_field.html" with field=form.fixed_version %}
-            {% include "partials/form_field.html" with field=form.environment %}
-            {% include "partials/form_field.html" with field=form.external_reference %}
+            {% include "partials/form_field.html" with field=form.product %}
+            {% include "partials/form_field.html" with field=form.target_url %}
           </div>
         </div>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <h2>Description</h2>
+          <h2>Le problème</h2>
           <span class="pill">Markdown accepté</span>
         </div>
         <div class="card-body">
-          {% include "partials/form_field.html" with field=form.description %}
+          <div class="form-field">
+            <div class="field-label-row">
+              <label for="{{ form.description.id_for_label }}">{{ form.description.label }} :</label><abbr class="required-marker" title="Obligatoire" aria-label="obligatoire">*</abbr>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" id="insert-template" style="margin-bottom:.4rem">
+              Insérer un modèle guidé
+            </button>
+            {{ form.description }}
+            <div class="char-counter" id="description-counter">0 caractère (30 minimum)</div>
+            {% if form.description.help_text %}<div class="help">{{ form.description.help_text }}</div>{% endif %}
+            {{ form.description.errors }}
+          </div>
           {% include "partials/form_field.html" with field=form.steps_to_reproduce %}
           {% include "partials/form_field.html" with field=form.impact %}
+          {% include "partials/form_field.html" with field=form.reported_severity %}
+          <div class="notice" id="pgp-severity-hint" hidden>
+            Sévérité critique indiquée. Si ce signalement contient un détail qui
+            rendrait la faille immédiatement exploitable en cas de fuite (payload,
+            données réelles extraites, identifiants encore valides), pensez à le
+            chiffrer — voir « Signalement chiffré » ci-contre. Ceci reste une
+            suggestion : vous pouvez envoyer sans, si vous jugez que ce n'est pas
+            nécessaire.
+          </div>
+        </div>
+      </div>
+
+      <details class="details-card">
+        <summary>Détails techniques (optionnel) — pour qui souhaite aller plus loin</summary>
+        <div class="card-body">
+          <div class="form-grid">
+            {% include "partials/form_field.html" with field=form.vulnerability_type %}
+            {% include "partials/form_field.html" with field=form.cwe %}
+          </div>
+
+          <div class="form-field">
+            <label>{{ form.cvss_vector.label }} :</label>
+            <div id="cvss-calculator">
+              <p class="help">Cliquez une option par ligne — le vecteur se construit automatiquement.</p>
+              <div id="cvss-metrics"></div>
+              <div class="cvss-readout" id="cvss-readout">Aucun vecteur construit</div>
+              <a href="#" class="cvss-toggle-link" id="cvss-use-manual">Coller un vecteur existant à la place</a>
+            </div>
+            <div id="cvss-manual" hidden>
+              {{ form.cvss_vector }}
+              {% if form.cvss_vector.help_text %}<div class="help">{{ form.cvss_vector.help_text }}</div>{% endif %}
+              <a href="#" class="cvss-toggle-link" id="cvss-use-calculator">Revenir au calculateur guidé</a>
+            </div>
+            {{ form.cvss_vector.errors }}
+          </div>
+
+          <div class="form-grid">
+            {% include "partials/form_field.html" with field=form.affected_version %}
+            {% include "partials/form_field.html" with field=form.fixed_version %}
+          </div>
+          <div class="form-grid">
+            {% include "partials/form_field.html" with field=form.environment %}
+            {% include "partials/form_field.html" with field=form.external_reference %}
+          </div>
           {% include "partials/form_field.html" with field=form.proof_of_concept %}
           {% include "partials/form_field.html" with field=form.recommendations %}
         </div>
-      </div>
+      </details>
 
       <div class="card">
         <div class="card-header"><h2>Pièces jointes</h2></div>
         <div class="card-body">
-          <div class="form-field">
-            <label for="attachments">Fichiers (5 maximum)</label>
-            <input type="file" name="attachments" id="attachments" multiple>
-            <div class="help">
+          <div class="dropzone" id="dropzone">
+            <p><strong>Glissez vos fichiers ici</strong>, ou cliquez pour en choisir
+            ({{ max_attachments }} maximum).</p>
+            <p class="help">
               Captures, traces, PoC. Les exécutables et scripts sont refusés.
-              Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier.
+              Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier
+              ({{ EVDP.MAX_VIDEO_ATTACHMENT_SIZE|filesizeformat }} pour une vidéo
+              de démonstration, mp4/webm).
               Chaque fichier est stocké sous un nom aléatoire, hashé en SHA-256 et
               accessible uniquement aux personnes habilitées sur le dossier.
-            </div>
+            </p>
+            <input type="file" name="attachments" id="attachments" multiple>
           </div>
+          <div class="help" id="file-limit-warning" hidden></div>
+          <div class="file-list" id="file-list"></div>
         </div>
       </div>
 
@@ -135,14 +157,28 @@
           {% if form.contact_email %}
             {% include "partials/form_field.html" with field=form.contact_email %}
           {% endif %}
-          <div class="checkbox-field">{{ form.is_anonymous }}<label for="{{ form.is_anonymous.id_for_label }}">{{ form.is_anonymous.label }}</label></div>
-          <div class="checkbox-field">{{ form.wants_credit }}<label for="{{ form.wants_credit.id_for_label }}">{{ form.wants_credit.label }}</label></div>
+          <div class="checkbox-field" id="anonymous-field">{{ form.is_anonymous }}<label for="{{ form.is_anonymous.id_for_label }}">{{ form.is_anonymous.label }}</label></div>
+          <div class="notice" id="anonymous-bounty-warning" hidden>
+            Le signalement anonyme est désactivé pour cette soumission : ce
+            programme ne l'accepte pas (récompense à attribuer, ou politique
+            du programme). Indiquez une adresse de contact, ou connectez-vous,
+            pour pouvoir continuer.
+          </div>
+          <div class="checkbox-field" id="wants-credit-field">{{ form.wants_credit }}<label for="{{ form.wants_credit.id_for_label }}">{{ form.wants_credit.label }}</label></div>
+          <div class="help" id="wants-credit-hint" hidden>
+            Sans effet en mode anonyme : un signalement anonyme ne conserve
+            aucune identité à créditer.
+          </div>
           <div class="checkbox-field">{{ form.requests_cve }}<label for="{{ form.requests_cve.id_for_label }}">{{ form.requests_cve.label }}</label></div>
+          <div class="help">
+            Un CVE identifie la vulnérabilité elle-même, pas son auteur :
+            demandable même en signalant de manière anonyme.
+          </div>
           {% include "partials/form_field.html" with field=form.pgp_payload %}
           <div class="checkbox-field">
             {{ form.accept_policy }}
-            <label for="{{ form.accept_policy.id_for_label }}">{{ form.accept_policy.label }}<abbr class="required" title="Champ obligatoire">*</abbr>
-              (<a href="{% url 'core:disclosure_policy' %}" target="_blank" rel="noopener">lire</a>)</label>
+            <label for="{{ form.accept_policy.id_for_label }}">{{ form.accept_policy.label }}
+              (<a href="{% url 'core:disclosure_policy' %}" target="_blank" rel="noopener">lire</a>)</label><abbr class="required-marker" title="Obligatoire" aria-label="obligatoire">*</abbr>
           </div>
           {{ form.accept_policy.errors }}
         </div>
@@ -150,7 +186,7 @@
 
       <div class="btn-row">
         <button class="btn btn-accent btn-lg" type="submit">Envoyer le signalement</button>
-        <a class="btn btn-outline" href="{% url 'core:home' %}">Annuler</a>
+        <a class="btn btn-outline" href="{% url 'core:home' %}" id="cancel-link">Annuler</a>
       </div>
     </form>
   </div>
@@ -176,11 +212,25 @@
     <div class="card">
       <div class="card-header"><h3>Signalement chiffré</h3></div>
       <div class="card-body small">
-        <p>Pour un contenu très sensible, chiffrez-le avec la clé publique nationale
-        et collez le bloc PGP dans le champ prévu.</p>
+        <p>Les champs ci-contre (description, étapes, preuve de concept) restent en
+        clair et suffisent pour la plupart des signalements. Pour un détail qui
+        rendrait la faille immédiatement exploitable s'il fuitait (payload
+        fonctionnel, données réelles extraites, identifiants encore valides) :
+        rédigez-le, chiffrez-le avec la clé publique nationale, puis collez
+        uniquement le bloc obtenu dans « Rapport chiffré PGP ».</p>
+        <p>Ce champ ne couvre que le texte collé ici, pas les pièces jointes.
+        Pour protéger un fichier sensible (capture, script), chiffrez-le
+        lui-même avec la même clé avant de le déposer : la plateforme
+        reconnaît un fichier ainsi chiffré et l'affiche marqué « 🔒 PGP ».</p>
         <a class="btn btn-sm btn-outline" href="{% url 'core:pgp_key' %}">Clé publique PGP</a>
       </div>
     </div>
   </aside>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/vendor/tom-select.complete.min.js' %}" defer></script>
+<script src="{% static 'js/select-enhance.js' %}" defer></script>
+<script src="{% static 'js/report-submit.js' %}" defer></script>
 {% endblock %}
