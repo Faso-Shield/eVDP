@@ -66,7 +66,9 @@ class WorkflowActionForm(forms.Form):
         label="Plan de remédiation", required=False, widget=forms.Textarea(attrs={"rows": 4})
     )
     remediation_target_date = forms.DateField(
-        label="Date cible", required=False, widget=forms.DateInput(attrs={"type": "date"})
+        label="Date cible",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
     )
     # Etape 7 : correctif.
     fix_description = forms.CharField(
@@ -78,7 +80,7 @@ class WorkflowActionForm(forms.Form):
     fix_deployed_on = forms.DateField(
         label="Date de déploiement",
         required=False,
-        widget=forms.DateInput(attrs={"type": "date"}),
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
     )
     # Etape 8 : contre-verification.
     verification_report = forms.CharField(
@@ -224,7 +226,8 @@ class DuplicateForm(forms.Form):
 
 class DisclosureScheduleForm(forms.Form):
     disclosure_date = forms.DateField(
-        label="Date de divulgation", widget=forms.DateInput(attrs={"type": "date"})
+        label="Date de divulgation",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
     )
 
 

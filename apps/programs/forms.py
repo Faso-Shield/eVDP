@@ -56,8 +56,8 @@ class ProgramForm(forms.ModelForm):
             "allows_anonymous_reports": "Accepter les signalements anonymes",
         }
         widgets = {
-            "starts_on": forms.DateInput(attrs={"type": "date"}),
-            "ends_on": forms.DateInput(attrs={"type": "date"}),
+            "starts_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "ends_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "description": forms.Textarea(attrs={"rows": 6}),
             "rules": forms.Textarea(attrs={"rows": 5}),
             "out_of_scope_notes": forms.Textarea(attrs={"rows": 4}),
