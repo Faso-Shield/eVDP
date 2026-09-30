@@ -18,7 +18,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode
+from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_encode
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_POST
 
@@ -119,6 +119,15 @@ def register(request):
     else:
         form = RegistrationForm()
     return render(request, "accounts/register.html", {"form": form})
+
+
+def _safe_next(request):
+    """`next` s'il designe une page de ce site, None sinon."""
+    target = request.GET.get("next") or ""
+    allowed = url_has_allowed_host_and_scheme(
+        target, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    )
+    return target if allowed else None
 
 
 def _mfa_par_compte(request):
@@ -235,7 +244,7 @@ def mfa_challenge(request):
                 request=request,
                 method="code_de_secours" if by_backup else "totp",
             )
-            return redirect(request.GET.get("next") or "dashboard:home")
+            return redirect(_safe_next(request) or "dashboard:home")
         log_action(
             AuditAction.MFA_FAILED,
             actor=request.user,

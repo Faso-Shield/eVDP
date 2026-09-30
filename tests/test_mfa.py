@@ -330,3 +330,20 @@ def test_reset_revokes_the_backup_codes(analyste_enrole):
     codes = mfa.generate_backup_codes(analyste_enrole)
     analyste_enrole.reset_mfa()
     assert not mfa.consume_backup_code(analyste_enrole, codes[0])
+
+
+@pytest.mark.parametrize(
+    ("next_url", "expected"),
+    [
+        ("/cases/", "/cases/"),
+        ("https://site-piege.example/evdp", "/dashboard/"),
+        ("//site-piege.example", "/dashboard/"),
+    ],
+)
+def test_second_factor_never_redirects_off_site(
+    client_for, analyste_enrole, next_url, expected
+):
+    client = client_for(analyste_enrole, mfa=False)
+    code = code_pour(analyste_enrole.mfa_secret)
+    reponse = client.post(f"/mfa/?next={next_url}", {"code": code})
+    assert reponse["Location"] == expected
