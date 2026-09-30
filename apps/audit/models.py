@@ -22,6 +22,10 @@ class AuditAction(models.TextChoices):
     MFA_VERIFIED = "MFA_VERIFIED", "Second facteur validé"
     MFA_FAILED = "MFA_FAILED", "Second facteur refusé"
     MFA_RESET = "MFA_RESET", "Double authentification réinitialisée"
+    MFA_BACKUP_CODES_GENERATED = (
+        "MFA_BACKUP_CODES_GENERATED",
+        "Codes de secours générés",
+    )
     USER_CREATED = "USER_CREATED", "Utilisateur créé"
     USER_UPDATED = "USER_UPDATED", "Utilisateur modifié"
     ROLE_CHANGED = "ROLE_CHANGED", "Rôle modifié"

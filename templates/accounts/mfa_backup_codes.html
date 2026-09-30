@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Codes de secours{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px;margin:2rem auto">
+  <div class="card-header"><h1 style="font-size:1.4rem">Vos codes de secours</h1></div>
+  <div class="card-body">
+    <div class="alert alert-warning">
+      Ces codes ne seront <strong>plus jamais affichés</strong>. Conservez-les
+      hors de cet appareil (coffre-fort de mots de passe, papier sous clé).
+    </div>
+    <p class="small muted">
+      Si vous perdez votre authentificateur, saisissez l'un de ces codes à la
+      place du code à six chiffres. Chaque code ne sert qu'une fois. Les codes
+      générés auparavant ne sont plus valables.
+    </p>
+    <ol class="mono" style="columns:2;column-gap:2rem;font-size:1.05rem;line-height:1.9">
+      {% for code in codes %}<li>{{ code }}</li>{% endfor %}
+    </ol>
+    <a class="btn btn-block" href="{% url 'dashboard:home' %}">J'ai conservé mes codes</a>
+  </div>
+</div>
+{% endblock %}

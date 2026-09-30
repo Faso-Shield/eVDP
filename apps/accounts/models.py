@@ -151,6 +151,8 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
                     "mfa_confirmed_at",
                     "mfa_last_step",
                 ]
+            if self.pk:
+                self.mfa_backup_codes.all().delete()
         return super().save(*args, **kwargs)
 
     # -- Double authentification --------------------------------------------
@@ -167,7 +169,12 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         return self.mfa_required and not (self.mfa_enabled and self.mfa_secret)
 
     def reset_mfa(self):
-        """Revoque l'enrolement : le compte devra en refaire un a la connexion."""
+        """Revoque l'enrolement : le compte devra en refaire un a la connexion.
+
+        Les codes de secours tombent avec lui : ils ouvriraient sinon une
+        session elevee sans aucun authentificateur enregistre.
+        """
+        self.mfa_backup_codes.all().delete()
         self.mfa_enabled = False
         self.mfa_secret = ""
         self.mfa_confirmed_at = None
@@ -325,6 +332,28 @@ class UserToken(TimeStampedModel):
         )
 
 
+class MFABackupCode(TimeStampedModel):
+    """Code de secours a usage unique, si l'authentificateur est perdu.
+
+    Seule l'empreinte est conservee ; le code en clair n'est montre qu'une
+    fois, a sa generation (voir apps.accounts.mfa.generate_backup_codes).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="mfa_backup_codes")
+    code_hash = models.CharField(max_length=64, unique=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "mfa_backup_codes"
+        ordering = ["created_at"]
+        verbose_name = "Code de secours"
+        verbose_name_plural = "Codes de secours"
+
+    def __str__(self):
+        return f"Code de secours - {self.user}"
+
+
 class ApiKey(TimeStampedModel):
     """Cle d'API pour l'integration machine (soumission automatisee).
 
@@ -354,6 +383,7 @@ class ApiKey(TimeStampedModel):
 
 
 __all__ = [
+    "MFABackupCode",
     "User",
     "UserManager",
     "BusinessAccount",

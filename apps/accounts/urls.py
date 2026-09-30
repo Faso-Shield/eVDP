@@ -10,6 +10,12 @@ urlpatterns = [
     path("register/", views.register, name="register"),
     path("mfa/", views.mfa_challenge, name="mfa_challenge"),
     path("mfa/enrolement/", views.mfa_setup, name="mfa_setup"),
+    path("mfa/codes-de-secours/", views.mfa_backup_codes, name="mfa_backup_codes"),
+    path(
+        "mfa/codes-de-secours/regenerer/",
+        views.mfa_regenerate_backup_codes,
+        name="mfa_regenerate_backup_codes",
+    ),
     path("verify-email/<str:token>/", views.verify_email, name="verify_email"),
     path("resend-verification/", views.resend_verification, name="resend_verification"),
     path("profile/", views.profile, name="profile"),

@@ -7,7 +7,7 @@
   <div class="card-body">
     <p class="muted">
       Saisissez le code affiché par votre authentificateur pour
-      <strong>{{ user.email }}</strong>.
+      <strong>{{ user.email }}</strong>, ou l'un de vos codes de secours.
     </p>
     <form method="post" novalidate>
       {% csrf_token %}
@@ -17,7 +17,7 @@
   </div>
 </div>
 <p class="text-center small muted">
-  Appareil perdu ? Contactez un administrateur de la plateforme. ·
+  Appareil perdu et plus de code de secours ? Contactez un administrateur. ·
   <a href="{% url 'accounts:logout' %}">Se déconnecter</a>
 </p>
 {% endblock %}

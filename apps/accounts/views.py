@@ -20,6 +20,7 @@ from django.utils.decorators import method_decorator
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.debug import sensitive_post_parameters
+from django.views.decorators.http import require_POST
 
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
@@ -182,7 +183,7 @@ def mfa_setup(request):
                 "Double authentification activée. Un code vous sera demandé "
                 "à chaque connexion.",
             )
-            return redirect("dashboard:home")
+            return _show_new_backup_codes(request, user)
 
     return render(
         request,
@@ -210,13 +211,29 @@ def mfa_challenge(request):
 
     form = TotpCodeForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        if mfa.consume_code(request.user, form.cleaned_data["code"]):
+        code = form.cleaned_data["code"]
+        # Code de secours (lettres et chiffres) ou code TOTP (six chiffres).
+        by_backup = mfa.looks_like_backup_code(code)
+        if by_backup:
+            accepted = mfa.consume_backup_code(request.user, code)
+        else:
+            accepted = mfa.consume_code(request.user, code)
+        if accepted:
+            if by_backup:
+                remaining = mfa.remaining_backup_codes(request.user)
+                if remaining <= mfa.BACKUP_CODES_LOW:
+                    messages.warning(
+                        request,
+                        f"Il vous reste {remaining} code(s) de secours : "
+                        "régénérez-en depuis votre profil.",
+                    )
             elevate(request)
             log_action(
                 AuditAction.MFA_VERIFIED,
                 actor=request.user,
                 obj=request.user,
                 request=request,
+                method="code_de_secours" if by_backup else "totp",
             )
             return redirect(request.GET.get("next") or "dashboard:home")
         log_action(
@@ -229,6 +246,41 @@ def mfa_challenge(request):
         messages.error(request, "Code incorrect ou déjà utilisé.")
 
     return render(request, "accounts/mfa_challenge.html", {"form": form})
+
+
+#: Codes de secours tout juste generes, en attente de leur unique affichage.
+BACKUP_CODES_SESSION_KEY = "mfa_backup_codes"
+
+
+def _show_new_backup_codes(request, user):
+    request.session[BACKUP_CODES_SESSION_KEY] = mfa.generate_backup_codes(user)
+    log_action(AuditAction.MFA_BACKUP_CODES_GENERATED, actor=user, obj=user, request=request)
+    return redirect("accounts:mfa_backup_codes")
+
+
+@login_required
+def mfa_backup_codes(request):
+    """Affiche une seule fois les codes de secours qui viennent d'etre generes."""
+    codes = request.session.pop(BACKUP_CODES_SESSION_KEY, None)
+    if not codes:
+        return redirect("accounts:profile")
+    response = render(request, "accounts/mfa_backup_codes.html", {"codes": codes})
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@login_required
+@require_POST
+@rate_limited("mfa", key_func=_mfa_par_compte)
+def mfa_regenerate_backup_codes(request):
+    """Nouveau lot de codes de secours, contre le mot de passe du compte."""
+    user = request.user
+    if not user.mfa_enabled or not session_is_elevated(request):
+        return redirect("accounts:profile")
+    if not user.check_password(request.POST.get("password", "")):
+        messages.error(request, "Mot de passe incorrect : aucun code n'a été généré.")
+        return redirect("accounts:profile")
+    return _show_new_backup_codes(request, user)
 
 
 def verify_email(request, token):
@@ -310,6 +362,9 @@ def profile(request):
             "profile_form": profile_form,
             "researcher_profile": researcher_profile,
             "api_keys": request.user.api_keys.filter(is_active=True),
+            "backup_codes_left": (
+                mfa.remaining_backup_codes(request.user) if request.user.mfa_enabled else None
+            ),
         },
     )
 

@@ -98,9 +98,26 @@
     <a class="btn btn-outline" href="{% url 'accounts:mfa_setup' %}">
       {% if user.mfa_enabled %}Changer d'authentificateur{% else %}Enregistrer un authentificateur{% endif %}
     </a>
+    {% if user.mfa_enabled %}
+    <hr>
+    <h3>Codes de secours</h3>
+    <p class="small muted">
+      Ils remplacent le code à six chiffres si vous perdez votre
+      authentificateur. Il vous en reste <strong>{{ backup_codes_left }}</strong>.
+      En générer de nouveaux invalide les précédents.
+    </p>
+    <form method="post" action="{% url 'accounts:mfa_regenerate_backup_codes' %}" class="filters">
+      {% csrf_token %}
+      <div class="form-field">
+        <label for="backup-password">Mot de passe actuel</label>
+        <input type="password" name="password" id="backup-password" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-outline" type="submit">Générer de nouveaux codes</button>
+    </form>
+    {% endif %}
     <p class="small muted mt-2">
-      Appareil perdu : un administrateur réinitialise votre second facteur,
-      vous en enregistrerez un nouveau à la connexion suivante.
+      Appareil perdu et plus de code de secours : un administrateur réinitialise
+      votre second facteur, vous en enregistrerez un nouveau à la connexion suivante.
     </p>
   </div>
 </div>
