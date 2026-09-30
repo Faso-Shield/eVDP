@@ -735,3 +735,56 @@ def test_analyst_may_propose_a_closure_without_advisory(client_for, case_alpha):
     advance(case_alpha, CaseStatus.FIX_VERIFIED)
     content = _case_page(client_for(workflow_actor("analyst")), case_alpha)
     assert "Proposer une clôture sans advisory" in content
+
+
+# ------------------------------------------ advisory public : qui le touche
+def _published(coordinator, analyst):
+    advisory = approved_advisory(analyst)
+    publish_advisory(advisory, coordinator)
+    advisory.refresh_from_db()
+    return advisory
+
+
+def test_published_advisory_is_corrected_only_by_a_publisher(coordinator, analyst, client_for):
+    """DRAFT_ADVISORY suffit pour un brouillon, pas pour un advisory public."""
+    advisory = _published(coordinator, analyst)
+    advisory.summary = "Correction non autorisee."
+    with pytest.raises(PermissionDenied):
+        update_advisory(advisory, analyst)
+    url = reverse("disclosures:manage", args=[advisory.advisory_id])
+    assert client_for(analyst).get(url).status_code == 404
+    assert client_for(coordinator).get(url).status_code == 200
+
+
+def test_retraction_cannot_bypass_the_reason_through_a_status_change(coordinator, analyst):
+    from apps.disclosures.services import transition_advisory
+
+    advisory = _published(coordinator, analyst)
+    for actor in (analyst, coordinator):
+        with pytest.raises(ValidationError):
+            transition_advisory(advisory, AdvisoryStatus.RETRACTED, actor)
+    advisory.refresh_from_db()
+    assert advisory.status == AdvisoryStatus.PUBLISHED
+
+
+def test_update_audit_lists_the_changed_fields(case_alpha, analyst):
+    advisory = build_advisory(case_alpha, analyst)
+    update_advisory(advisory, analyst, changed_fields=["summary", "impact"])
+    entry = AuditLog.objects.filter(
+        action=AuditAction.ADVISORY_UPDATED, object_id=str(advisory.pk)
+    ).latest("timestamp")
+    assert entry.metadata["changed_fields"] == ["impact", "summary"]
+
+
+def test_status_menu_only_offers_allowed_transitions(client_for, coordinator, analyst):
+    advisory = approved_advisory(analyst)
+    html = (
+        client_for(coordinator)
+        .get(reverse("disclosures:manage", args=[advisory.advisory_id]))
+        .content.decode()
+    )
+    menu = html.split('id="target_status"')[1].split("</select>")[0]
+    assert 'value="SCHEDULED"' in menu
+    assert 'value="PUBLISHED"' not in menu
+    assert 'value="RETRACTED"' not in menu
+    assert 'value="DRAFT"' not in menu

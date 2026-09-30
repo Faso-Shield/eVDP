@@ -15,6 +15,7 @@ from apps.vulnerabilities.constants import Severity
 from .forms import AdvisoryForm, AdvisoryTimelineFormSet
 from .models import Advisory, AdvisoryStatus
 from .services import (
+    can_edit_advisory,
     create_advisory,
     create_advisory_from_case,
     publish_advisory,
@@ -191,12 +192,21 @@ def advisory_manage(request, advisory_id):
 
         if not can_edit_case_advisory(advisory.case, request.user):
             raise Http404("Advisory introuvable.")
+    if not can_edit_advisory(advisory, request.user):
+        # Advisory public : sa version en ligne reste lisible, sa correction
+        # est reservee a qui peut publier.
+        raise Http404("Advisory introuvable.")
 
     if request.method == "POST":
         form = AdvisoryForm(request.POST, instance=advisory)
         formset = AdvisoryTimelineFormSet(request.POST, instance=advisory)
         if form.is_valid() and formset.is_valid():
-            update_advisory(form.save(commit=False), request.user, request=request)
+            update_advisory(
+                form.save(commit=False),
+                request.user,
+                request=request,
+                changed_fields=form.changed_data,
+            )
             formset.save()
             _appliquer_action(request, advisory)
             return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
@@ -216,6 +226,13 @@ def advisory_manage(request, advisory_id):
             "form": form,
             "formset": formset,
             "can_publish": request.user.has_capability(Capability.PUBLISH_ADVISORY),
-            "statuses": AdvisoryStatus.choices,
+            # Publication et retrait ont leurs boutons (et leurs controles) :
+            # le menu ne propose que les autres transitions permises.
+            "statuses": [
+                (value, label)
+                for value, label in AdvisoryStatus.choices
+                if value not in (AdvisoryStatus.PUBLISHED, AdvisoryStatus.RETRACTED)
+                and advisory.can_transition_to(value)
+            ],
         },
     )

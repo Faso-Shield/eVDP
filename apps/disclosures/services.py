@@ -205,17 +205,25 @@ def create_advisory(advisory, actor, case=None, request=None):
 
 
 @transaction.atomic
-def update_advisory(advisory, actor, request=None):
+def can_edit_advisory(advisory, user):
+    """Un brouillon se redige avec DRAFT_ADVISORY ; un advisory deja public
+    (publie ou retire) ne se corrige qu'avec le droit de le publier."""
+    if advisory.status in (AdvisoryStatus.PUBLISHED, AdvisoryStatus.RETRACTED):
+        return user.has_capability(Capability.PUBLISH_ADVISORY)
+    return user.has_capability(Capability.DRAFT_ADVISORY) or user.has_capability(
+        Capability.PUBLISH_ADVISORY
+    )
+
+
+def update_advisory(advisory, actor, request=None, changed_fields=()):
     """Enregistre une modification redactionnelle et l'audite.
 
-    Un advisory publie reste modifiable (correction editoriale), mais chaque
-    modification laisse une trace nominative.
+    Un advisory publie reste modifiable (correction editoriale) par qui peut
+    le publier ; chaque modification laisse une trace nominative, avec la
+    liste des champs touches.
     """
-    if not (
-        actor.has_capability(Capability.DRAFT_ADVISORY)
-        or actor.has_capability(Capability.PUBLISH_ADVISORY)
-    ):
-        raise PermissionDenied("Capacite requise pour modifier un advisory.")
+    if not can_edit_advisory(advisory, actor):
+        raise PermissionDenied("Capacité requise pour modifier cet advisory.")
 
     advisory.save()
     log_action(
@@ -224,6 +232,7 @@ def update_advisory(advisory, actor, request=None):
         obj=advisory,
         request=request,
         status=advisory.status,
+        changed_fields=sorted(changed_fields),
     )
     return advisory
 
@@ -232,6 +241,10 @@ def update_advisory(advisory, actor, request=None):
 def transition_advisory(advisory, target_status, actor, request=None):
     if target_status == AdvisoryStatus.PUBLISHED:
         return publish_advisory(advisory, actor, request=request)
+    if target_status == AdvisoryStatus.RETRACTED:
+        # Le retrait exige PUBLISH_ADVISORY et un motif : par cette voie, un
+        # simple redacteur retirait un advisory public sans rien justifier.
+        raise ValidationError("Un retrait se fait par « Retirer », avec un motif.")
     if not actor.has_capability(Capability.DRAFT_ADVISORY):
         raise PermissionDenied("Capacité requise.")
     if not advisory.can_transition_to(target_status):
