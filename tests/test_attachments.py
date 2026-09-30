@@ -375,3 +375,62 @@ def test_pending_scans_are_dispatched_again(monkeypatch, case_alpha, researcher_
 
     assert sweep_pending_scans() == 1
     assert relancees == [ancienne.pk]
+
+
+# ------------------------------------------------ videos, photos, .gpg
+MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\0" * 64
+HEIC = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic" + b"\0" * 64
+WEBM = bytes.fromhex("1a45dfa3") + b"\x9f\x42\x86\x81\x01" + b"\0" * 64
+
+
+def test_video_gets_its_own_size_cap(settings):
+    settings.EVDP = {
+        **settings.EVDP,
+        "MAX_ATTACHMENT_SIZE": 100,
+        "MAX_VIDEO_ATTACHMENT_SIZE": 400,
+    }
+    big = MP4 + b"\0" * 200
+    assert validate_upload(upload("demo.mp4", big))["extension"] == "mp4"
+    with pytest.raises(ValidationError, match="volumineux"):
+        validate_upload(upload("capture.png", b"\x89PNG\r\n\x1a\n" + b"\0" * 200))
+    with pytest.raises(ValidationError, match="volumineux"):
+        validate_upload(upload("demo.mp4", MP4 + b"\0" * 500))
+
+
+@pytest.mark.parametrize(
+    ("name", "content"), [("demo.mp4", MP4), ("demo.webm", WEBM), ("photo.heic", HEIC)]
+)
+def test_videos_and_phone_photos_are_accepted(name, content):
+    assert validate_upload(upload(name, content))
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [("demo.mp4", b"pas une video" * 10), ("photo.heic", MP4), ("demo.webm", MP4)],
+)
+def test_renamed_files_are_refused(name, content):
+    with pytest.raises(ValidationError, match="signature"):
+        validate_upload(upload(name, content))
+
+
+def test_binary_gpg_is_accepted_and_flagged_encrypted(case_alpha, researcher_a):
+    packet = bytes([0x85, 0x01, 0x0C, 0x03]) + b"\x11" * 64
+    attachment = store_attachment(
+        upload("preuve.txt.gpg", packet), researcher_a, case=case_alpha
+    )
+    assert attachment.is_pgp_encrypted
+    with pytest.raises(ValidationError, match="OpenPGP"):
+        validate_upload(upload("faux.gpg", b"texte en clair renomme"))
+
+
+def test_a_file_over_the_clamav_stream_limit_is_marked_not_scanned(settings):
+    import io
+
+    from apps.attachments.models import ScanStatus
+    from apps.attachments.tasks import _clamav_scan
+
+    settings.CLAMAV_HOST = "clamav.invalid"
+    settings.CLAMAV_STREAM_MAX_LENGTH = 10
+    status, detail = _clamav_scan(io.BytesIO(b"x" * 11), size=11)
+    assert status == ScanStatus.SKIPPED
+    assert "volumineux" in detail

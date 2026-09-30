@@ -89,3 +89,16 @@ def national_public_key():
 
 def national_fingerprint():
     return (settings.EVDP.get("PGP_FINGERPRINT") or "").strip()
+
+
+#: Premier octet d'un message OpenPGP chiffre en binaire (RFC 4880/9580) :
+#: paquet de cle de session chiffree par cle publique (tag 1) ou par mot de
+#: passe (tag 3), au format ancien (0x84-0x87, 0x8C-0x8F) ou nouveau (0xC1, 0xC3).
+_ENCRYPTED_PACKET_FIRST_BYTES = frozenset(
+    {0x84, 0x85, 0x86, 0x87, 0x8C, 0x8D, 0x8E, 0x8F, 0xC1, 0xC3}
+)
+
+
+def is_binary_encrypted(head):
+    """Le fichier commence-t-il par un message OpenPGP chiffre, non armure ?"""
+    return bool(head) and head[0] in _ENCRYPTED_PACKET_FIRST_BYTES

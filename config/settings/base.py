@@ -246,6 +246,9 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 # ---------------------------------------------------------------------------
 CLAMAV_HOST = env("CLAMAV_HOST", default="")
 CLAMAV_PORT = env.int("CLAMAV_PORT", default=3310)
+# Doit egaler StreamMaxLength de clamd (25 Mo par defaut) : au-dela, le
+# fichier est marque non analyse plutot qu'envoye pour rien.
+CLAMAV_STREAM_MAX_LENGTH = env.int("CLAMAV_STREAM_MAX_LENGTH", default=25 * 1024 * 1024)
 
 CELERY_BEAT_SCHEDULE = {
     "evdp-sla-sweep": {
@@ -419,6 +422,12 @@ EVDP = {
         "EVDP_VERIFICATION_REMINDER_DAYS", default=["14", "7", "1"]
     ),
     "MAX_ATTACHMENT_SIZE": env.int("EVDP_MAX_ATTACHMENT_SIZE", default=25 * 1024 * 1024),
+    # Une demonstration d'exploit filmee depasse vite 25 Mo : plafond dedie.
+    # Nginx doit l'accepter aussi (client_max_body_size des chemins de depot).
+    "ATTACHMENT_VIDEO_EXTENSIONS": ["mp4", "webm"],
+    "MAX_VIDEO_ATTACHMENT_SIZE": env.int(
+        "EVDP_MAX_VIDEO_ATTACHMENT_SIZE", default=200 * 1024 * 1024
+    ),
     "ATTACHMENT_ALLOWED_EXTENSIONS": env.list(
         "EVDP_ATTACHMENT_EXTENSIONS",
         default=[
@@ -427,6 +436,11 @@ EVDP = {
             "jpeg",
             "gif",
             "webp",
+            # Photos de telephone (iPhone, nombreux Android).
+            "heic",
+            "heif",
+            "mp4",
+            "webm",
             "pdf",
             "txt",
             "md",
@@ -442,6 +456,7 @@ EVDP = {
             "eml",
             "asc",
             "pgp",
+            "gpg",
         ],
     ),
     "ATTACHMENT_BLOCKED_EXTENSIONS": [

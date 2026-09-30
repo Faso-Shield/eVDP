@@ -10,7 +10,7 @@ from django.db import transaction
 
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
-from apps.core.pgp import is_encrypted_blob
+from apps.core.pgp import is_binary_encrypted, is_encrypted_blob
 from apps.core.utils import sha256_hexdigest
 
 from .models import Attachment, ScanStatus
@@ -53,10 +53,22 @@ ALLOWED_MAGIC = {
 
 #: Signatures verifiees au-dela du debut du fichier : (decalage, octets).
 #: Le webp commence par "RIFF", commun a d'autres formats (wav, avi) ; seule
-#: la marque "WEBP" en octet 8 l'identifie.
+#: la marque "WEBP" en octet 8 l'identifie. mp4, heic et heif sont des
+#: conteneurs ISOBMFF : boite "ftyp" en octet 4.
 ALLOWED_MAGIC_AT = {
     "webp": ((0, b"RIFF"), (8, b"WEBP")),
+    "mp4": ((4, b"ftyp"),),
+    "heic": ((4, b"ftyp"),),
+    "heif": ((4, b"ftyp"),),
+    # En-tete EBML (Matroska / WebM).
+    "webm": ((0, bytes.fromhex("1a45dfa3")),),
 }
+
+#: Marques ISOBMFF d'une image HEIF/HEIC (octets 8 a 12). Un mp4 renomme en
+#: .heic porte une autre marque.
+HEIF_BRANDS = frozenset(
+    {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"hevm", b"hevs", b"mif1", b"msf1"}
+)
 
 #: Limites anti "bombe zip". Le serveur ne decompresse jamais une archive,
 #: mais l'analyste qui l'ouvre et l'antivirus, si : on refuse celles qui
@@ -118,9 +130,6 @@ def validate_upload(uploaded_file):
     if len(name) > 255:
         raise ValidationError("Nom de fichier trop long.")
 
-    if uploaded_file.size > config["MAX_ATTACHMENT_SIZE"]:
-        limit_mb = config["MAX_ATTACHMENT_SIZE"] // (1024 * 1024)
-        raise ValidationError(f"Fichier trop volumineux (maximum {limit_mb} Mo).")
     if uploaded_file.size == 0:
         raise ValidationError("Fichier vide.")
 
@@ -133,6 +142,16 @@ def validate_upload(uploaded_file):
         allowed = ", ".join(sorted(config["ATTACHMENT_ALLOWED_EXTENSIONS"]))
         raise ValidationError(
             f"Extension non autorisée : .{extension}. Extensions acceptees : {allowed}."
+        )
+    # Plafond selon le type : une video a le sien, plus eleve.
+    limit = (
+        config["MAX_VIDEO_ATTACHMENT_SIZE"]
+        if extension in config.get("ATTACHMENT_VIDEO_EXTENSIONS", ())
+        else config["MAX_ATTACHMENT_SIZE"]
+    )
+    if uploaded_file.size > limit:
+        raise ValidationError(
+            f"Fichier trop volumineux (maximum {limit // (1024 * 1024)} Mo)."
         )
 
     declared = (getattr(uploaded_file, "content_type", "") or "").lower()
@@ -159,6 +178,14 @@ def validate_upload(uploaded_file):
         raise ValidationError(
             f"La signature du fichier ne correspond pas à son extension .{extension}."
         )
+    if extension in ("heic", "heif") and head[8:12] not in HEIF_BRANDS:
+        raise ValidationError(
+            f"La signature du fichier ne correspond pas à son extension .{extension}."
+        )
+    if extension == "gpg" and not (
+        is_binary_encrypted(head) or head.startswith(b"-----BEGIN PGP MESSAGE")
+    ):
+        raise ValidationError("Un fichier .gpg doit être un message OpenPGP chiffré.")
     if extension == "zip":
         _check_zip_safety(uploaded_file)
 
@@ -216,7 +243,9 @@ def store_attachment(
     uploaded_file.seek(0)
     try:
         sample_text = (head + tail).decode("utf-8", errors="ignore")
-        encrypted = is_encrypted_blob(sample_text)
+        encrypted = is_encrypted_blob(sample_text) or (
+            metadata["extension"] in ("gpg", "pgp") and is_binary_encrypted(head)
+        )
     except Exception:  # pragma: no cover
         encrypted = False
 
