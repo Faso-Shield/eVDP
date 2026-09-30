@@ -454,6 +454,21 @@ def test_unfilled_default_tiers_are_not_shown_as_a_public_reward(
     assert "0 – 0" not in response.content.decode()
 
 
+def test_former_bounty_does_not_show_its_reward_tiers(client, bounty_program):
+    """Repasse en VDP, un programme garde sa politique desactivee pour
+    l'historique : ses montants ne doivent plus etre annonces."""
+    Program.objects.filter(pk=bounty_program.pk).update(
+        program_type=ProgramType.VDP, allows_anonymous_reports=True
+    )
+    bounty_program.refresh_from_db()
+    bounty_program.ensure_reward_policy_consistency()
+    assert bounty_program.reward_policy.is_active is False
+
+    html = client.get(reverse("programs:detail", args=[bounty_program.slug])).content.decode()
+    assert "2000000" not in html.replace(" ", "").replace(" ", "")
+    assert "750000" not in html.replace(" ", "").replace(" ", "")
+
+
 # ----------------------------------------------- statistiques et hall of fame
 def test_program_detail_shows_trust_stats(client, bounty_case):
     """`bounty_case` a franchi l'accuse de reception (workflow v2)."""

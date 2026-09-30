@@ -186,6 +186,10 @@ def program_detail(request, slug):
         if not can_manage_program(request.user, program):
             raise Http404("Programme introuvable.")
     reward_policy = getattr(program, "reward_policy", None)
+    if reward_policy is not None and not reward_policy.is_active:
+        # Programme repasse en VDP : sa politique est conservee (historique)
+        # mais desactivee, ses montants ne doivent plus etre annonces.
+        reward_policy = None
     return render(
         request,
         "programs/detail.html",
