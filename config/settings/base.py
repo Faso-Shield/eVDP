@@ -62,6 +62,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "django_filters",
     "drf_spectacular",
+    "drf_spectacular_sidecar",
     "django_celery_beat",
 ]
 
@@ -363,6 +364,11 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "COMPONENT_SPLIT_REQUEST": True,
+    # Swagger UI et Redoc servis depuis nos fichiers statiques : la CSP de
+    # production (script-src 'self') bloquait ceux du CDN, page blanche.
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
     # Plusieurs modeles exposent un champ "status" ou "severity" avec des
     # valeurs differentes : on nomme explicitement chaque enumeration pour
     # produire un schema OpenAPI lisible et stable.

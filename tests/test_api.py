@@ -1,6 +1,7 @@
 """Tests de l'API REST v1."""
 
 import json
+import re
 
 import pytest
 
@@ -610,3 +611,23 @@ def test_api_lets_a_manager_edit_its_own_program(client_for, manager_alpha, vdp_
     assert response.status_code == 200
     vdp_program.refresh_from_db()
     assert vdp_program.name == "VDP renomme"
+
+
+@pytest.mark.parametrize("url", ["/api/docs/", "/api/redoc/"])
+def test_api_docs_run_under_a_strict_csp(client, url):
+    """La CSP de production (script-src 'self') bloquait les scripts du CDN et
+    le script d'amorce inline de Swagger : la page restait blanche."""
+    html = client.get(url).content.decode()
+    scripts = re.findall(r"<script([^>]*)>", html)
+    assert scripts
+    for attrs in scripts:
+        src = re.search(r'src="([^"]+)"', attrs)
+        assert src, "script inline"
+        assert src.group(1).startswith("/"), src.group(1)
+
+
+def test_swagger_bootstrap_script_is_served_separately(client):
+    response = client.get("/api/docs/?script=")
+    assert response.status_code == 200
+    assert "javascript" in response["Content-Type"]
+    assert "SwaggerUIBundle" in response.content.decode()

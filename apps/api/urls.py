@@ -4,7 +4,7 @@ from django.urls import include, path
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
-    SpectacularSwaggerView,
+    SpectacularSwaggerSplitView,
 )
 from rest_framework.routers import DefaultRouter
 
@@ -34,7 +34,9 @@ urlpatterns = [
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         "docs/",
-        SpectacularSwaggerView.as_view(url_name="api:schema"),
+        # Variante "split" : le script d'amorce est servi a part au lieu
+        # d'etre inline, ce que script-src 'self' interdit.
+        SpectacularSwaggerSplitView.as_view(url_name="api:schema"),
         name="swagger",
     ),
     path(
