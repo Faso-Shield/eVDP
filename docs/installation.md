@@ -43,13 +43,14 @@ Renseignez au minimum dans `.env` :
 | Variable | Rôle |
 |----------|------|
 | `SECRET_KEY` | Clé de signature Django — **obligatoire**, ≥ 50 caractères |
+| `FIELD_ENCRYPTION_KEY` | Clé Fernet des données de versement chiffrées — **obligatoire** (commande dans `.env.example`) |
 | `POSTGRES_PASSWORD` | Mot de passe PostgreSQL — **obligatoire** |
 | `MINIO_ROOT_PASSWORD` | Mot de passe MinIO — **obligatoire** |
 | `MINIO_SECRET_KEY` | Identique à `MINIO_ROOT_PASSWORD` |
 | `ALLOWED_HOSTS` | Domaines servis (ex. `vdp.exemple.bf`) |
 | `CSRF_TRUSTED_ORIGINS` | Origines complètes (ex. `https://vdp.exemple.bf`) |
 
-> `docker compose` **refuse de démarrer** si `SECRET_KEY`,
+> `docker compose` **refuse de démarrer** si `SECRET_KEY`, `FIELD_ENCRYPTION_KEY`,
 > `POSTGRES_PASSWORD` ou `MINIO_ROOT_PASSWORD` sont absents : c'est
 > volontaire, aucune valeur par défaut de production n'existe.
 

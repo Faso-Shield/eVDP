@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
 
+from apps.core.fields import EncryptedCharField, EncryptedEmailField, EncryptedTextField
 from apps.core.models import BaseModel
 
 
@@ -159,6 +160,8 @@ class ReputationEvent(BaseModel):
 # interne pour executer un virement (voir apps.bounty.services.record_payment
 # et docs/bug-bounty.md). Elles sont strictement en libre-service : seul le
 # titulaire du compte peut les consulter ou les modifier.
+# Les donnees d'identite et les coordonnees de paiement sont chiffrees au repos
+# (apps.core.fields) : elles ne se filtrent ni ne se recherchent en base.
 
 
 class IdDocumentType(models.TextChoices):
@@ -184,7 +187,7 @@ class PayoutProfile(BaseModel):
         on_delete=models.CASCADE,
         related_name="payout_profile",
     )
-    legal_full_name = models.CharField(
+    legal_full_name = EncryptedCharField(
         max_length=150,
         blank=True,
         help_text="Nom complet tel qu'il figure sur votre piece d'identite.",
@@ -192,13 +195,13 @@ class PayoutProfile(BaseModel):
     id_document_type = models.CharField(
         max_length=16, choices=IdDocumentType.choices, blank=True
     )
-    id_document_number = models.CharField(max_length=60, blank=True)
-    contact_phone = models.CharField(
+    id_document_number = EncryptedCharField(max_length=60, blank=True)
+    contact_phone = EncryptedCharField(
         max_length=32,
         blank=True,
         help_text="Numero utilisable pour vous joindre au sujet d'un versement.",
     )
-    address = models.TextField(blank=True)
+    address = EncryptedTextField(blank=True)
     country = models.CharField(max_length=80, default="Burkina Faso")
     accepted_terms = models.BooleanField(
         default=False,
@@ -214,7 +217,7 @@ class PayoutProfile(BaseModel):
         upload_to=payout_document_upload_path, max_length=300, blank=True
     )
     id_document_storage_name = models.CharField(max_length=80, blank=True, editable=False)
-    id_document_original_filename = models.CharField(max_length=255, blank=True)
+    id_document_original_filename = EncryptedCharField(max_length=255, blank=True)
     id_document_content_type = models.CharField(max_length=120, blank=True)
     id_document_size = models.PositiveBigIntegerField(default=0, editable=False)
     id_document_sha256 = models.CharField(max_length=64, blank=True, editable=False)
@@ -275,8 +278,8 @@ class PayoutMethod(BaseModel):
 
     # -- Virement bancaire ----------------------------------------------------
     bank_name = models.CharField(max_length=150, blank=True)
-    account_holder_name = models.CharField(max_length=150, blank=True)
-    account_number = models.CharField(
+    account_holder_name = EncryptedCharField(max_length=150, blank=True)
+    account_number = EncryptedCharField(
         max_length=64, blank=True, help_text="IBAN ou numero de compte."
     )
 
@@ -284,8 +287,8 @@ class PayoutMethod(BaseModel):
     mobile_operator = models.CharField(
         max_length=16, choices=MobileMoneyOperator.choices, blank=True
     )
-    mobile_number = models.CharField(max_length=32, blank=True)
-    mobile_holder_name = models.CharField(max_length=150, blank=True)
+    mobile_number = EncryptedCharField(max_length=32, blank=True)
+    mobile_holder_name = EncryptedCharField(max_length=150, blank=True)
 
     # -- Cryptomonnaie ------------------------------------------------------
     crypto_currency = models.CharField(max_length=16, blank=True, help_text="BTC, ETH, USDT…")
@@ -295,14 +298,14 @@ class PayoutMethod(BaseModel):
         help_text="Reseau/chaine (ex. Bitcoin, Ethereum ERC-20, Tron TRC-20). "
         "Un envoi sur le mauvais reseau est irrecuperable.",
     )
-    crypto_wallet_address = models.CharField(max_length=128, blank=True)
+    crypto_wallet_address = EncryptedCharField(max_length=128, blank=True)
 
     # -- PayPal ---------------------------------------------------------------
-    paypal_email = models.EmailField(blank=True)
+    paypal_email = EncryptedEmailField(max_length=254, blank=True)
 
     # -- Autre ------------------------------------------------------------------
     other_label = models.CharField(max_length=120, blank=True)
-    other_reference = models.CharField(max_length=120, blank=True)
+    other_reference = EncryptedCharField(max_length=120, blank=True)
 
     class Meta:
         db_table = "payout_methods"

@@ -238,6 +238,7 @@ jobs:
           docker run --rm --network evdp-ci \
             -e DJANGO_SETTINGS_MODULE=config.settings.prod \
             -e SECRET_KEY=ci-secret-key \
+            -e FIELD_ENCRYPTION_KEY=Y2ktY2xlLWZlcm5ldC1ub24tdXRpbGlzZWUtZW4tcHI= \
             -e ALLOWED_HOSTS=localhost \
             -e POSTGRES_HOST=evdp-db -e POSTGRES_PASSWORD=ci \
             -e REDIS_URL=redis://localhost:6379/0 \
@@ -249,6 +250,7 @@ jobs:
           docker run --rm --network evdp-ci \
             -e DJANGO_SETTINGS_MODULE=config.settings.prod \
             -e SECRET_KEY=ci-secret-key \
+            -e FIELD_ENCRYPTION_KEY=Y2ktY2xlLWZlcm5ldC1ub24tdXRpbGlzZWUtZW4tcHI= \
             -e ALLOWED_HOSTS=localhost \
             -e POSTGRES_HOST=evdp-db -e POSTGRES_PASSWORD=ci \
             -e REDIS_URL=redis://localhost:6379/0 \

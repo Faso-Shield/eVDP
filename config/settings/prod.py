@@ -1,5 +1,8 @@
 """Reglages de production eVDP (durcis)."""
 
+from cryptography.fernet import Fernet
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F401,F403
 from .base import env
 
@@ -9,6 +12,19 @@ DEBUG = False
 SECRET_KEY = env("SECRET_KEY")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+
+# Aucune cle derivee en production : elle doit etre generee et sauvegardee a
+# part (voir docs/deployment.md). Perdue, les donnees de versement le sont aussi.
+FIELD_ENCRYPTION_KEYS = env.list("FIELD_ENCRYPTION_KEY")
+for _key in FIELD_ENCRYPTION_KEYS:
+    try:
+        Fernet(_key)
+    except ValueError as _exc:
+        raise ImproperlyConfigured(
+            "FIELD_ENCRYPTION_KEY invalide : generez-la avec "
+            '`python -c "from cryptography.fernet import Fernet; '
+            'print(Fernet.generate_key().decode())"`.'
+        ) from _exc
 
 # TLS termine par Nginx : on fait confiance a l'en-tete transmis par le proxy.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

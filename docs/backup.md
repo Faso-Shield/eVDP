@@ -13,6 +13,7 @@
 | PostgreSQL | Dossiers, rapports, messages, audit, comptes | **Critique** |
 | MinIO | Pièces jointes, preuves de concept | **Critique** |
 | `.env` | Secrets | **Critique** — hors sauvegarde automatique |
+| `FIELD_ENCRYPTION_KEY` | Clé des données de versement chiffrées en base | **Critique** — sans elle, un dump restauré est illisible |
 | Volumes Redis | Cache et file d'attente | Non critique (reconstructible) |
 
 ---
@@ -86,6 +87,13 @@ gpg --encrypt --recipient sauvegarde@anssi.bf \
 
 shred -u backups/evdp-db-20260905-020000.sql.gz   # supprimer le clair
 ```
+
+Les données de versement des chercheurs (identité, IBAN, mobile money,
+crypto, PayPal) sont en outre chiffrées dans la base elle-même avec
+`FIELD_ENCRYPTION_KEY`. Conservez cette clé à part, dans le coffre des
+secrets : un dump restauré sans elle garde ces champs illisibles. Pour
+changer de clé, placez la nouvelle en tête (`nouvelle,ancienne`), lancez
+`python manage.py rechiffrer_champs`, puis retirez l'ancienne.
 
 Déchiffrement :
 

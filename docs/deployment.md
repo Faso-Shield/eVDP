@@ -58,6 +58,7 @@ chmod 600 .env
 ```dotenv
 DJANGO_SETTINGS_MODULE=config.settings.prod
 SECRET_KEY=<64 caractères générés aléatoirement>
+FIELD_ENCRYPTION_KEY=<clé Fernet, voir .env.example ; à sauvegarder hors de la base>
 DEBUG=False
 ALLOWED_HOSTS=vdp.exemple.bf
 CSRF_TRUSTED_ORIGINS=https://vdp.exemple.bf
@@ -362,6 +363,7 @@ scrape_configs:
 ## 12. Checklist de mise en production
 
 - [ ] `SECRET_KEY` unique, généré aléatoirement, jamais commité
+- [ ] `FIELD_ENCRYPTION_KEY` générée et sauvegardée hors de la base
 - [ ] `DEBUG=False`
 - [ ] `ALLOWED_HOSTS` limité aux domaines réels
 - [ ] `CSRF_TRUSTED_ORIGINS` en `https://`

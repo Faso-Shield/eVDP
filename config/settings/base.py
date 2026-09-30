@@ -7,6 +7,8 @@ Principes appliques :
   - Securite par defaut : en-tetes, cookies, hachage Argon2, uploads bornes.
 """
 
+import base64
+import hashlib
 from pathlib import Path
 
 import environ
@@ -29,6 +31,16 @@ if _env_file.exists():
     env.read_env(str(_env_file))
 
 SECRET_KEY = env("SECRET_KEY", default="dev-only-insecure-key-change-me")
+
+# Cles Fernet des champs chiffres au repos (apps.core.fields), separees par des
+# virgules : la premiere chiffre, toutes dechiffrent (rotation). La production
+# l'exige (config/settings/prod.py) ; ailleurs, a defaut, une cle est derivee
+# de SECRET_KEY pour que le developpement et les tests fonctionnent tels quels.
+FIELD_ENCRYPTION_KEYS = env.list("FIELD_ENCRYPTION_KEY", default=[]) or [
+    base64.urlsafe_b64encode(
+        hashlib.sha256(f"evdp-fields:{SECRET_KEY}".encode()).digest()
+    ).decode()
+]
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")

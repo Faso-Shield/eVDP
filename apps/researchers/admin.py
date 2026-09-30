@@ -53,7 +53,8 @@ class PayoutMethodInline(admin.TabularInline):
 @admin.register(PayoutProfile)
 class PayoutProfileAdmin(admin.ModelAdmin):
     list_display = ("user", "legal_full_name", "country", "is_complete")
-    search_fields = ("user__email", "legal_full_name")
+    # legal_full_name est chiffre : il ne se recherche pas en base.
+    search_fields = ("user__email",)
     readonly_fields = ("created_at", "updated_at")
     inlines = [PayoutMethodInline]
 
