@@ -1,5 +1,8 @@
 """Tests des pieces jointes : validation, isolation, tracabilite."""
 
+import io
+import zipfile
+
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -263,3 +266,67 @@ def test_orphan_attachment_is_visible_to_nobody(coordinator):
     assert not orphan.is_visible_to(coordinator)
     assert not orphan.is_downloadable_by(coordinator)
 
+
+# ------------------------------------------------------------ archives zip
+def _zip(files, compression=zipfile.ZIP_DEFLATED):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression) as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def test_ordinary_zip_is_accepted():
+    content = _zip({"poc.py.txt": b"print('poc')\n", "capture.log": b"GET / HTTP/1.1\n"})
+    assert validate_upload(upload("preuves.zip", content))["extension"] == "zip"
+
+
+def test_zip_bomb_is_rejected():
+    """20 Mo de zeros tiennent en quelques Ko : taux de compression anormal."""
+    content = _zip({"zeros.bin": b"\0" * (20 * 1024 * 1024)})
+    assert len(content) < 100 * 1024
+    with pytest.raises(ValidationError, match="bombe zip"):
+        validate_upload(upload("bombe.zip", content))
+
+
+def test_zip_too_large_once_decompressed_is_rejected(monkeypatch):
+    from apps.attachments import services
+
+    monkeypatch.setattr(services, "MAX_ZIP_UNCOMPRESSED_SIZE", 1024)
+    content = _zip({"a.txt": b"x" * 2048}, compression=zipfile.ZIP_STORED)
+    with pytest.raises(ValidationError, match="décompressée"):
+        validate_upload(upload("gros.zip", content))
+
+
+def test_zip_with_too_many_entries_is_rejected(monkeypatch):
+    from apps.attachments import services
+
+    monkeypatch.setattr(services, "MAX_ZIP_ENTRIES", 3)
+    content = _zip({f"f{i}.txt": b"x" for i in range(4)})
+    with pytest.raises(ValidationError, match="plus de 3 fichiers"):
+        validate_upload(upload("nombreux.zip", content))
+
+
+def test_nested_archive_is_rejected():
+    """Une bombe imbriquee (42.zip) garde un taux normal a chaque niveau."""
+    content = _zip({"niveau2.zip": _zip({"a.txt": b"x"}), "lisez-moi.txt": b"y"})
+    with pytest.raises(ValidationError, match="d'autres archives"):
+        validate_upload(upload("imbrique.zip", content))
+
+
+def test_corrupted_zip_is_rejected():
+    with pytest.raises(ValidationError, match="invalide ou corrompue"):
+        validate_upload(upload("casse.zip", b"PK\x03\x04" + b"\0" * 64))
+
+
+def test_webp_signature_is_checked():
+    webp = b"RIFF\x24\x00\x00\x00WEBPVP8 " + b"\0" * 32
+    assert validate_upload(upload("capture.webp", webp))["extension"] == "webp"
+    wav = b"RIFF\x24\x00\x00\x00WAVEfmt " + b"\0" * 32
+    with pytest.raises(ValidationError, match="signature"):
+        validate_upload(upload("faux.webp", wav))
+
+
+def test_pcapng_capture_is_accepted():
+    pcapng = b"\x0a\x0d\x0d\x0a\x1c\x00\x00\x00\x4d\x3c\x2b\x1a" + b"\0" * 16
+    assert validate_upload(upload("trafic.pcap", pcapng))["extension"] == "pcap"

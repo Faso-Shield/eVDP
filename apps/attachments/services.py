@@ -1,6 +1,7 @@
 """Validation et enregistrement securises des pieces jointes."""
 
 import mimetypes
+import zipfile
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -34,12 +35,63 @@ ALLOWED_MAGIC = {
         b"\xa1\xb2\xc3\xd4",
         b"\x4d\x3c\xb2\xa1",
         b"\xa1\xb2\x3c\x4d",
+        b"\x0a\x0d\x0d\x0a",  # pcapng, format par defaut de Wireshark
     ),
 }
+
+#: Signatures verifiees au-dela du debut du fichier : (decalage, octets).
+#: Le webp commence par "RIFF", commun a d'autres formats (wav, avi) ; seule
+#: la marque "WEBP" en octet 8 l'identifie.
+ALLOWED_MAGIC_AT = {
+    "webp": ((0, b"RIFF"), (8, b"WEBP")),
+}
+
+#: Limites anti "bombe zip". Le serveur ne decompresse jamais une archive,
+#: mais l'analyste qui l'ouvre et l'antivirus, si : on refuse celles qui
+#: exploseraient a l'ouverture.
+MAX_ZIP_ENTRIES = 2000
+MAX_ZIP_UNCOMPRESSED_SIZE = 200 * 1024 * 1024
+MAX_ZIP_COMPRESSION_RATIO = 100
+NESTED_ARCHIVE_EXTENSIONS = ("zip", "7z", "rar", "gz", "tgz", "bz2", "xz", "tar", "jar")
 
 
 def _extension(filename):
     return filename.rsplit(".", 1)[1].lower() if "." in filename else ""
+
+
+def _check_zip_safety(uploaded_file):
+    """Refuse une archive trop peuplee, trop grosse une fois decompressee, au
+    taux de compression anormal, ou contenant d'autres archives.
+
+    Les tailles lues sont celles que declare l'archive ; une bombe imbriquee
+    ("42.zip") garde un taux normal a chaque niveau, d'ou le refus des
+    archives dans l'archive.
+    """
+    uploaded_file.seek(0)
+    try:
+        with zipfile.ZipFile(uploaded_file) as archive:
+            entries = archive.infolist()
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError) as exc:
+        raise ValidationError("Archive ZIP invalide ou corrompue.") from exc
+    finally:
+        uploaded_file.seek(0)
+
+    if len(entries) > MAX_ZIP_ENTRIES:
+        raise ValidationError(f"Archive refusée : plus de {MAX_ZIP_ENTRIES} fichiers.")
+    uncompressed = sum(entry.file_size for entry in entries)
+    if uncompressed > MAX_ZIP_UNCOMPRESSED_SIZE:
+        limit_mb = MAX_ZIP_UNCOMPRESSED_SIZE // (1024 * 1024)
+        raise ValidationError(
+            f"Archive refusée : plus de {limit_mb} Mo une fois décompressée."
+        )
+    compressed = sum(entry.compress_size for entry in entries) or 1
+    if uncompressed / compressed > MAX_ZIP_COMPRESSION_RATIO:
+        raise ValidationError("Archive refusée : taux de compression anormal (bombe zip).")
+    if any(_extension(entry.filename) in NESTED_ARCHIVE_EXTENSIONS for entry in entries):
+        raise ValidationError(
+            "Archive refusée : elle contient d'autres archives. "
+            "Joignez les fichiers directement ou dans une seule archive."
+        )
 
 
 def validate_upload(uploaded_file):
@@ -76,7 +128,7 @@ def validate_upload(uploaded_file):
     if declared in ("application/x-msdownload", "application/x-executable"):
         raise ValidationError("Type de contenu exécutable refusé.")
 
-    head = uploaded_file.read(8)
+    head = uploaded_file.read(16)
     uploaded_file.seek(0)
     for magic in DANGEROUS_MAGIC:
         if head.startswith(magic):
@@ -88,10 +140,15 @@ def validate_upload(uploaded_file):
     # anodine. Les formats texte n'ont pas de signature fiable et ne sont
     # donc pas listes ici.
     expected_magic = ALLOWED_MAGIC.get(extension)
-    if expected_magic and not any(head.startswith(magic) for magic in expected_magic):
+    expected_at = ALLOWED_MAGIC_AT.get(extension, ())
+    if (expected_magic and not any(head.startswith(magic) for magic in expected_magic)) or any(
+        head[offset : offset + len(magic)] != magic for offset, magic in expected_at
+    ):
         raise ValidationError(
             f"La signature du fichier ne correspond pas à son extension .{extension}."
         )
+    if extension == "zip":
+        _check_zip_safety(uploaded_file)
 
     return {
         "extension": extension,
