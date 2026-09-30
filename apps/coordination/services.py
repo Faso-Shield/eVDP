@@ -5,8 +5,9 @@ qui garantissent la coherence workflow + audit + notifications + SLA.
 """
 
 import secrets
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -49,6 +50,7 @@ from .workflow import (
     available_actions,
     check_transition,
     claim_holder,
+    claim_pools,
     current_actions,
     current_owner_ids,
     get_action,
@@ -759,6 +761,59 @@ def owners_of(case, action):
     return step_owners(case, action)
 
 
+#: Roles dont les etapes sont confiees automatiquement au moins charge : le
+#: triage (etapes 1-2) et l'analyse (etapes 3-9). Coordinateur, auditeur et
+#: comptes d'organisation gardent la prise en charge manuelle.
+AUTO_CLAIM_ROLES = frozenset({Role.TRIAGER, Role.CSIRT_ANALYST})
+
+
+def _load(user):
+    """(dossiers en cours pris en charge, date de la derniere prise en charge)."""
+    held = CaseAssignment.objects.filter(user=user, is_active=True).exclude(
+        case__status__in=TERMINAL_STATES
+    )
+    last = CaseAssignment.objects.filter(user=user).order_by("-created_at").first()
+    # A charge egale, le dossier va a qui attend depuis le plus longtemps.
+    return (held.count(), last.created_at if last else datetime.min.replace(tzinfo=UTC))
+
+
+@transaction.atomic
+def auto_claim(case):
+    """Confie chaque etape en cours restee libre au responsable le moins charge.
+
+    Applique a la soumission et a chaque etape franchie, avant l'avis aux
+    responsables : seul l'elu est alors avise. La prise en charge vaut pour
+    les etapes suivantes du meme role, comme une prise en charge manuelle ;
+    transfert et prise en charge restent possibles ensuite.
+    """
+    if not settings.EVDP.get("AUTO_CLAIM", True):
+        return []
+    chosen = []
+    for action, pool in claim_pools(case):
+        if claim_holder(case, action) is not None:
+            continue
+        candidates = [user for user in pool if user.role in AUTO_CLAIM_ROLES]
+        if not candidates:
+            continue
+        user = min(candidates, key=_load)
+        _record_claim(case, user, None, "Prise en charge automatique", None, pool)
+        add_timeline_event(
+            case,
+            TimelineEventType.ASSIGNED,
+            f"Dossier confié à {user} (charge la plus faible)",
+        )
+        log_action(
+            AuditAction.CASE_ASSIGNED,
+            actor=None,
+            obj=case,
+            claimed_by=str(user),
+            automatic=True,
+            steps=[action.step or action.key],
+        )
+        chosen.append(user)
+    return chosen
+
+
 def notify_step_owners(case, actor=None):
     """Notification et email au responsable de chaque etape en cours.
 
@@ -786,6 +841,7 @@ def notify_step_owners(case, actor=None):
 
 
 def _notify_next_owner(case, actor):
+    auto_claim(case)
     notify_step_owners(case, actor)
 
 

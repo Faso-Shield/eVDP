@@ -38,3 +38,7 @@ STORAGES = {
 MEDIA_ROOT = BASE_DIR / ".pytest-media"  # noqa: F405
 
 LOGGING["root"]["level"] = "CRITICAL"  # noqa: F405
+
+# Les tests prennent les dossiers en charge explicitement (conftest.claim) ;
+# l'attribution automatique a ses propres tests, qui l'activent.
+EVDP = {**EVDP, "AUTO_CLAIM": False}  # noqa: F405

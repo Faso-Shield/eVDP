@@ -473,6 +473,10 @@ EVDP = {
     "MAX_ATTACHMENTS_PER_CASE": env.int("EVDP_MAX_ATTACHMENTS_PER_CASE", default=20),
     # Delai apres lequel une prise en charge restee sans action est rappelee.
     "CLAIM_REMINDER_HOURS": env.int("EVDP_CLAIM_REMINDER_HOURS", default=48),
+    # Triage et analyse confies d'office au responsable le moins charge
+    # (apps.coordination.services.auto_claim). False : prise en charge
+    # manuelle uniquement.
+    "AUTO_CLAIM": env.bool("EVDP_AUTO_CLAIM", default=True),
     "MAX_PAYOUT_METHODS": env.int("EVDP_MAX_PAYOUT_METHODS", default=5),
     "MAX_ID_DOCUMENT_SIZE": env.int("EVDP_MAX_ID_DOCUMENT_SIZE", default=10 * 1024 * 1024),
     "CAPTCHA_ENABLED": env("EVDP_CAPTCHA_ENABLED"),

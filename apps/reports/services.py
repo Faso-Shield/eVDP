@@ -220,10 +220,11 @@ def _notify_new_case(case, report):
     sur `case.tracking_token_raw` pour un affichage unique a l'ecran (voir
     apps.reports.views.submit).
     """
-    from apps.coordination.services import notify_step_owners
+    from apps.coordination.services import auto_claim, notify_step_owners
 
-    # Etape 1 : seuls les responsables (agents de triage) sont avises, dans
-    # la plateforme et par email -- pas toute l'equipe nationale.
+    # Etape 1 : le dossier est confie a l'agent de triage le moins charge,
+    # seul avise dans la plateforme et par email.
+    auto_claim(case)
     notify_step_owners(case)
 
     if report.reporter_id:

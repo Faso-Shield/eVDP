@@ -194,3 +194,77 @@ def test_migration_fixes_badges_already_stored(case_alpha, triager, analyst, coo
     assert _badge(case_alpha, triager) == ParticipantRole.TRIAGER
     assert _badge(case_alpha, analyst) == ParticipantRole.ANALYST
     assert _badge(case_alpha, coordinator) == ParticipantRole.COORDINATOR
+
+
+# ------------------------------------------------ attribution automatique
+@pytest.fixture
+def auto_claim_on(settings):
+    settings.EVDP = {**settings.EVDP, "AUTO_CLAIM": True}
+
+
+def _new_case(reporter, organization):
+    from .conftest import build_report, submit
+
+    return submit(build_report(reporter, organization))
+
+
+def test_new_case_goes_to_the_least_loaded_triager(
+    auto_claim_on, triager, researcher_a, researcher_b, organization, sla_policy
+):
+    busy = triager
+    free = make_user("triage-2@test.bf", Role.TRIAGER)
+    first = _new_case(researcher_a, organization)
+    assert claim_holder(first) is not None
+    # Le premier dossier occupe l'un des deux : le suivant va a l'autre.
+    loaded = claim_holder(first)
+    second = _new_case(researcher_b, organization)
+    assert claim_holder(second) == ({busy, free} - {loaded}).pop()
+
+    notified = set(
+        Notification.objects.filter(
+            case=second, kind=NotificationKind.ACTION_REQUIRED
+        ).values_list("recipient_id", flat=True)
+    )
+    assert notified == {claim_holder(second).pk}
+    assert second.participants.get(user=claim_holder(second)).participant_role == "TRIAGER"
+
+
+def test_equal_load_goes_to_whoever_waited_longest(
+    auto_claim_on, triager, researcher_a, researcher_b, organization, sla_policy
+):
+    from apps.coordination.models import CaseAssignment
+
+    other = make_user("triage-2@test.bf", Role.TRIAGER)
+    first = _new_case(researcher_a, organization)
+    # Dossier clos : la charge redevient egale, reste l'anciennete.
+    Case.objects.filter(pk=first.pk).update(status=CaseStatus.REJECTED)
+    last_served = claim_holder(first)
+    assert CaseAssignment.objects.filter(user=last_served).exists()
+    second = _new_case(researcher_b, organization)
+    assert claim_holder(second) == ({triager, other} - {last_served}).pop()
+
+
+def test_validated_case_goes_to_the_least_loaded_analyst(
+    auto_claim_on, settings, case_alpha, case_beta, analyst, coordinator
+):
+    from apps.coordination.models import CaseAssignment
+    from apps.coordination.services import auto_claim
+
+    settings.EVDP = {**settings.EVDP, "AUTO_CLAIM": False}
+    advance(case_alpha, CaseStatus.VALIDATED)
+    case_alpha.assignments.update(is_active=False)
+    free = make_user("analyste-2@test.bf", Role.CSIRT_ANALYST)
+    # `analyst` porte deja un dossier en cours.
+    CaseAssignment.objects.create(case=case_beta, user=analyst, is_active=True)
+
+    settings.EVDP = {**settings.EVDP, "AUTO_CLAIM": True}
+    assert auto_claim(case_alpha) == [free]
+    assert claim_holder(case_alpha) == free
+    assert coordinator.pk not in set(
+        case_alpha.assignments.filter(is_active=True).values_list("user_id", flat=True)
+    )
+
+
+def test_auto_claim_can_be_disabled(triager, researcher_a, organization, sla_policy):
+    case = _new_case(researcher_a, organization)
+    assert claim_holder(case) is None

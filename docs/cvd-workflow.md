@@ -80,6 +80,14 @@ Code de référence : `apps/coordination/workflow.py` (table des actions et
    l'étape 3 à l'étape 9) et ne gêne jamais les autres rôles. Elle est
    journalisée. Il n'existe plus d'assignation manuelle par un tiers.
 
+   **Attribution automatique** : les étapes du triage (agents de triage) et
+   de l'analyse (analystes) sont prises en charge d'office, à la soumission
+   puis à chaque étape franchie, par le membre du groupe qui porte le moins
+   de dossiers en cours ; à charge égale, par celui qui attend depuis le
+   plus longtemps. Lui seul est avisé. Le transfert reste possible. Le
+   coordinateur, l'auditeur et les comptes d'organisation gardent la prise
+   en charge manuelle. `EVDP_AUTO_CLAIM=False` désactive l'attribution.
+
    **La prise en charge est obligatoire** : aucun compte métier n'agit sur un
    dossier (bouton du workflow, qualification, message, pièce jointe, CVE,
    date de divulgation, advisory) sans l'avoir pris en charge. Le serveur le
