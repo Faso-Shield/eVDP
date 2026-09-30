@@ -47,8 +47,15 @@ from .models import TokenPurpose, UserToken
 SETUP_SESSION_KEY = "mfa_setup_candidate"
 
 
+def _login_par_compte(request):
+    """Limite indexee sur le compte vise : un essai de mots de passe reparti
+    sur de nombreuses IP echappe a la limite par IP."""
+    return (request.POST.get("username") or "").strip().lower() or "-"
+
+
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")
 @method_decorator(rate_limited("login"), name="dispatch")
+@method_decorator(rate_limited("login_account", key_func=_login_par_compte), name="dispatch")
 class EvdpLoginView(LoginView):
     template_name = "accounts/login.html"
     authentication_form = EmailAuthenticationForm
@@ -62,6 +69,7 @@ class EvdpLoginView(LoginView):
             user.last_login_ip = ip
             user.save(update_fields=["last_login_ip", "updated_at"])
         reset("login", ip or "-")
+        reset("login_account", _login_par_compte(self.request))
         return response
 
 

@@ -487,6 +487,9 @@ EVDP = {
     },
     "RATE_LIMITS": {
         "login": env("EVDP_RL_LOGIN", default="10/5m"),
+        # Meme regle indexee sur le compte vise : freine un essai de mots de
+        # passe reparti sur de nombreuses IP contre un seul compte.
+        "login_account": env("EVDP_RL_LOGIN_ACCOUNT", default="10/15m"),
         "register": env("EVDP_RL_REGISTER", default="5/1h"),
         "report": env("EVDP_RL_REPORT", default="10/1h"),
         "password_reset": env("EVDP_RL_PASSWORD_RESET", default="5/1h"),

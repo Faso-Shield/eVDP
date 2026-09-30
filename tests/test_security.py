@@ -273,3 +273,36 @@ def test_report_submission_is_rate_limited(client, settings, organization):
     for _ in range(2):
         client.post(url, payload)
     assert client.post(url, payload).status_code == 429
+
+
+def test_login_is_rate_limited_per_account_across_ip_addresses(client, researcher_a, settings):
+    """Changer d'IP a chaque essai ne contourne plus la limite."""
+    settings.EVDP = {
+        **settings.EVDP,
+        "RATE_LIMITS": {**settings.EVDP["RATE_LIMITS"], "login_account": "3/15m"},
+    }
+    url = reverse("accounts:login")
+    for i in range(3):
+        client.post(
+            url,
+            {"username": researcher_a.email.upper(), "password": "faux"},
+            REMOTE_ADDR=f"203.0.113.{i + 1}",
+        )
+    response = client.post(
+        url, {"username": researcher_a.email, "password": "faux"}, REMOTE_ADDR="203.0.113.99"
+    )
+    assert response.status_code == 429
+
+
+def test_successful_login_resets_the_counter(client, settings):
+    """reset() visait une fenetre inexistante pour une regle en minutes."""
+    from apps.core.ratelimit import hit, reset
+
+    settings.EVDP = {
+        **settings.EVDP,
+        "RATE_LIMITS": {**settings.EVDP["RATE_LIMITS"], "login": "2/5m"},
+    }
+    assert hit("login", "198.51.100.7", "2/5m")[0]
+    assert hit("login", "198.51.100.7", "2/5m")[0]
+    reset("login", "198.51.100.7")
+    assert hit("login", "198.51.100.7", "2/5m")[0]

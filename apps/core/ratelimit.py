@@ -62,11 +62,15 @@ def hit(scope, identifier, rate):
     return current <= limit, remaining_window
 
 
-def reset(scope, identifier):
-    """Remet le compteur a zero (par ex. apres une connexion reussie)."""
-    now = int(time.time())
-    for seconds in _UNITS.values():
-        safe_delete(_bucket_key(scope, identifier, now // seconds))
+def reset(scope, identifier, rate=None):
+    """Remet le compteur a zero (par ex. apres une connexion reussie).
+
+    La fenetre depend de la periode de la regle ("10/5m" : 300 s) : la
+    recalculer avec des unites fixes visait une cle qui n'existait pas.
+    """
+    effective = rate or settings.EVDP["RATE_LIMITS"].get(scope, "30/1m")
+    _, seconds = parse_rate(effective)
+    safe_delete(_bucket_key(scope, identifier, int(time.time()) // seconds))
 
 
 def rate_limited(scope, rate=None, key_func=None, methods=("POST",)):
