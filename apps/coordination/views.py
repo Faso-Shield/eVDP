@@ -40,7 +40,7 @@ from .services import (
     transfer_case,
     visible_messages,
 )
-from .visibility import case_view, has_content_access
+from .visibility import case_view, has_content_access, visible_attachments
 from .workflow import (
     ADMISSIBILITY_CHECKLIST,
     CLAIM_REQUIRED_MESSAGE,
@@ -318,7 +318,7 @@ def case_detail(request, case_id):
         "messages_list": visible_messages(case, user),
         "timeline": case.timeline.select_related("actor") if view["tracking"] else [],
         "attachments": (
-            case.attachments.select_related("uploaded_by")
+            visible_attachments(case, user).select_related("uploaded_by")
             if view["attachments_listed"]
             else []
         ),

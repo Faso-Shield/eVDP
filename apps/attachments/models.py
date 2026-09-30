@@ -116,17 +116,23 @@ class Attachment(BaseModel):
             return getattr(self.report, "case", None)
         return None
 
+    def _message_hidden_from(self, user):
+        """Jointe a un message, la piece suit le canal de ce message : voir le
+        dossier ne suffit pas a lire ce qui a ete joint a un echange interne."""
+        return bool(self.message_id) and not self.message.is_visible_to(user)
+
     def is_visible_to(self, user):
+        # Sans dossier de rattachement, aucune regle ne s'applique : refus.
         case = self.owning_case()
-        if case is None:
-            return bool(user and user.is_authenticated and user.sees_all_cases)
+        if case is None or self._message_hidden_from(user):
+            return False
         return case.is_visible_to(user)
 
     def is_downloadable_by(self, user):
         """Contenu du fichier : l'auditeur n'en voit que les metadonnees."""
         case = self.owning_case()
-        if case is None:
-            return self.is_visible_to(user)
+        if case is None or self._message_hidden_from(user):
+            return False
         from apps.coordination.visibility import can_download_attachment
 
         return can_download_attachment(case, user)

@@ -213,3 +213,53 @@ def test_infected_file_cannot_be_downloaded(client_for, case_alpha, researcher_a
 
     client = client_for(researcher_a)
     assert client.get(reverse("attachments:download", args=[attachment.id])).status_code == 404
+
+
+# ------------------------------------------------ pieces jointes de message
+def _internal_note_with_file(case, author):
+    from apps.coordination.constants import Confidentiality
+    from apps.coordination.models import CaseMessage
+
+    note = CaseMessage.objects.create(
+        case=case,
+        author=author,
+        body="Note d'analyse",
+        confidentiality=Confidentiality.INTERNAL,
+    )
+    return store_attachment(upload("note-interne.txt"), author, message=note)
+
+
+def test_file_of_an_internal_message_is_hidden_from_the_reporter(
+    client_for, case_alpha, triager, researcher_a
+):
+    """Voir le dossier ne suffit pas : la piece suit le canal de son message."""
+    from .conftest import claim
+
+    attachment = _internal_note_with_file(case_alpha, claim(case_alpha, triager))
+    assert attachment.case_id == case_alpha.pk
+
+    reporter = client_for(researcher_a)
+    assert (
+        reporter.get(reverse("attachments:download", args=[attachment.id])).status_code == 404
+    )
+    page = reporter.get(reverse("coordination:case_detail", args=[case_alpha.case_id]))
+    assert page.status_code == 200
+    assert "note-interne.txt" not in page.content.decode()
+    listing = reporter.get(f"/api/v1/reports/{case_alpha.case_id}/attachments/")
+    assert listing.status_code == 200
+    assert "note-interne.txt" not in {a["original_filename"] for a in listing.json()}
+
+    assert attachment.is_visible_to(triager)
+    assert attachment.is_downloadable_by(triager)
+    assert not attachment.is_visible_to(researcher_a)
+
+
+def test_orphan_attachment_is_visible_to_nobody(coordinator):
+    from apps.attachments.models import Attachment
+
+    orphan = Attachment.objects.create(
+        original_filename="orphelin.txt", file=upload("orphelin.txt"), sha256="0" * 64
+    )
+    assert not orphan.is_visible_to(coordinator)
+    assert not orphan.is_downloadable_by(coordinator)
+

@@ -249,3 +249,13 @@ def case_view(case, user):
 
 def can_download_attachment(case, user):
     return level(case, user, "report") == READ
+
+
+def visible_attachments(case, user):
+    """Pieces du dossier que `user` peut voir listees : celles jointes a un
+    message n'y figurent que si le canal de ce message lui est lisible."""
+    from django.db.models import Q
+
+    return case.attachments.filter(
+        Q(message__isnull=True) | Q(message__confidentiality__in=readable_channels(case, user))
+    )
