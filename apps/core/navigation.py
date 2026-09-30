@@ -110,6 +110,8 @@ def sidebar_sections(user, claims_count=0):
     administration = []
     if peut(C.MANAGE_ORGANIZATION) or peut(C.MANAGE_ALL_ORGANIZATIONS):
         administration.append(_lien("Organisations", "organizations:manage_list"))
+    if peut(C.MANAGE_USERS):
+        administration.append(_lien("Comptes", "accounts:user_manage_list"))
     if peut(C.VIEW_AUDIT_LOG):
         administration.append(_lien("Journal d'audit", "audit:list"))
     if user.is_staff:

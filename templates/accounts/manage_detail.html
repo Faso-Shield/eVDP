@@ -1,0 +1,67 @@
+{% extends "base_dashboard.html" %}
+{% block title %}{{ target.email }}{% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">{{ target.email }}</h1>
+  <a class="btn btn-sm btn-outline" href="{% url 'accounts:user_manage_list' %}">Tous les comptes</a>
+</div>
+
+<div class="split-layout">
+  <div class="card">
+    <div class="card-header"><h2>Rôle et état</h2></div>
+    <div class="card-body">
+      <dl class="dl-inline">
+        <dt>Nom</dt><dd>{{ target.full_name|default:"—" }}</dd>
+        <dt>Créé le</dt><dd>{{ target.created_at|date:"d/m/Y" }}</dd>
+        <dt>Dernière connexion</dt><dd>{{ target.last_login|date:"d/m/Y H:i"|default:"—" }}</dd>
+      </dl>
+      {% if not user.is_read_only %}
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+        <button class="btn btn-accent" type="submit">Enregistrer</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    {% if is_business %}
+    <div class="card">
+      <div class="card-header"><h2>Accès</h2></div>
+      <div class="card-body">
+        <p class="small muted">Second facteur :
+          {% if target.mfa_enabled %}enregistré le {{ target.mfa_confirmed_at|date:"d/m/Y" }}{% else %}à enregistrer à la prochaine connexion{% endif %}.
+        </p>
+        {% if not user.is_read_only %}
+        <div class="btn-row">
+          <form method="post" action="{% url 'accounts:user_manage_resend_link' target.pk %}">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline" type="submit">Envoyer un lien de mot de passe</button>
+          </form>
+          {% if target.mfa_enabled %}
+          <form method="post" action="{% url 'accounts:user_manage_reset_mfa' target.pk %}">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-danger" type="submit">Réinitialiser le second facteur</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header"><h2>Organisations</h2></div>
+      <div class="card-body small">
+        {% for membership in memberships %}
+          <div class="flex-between" style="padding:.25rem 0;border-bottom:1px solid var(--border)">
+            <span>{{ membership.organization.name }}</span>
+            <span class="pill">{{ membership.get_membership_role_display }}{% if not membership.is_active %} · inactif{% endif %}</span>
+          </div>
+        {% empty %}<p class="muted">Aucun rattachement.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

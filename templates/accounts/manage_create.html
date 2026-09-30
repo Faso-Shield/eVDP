@@ -1,0 +1,20 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Créer un compte{% endblock %}
+{% block dashboard_content %}
+<h1>Créer un compte métier</h1>
+<div class="card" style="max-width:640px"><div class="card-body">
+  <p class="small muted">
+    Le compte est créé sans mot de passe : la personne reçoit par email un lien
+    pour le choisir, puis enregistre son second facteur à la première connexion.
+    Les comptes signaleurs s'inscrivent eux-mêmes.
+  </p>
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+    <div class="btn-row">
+      <button class="btn btn-accent" type="submit">Créer et envoyer le lien</button>
+      <a class="btn btn-outline" href="{% url 'accounts:user_manage_list' %}">Annuler</a>
+    </div>
+  </form>
+</div></div>
+{% endblock %}

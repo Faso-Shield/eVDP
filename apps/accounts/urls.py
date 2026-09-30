@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, views_manage
 
 app_name = "accounts"
 
@@ -40,5 +40,19 @@ urlpatterns = [
         "password-reset/complete/",
         views.EvdpPasswordResetCompleteView.as_view(),
         name="password_reset_complete",
+    ),
+    # Gestion des comptes (MANAGE_USERS), hors administration Django.
+    path("comptes/", views_manage.user_manage_list, name="user_manage_list"),
+    path("comptes/nouveau/", views_manage.user_manage_create, name="user_manage_create"),
+    path("comptes/<uuid:pk>/", views_manage.user_manage_detail, name="user_manage_detail"),
+    path(
+        "comptes/<uuid:pk>/lien/",
+        views_manage.user_manage_resend_link,
+        name="user_manage_resend_link",
+    ),
+    path(
+        "comptes/<uuid:pk>/mfa/",
+        views_manage.user_manage_reset_mfa,
+        name="user_manage_reset_mfa",
     ),
 ]
