@@ -11,7 +11,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from apps.accounts.roles import Capability
+from apps.accounts.roles import Capability, Role
 from apps.audit.models import AuditAction, AuditResult
 from apps.audit.services import log_action
 from apps.core.utils import hash_text
@@ -137,6 +137,17 @@ def add_participant(case, user, role=ParticipantRole.OBSERVER, added_by=None):
         participant.participant_role = role
         participant.save(update_fields=["is_active", "participant_role", "updated_at"])
     return participant
+
+
+def participant_role_for(user):
+    """Badge d'un compte metier qui prend un dossier en charge : son role reel."""
+    return {
+        Role.TRIAGER: ParticipantRole.TRIAGER,
+        Role.CSIRT_ANALYST: ParticipantRole.ANALYST,
+        Role.NATIONAL_COORDINATOR: ParticipantRole.COORDINATOR,
+        Role.DSI_ADMIN: ParticipantRole.DSI,
+        Role.ORGANIZATION_MANAGER: ParticipantRole.ORGANIZATION,
+    }.get(user.role, ParticipantRole.OBSERVER)
 
 
 def ensure_default_participants(case):
@@ -797,7 +808,7 @@ def _record_claim(case, user, actor, note, request, pool):
     CaseAssignment.objects.create(case=case, user=user, assigned_by=actor, note=note[:255])
     case.assignee = user
     case.save(update_fields=["assignee", "updated_at"])
-    add_participant(case, user, ParticipantRole.ANALYST, added_by=actor)
+    add_participant(case, user, participant_role_for(user), added_by=actor)
 
 
 @transaction.atomic

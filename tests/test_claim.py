@@ -157,3 +157,40 @@ def test_claim_via_get_is_rejected(client_for, analyst, analysed_case):
         reverse("coordination:claim", args=[analysed_case.case_id])
     )
     assert response.status_code == 405
+
+
+# ------------------------------------------------ badge de participant
+def _badge(case, user):
+    return case.participants.get(user=user).participant_role
+
+
+def test_claim_badge_reflects_the_real_role(case_alpha, triager, analyst):
+    """Toute prise en charge affichait « Analyste CSIRT »."""
+    from apps.coordination.constants import ParticipantRole
+
+    claim_case(case_alpha, triager)
+    assert _badge(case_alpha, triager) == ParticipantRole.TRIAGER
+
+    advance(case_alpha, CaseStatus.VALIDATED)
+    claim_case(case_alpha, analyst)
+    assert _badge(case_alpha, analyst) == ParticipantRole.ANALYST
+
+
+def test_migration_fixes_badges_already_stored(case_alpha, triager, analyst, coordinator):
+    import importlib
+
+    from django.apps import apps
+
+    from apps.coordination.constants import ParticipantRole
+    from apps.coordination.services import add_participant
+
+    for user in (triager, analyst, coordinator):
+        add_participant(case_alpha, user, ParticipantRole.ANALYST)
+    migration = importlib.import_module(
+        "apps.coordination.migrations.0009_role_participant_agent_de_triage"
+    )
+    migration.corriger_badges(apps, None)
+
+    assert _badge(case_alpha, triager) == ParticipantRole.TRIAGER
+    assert _badge(case_alpha, analyst) == ParticipantRole.ANALYST
+    assert _badge(case_alpha, coordinator) == ParticipantRole.COORDINATOR

@@ -72,6 +72,7 @@ class SLAState(models.TextChoices):
 
 class ParticipantRole(models.TextChoices):
     REPORTER = "REPORTER", "Déclarant"
+    TRIAGER = "TRIAGER", "Agent de triage"
     ANALYST = "ANALYST", "Analyste CSIRT"
     COORDINATOR = "COORDINATOR", "Coordinateur"
     ORGANIZATION = "ORGANIZATION", "Organisation affectée"
