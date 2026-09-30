@@ -1,5 +1,7 @@
 """Vue publique de signalement d'une vulnerabilite."""
 
+import json
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
@@ -14,7 +16,7 @@ from apps.programs.models import Program
 from apps.vulnerabilities.constants import ReportSource
 
 from .forms import TrackingCodeForm, VulnerabilityReportForm
-from .services import may_report, submit_report
+from .services import MAX_SUBMISSION_FILES, may_report, submit_report
 
 
 @rate_limited("report")
@@ -89,6 +91,8 @@ def submit(request):
         {
             "form": form,
             "program": program,
+            "program_rules": _program_rules(request.user),
+            "max_attachments": MAX_SUBMISSION_FILES,
             "policy_excerpt": render_markdown(policy[:1200]),
             "delai_verification": grace_deadline(request.user),
             # Meme annonce que sur la fiche du programme : un visiteur sans
@@ -99,6 +103,20 @@ def submit(request):
             ),
         },
     )
+
+
+def _program_rules(user):
+    """Motifs de refus de chaque programme public pour ce declarant, avec et
+    sans anonymat : le formulaire les annonce des le choix du programme, avec
+    le texte meme du refus qu'il recevrait a l'envoi."""
+    rules = {
+        str(program.pk): {
+            "refus": program.reporter_rejection(user) or "",
+            "refus_anonyme": program.reporter_rejection(user, is_anonymous=True) or "",
+        }
+        for program in Program.objects.public()
+    }
+    return json.dumps(rules)
 
 
 def submitted(request):

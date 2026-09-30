@@ -292,3 +292,17 @@ def test_high_urgency_report_alerts_analysts_and_coordinators(
         note = Notification.objects.get(case=case, recipient=analyst)
         # Le dossier n'est pas encore visible de l'analyste : pas de lien direct.
         assert case.case_id not in note.url
+
+
+def test_submit_form_announces_each_program_rule(client, bounty_program, vdp_program):
+    """Le formulaire recoit, par programme, le motif de refus que le serveur
+    opposerait a ce declarant : un Bug Bounty refuse un visiteur sans compte."""
+    import json
+    from html import unescape
+
+    html = client.get(reverse("reports:submit")).content.decode()
+    raw = html.split('data-program-rules="')[1].split('"')[0]
+    rules = json.loads(unescape(raw))
+    assert "identifié" in rules[str(bounty_program.pk)]["refus"]
+    assert rules[str(vdp_program.pk)]["refus"] == ""
+    assert "js/report-submit.js" in html

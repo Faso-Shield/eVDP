@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% load evdp_tags %}
-{% block head %}{% include "partials/select_enhance.html" %}{% endblock %}
+{% load static %}
+{% block head %}{% include "partials/select_enhance.html" %}<script src="{% static 'js/report-submit.js' %}" defer></script>{% endblock %}
 {% block title %}Signaler une vulnérabilité{% endblock %}
 
 {% block content %}
@@ -56,7 +57,8 @@
 
 <div class="split-layout">
   <div>
-    <form method="post" enctype="multipart/form-data" novalidate>
+    <form method="post" enctype="multipart/form-data" novalidate id="report-form"
+          data-program-rules="{{ program_rules }}" data-max-attachments="{{ max_attachments }}">
       {% csrf_token %}
       <p class="form-legend">
         Les champs suivis d'une <abbr class="required" title="Champ obligatoire">*</abbr>
@@ -74,6 +76,7 @@
             {% include "partials/form_field.html" with field=form.affected_organization_name %}
             {% include "partials/form_field.html" with field=form.product %}
           </div>
+          <div class="notice" id="program-rule-notice" role="status" hidden></div>
           <div class="help">
             <abbr class="required" title="Champ obligatoire">*</abbr>
             Renseignez au moins l'un de ces trois champs : le programme, l'organisation
@@ -97,6 +100,15 @@
             {% include "partials/form_field.html" with field=form.environment %}
             {% include "partials/form_field.html" with field=form.external_reference %}
           </div>
+          <div class="notice" id="pgp-severity-hint" hidden>
+            Gravité critique : envisagez de chiffrer les détails sensibles avec la
+            clé publique nationale (champ « bloc PGP » plus bas).
+          </div>
+          <details class="cvss-calculator" id="cvss-calculator" hidden>
+            <summary>Composer le vecteur CVSS 3.1</summary>
+            <div id="cvss-metrics"></div>
+            <p class="small mono" id="cvss-readout" aria-live="polite"></p>
+          </details>
         </div>
       </div>
 
@@ -107,6 +119,10 @@
         </div>
         <div class="card-body">
           {% include "partials/form_field.html" with field=form.description %}
+          <div class="flex-between small">
+            <span class="muted" id="description-counter" aria-live="polite"></span>
+            <button class="btn btn-sm btn-outline" type="button" id="insert-template" hidden>Insérer un modèle</button>
+          </div>
           {% include "partials/form_field.html" with field=form.steps_to_reproduce %}
           {% include "partials/form_field.html" with field=form.impact %}
           {% include "partials/form_field.html" with field=form.proof_of_concept %}
@@ -118,11 +134,17 @@
         <div class="card-header"><h2>Pièces jointes</h2></div>
         <div class="card-body">
           <div class="form-field">
-            <label for="attachments">Fichiers (5 maximum)</label>
+            <label for="attachments">Fichiers ({{ max_attachments }} maximum)</label>
             <input type="file" name="attachments" id="attachments" multiple required>
+            <div class="dropzone" id="dropzone" role="button" tabindex="0" hidden>
+              Glissez vos fichiers ici, ou cliquez pour les choisir.
+            </div>
+            <ul class="file-list" id="file-list"></ul>
+            <p class="small sla-text-breached" id="file-limit-warning" hidden></p>
             <div class="help">
               Captures, traces, PoC. Les exécutables et scripts sont refusés.
-              Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier.
+              Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier,
+              {{ EVDP.MAX_VIDEO_ATTACHMENT_SIZE|filesizeformat }} pour une vidéo (mp4, webm).
               Chaque fichier est stocké sous un nom aléatoire, hashé en SHA-256 et
               accessible uniquement aux personnes habilitées sur le dossier.
             </div>
@@ -138,6 +160,7 @@
           {% endif %}
           <div class="checkbox-field">{{ form.is_anonymous }}<label for="{{ form.is_anonymous.id_for_label }}">{{ form.is_anonymous.label }}</label></div>
           <div class="checkbox-field">{{ form.wants_credit }}<label for="{{ form.wants_credit.id_for_label }}">{{ form.wants_credit.label }}</label></div>
+          <p class="small muted" id="wants-credit-hint" hidden>Sans effet pour un signalement anonyme : le crédit public vous nommerait.</p>
           <div class="checkbox-field">{{ form.requests_cve }}<label for="{{ form.requests_cve.id_for_label }}">{{ form.requests_cve.label }}</label></div>
           {% include "partials/form_field.html" with field=form.pgp_payload %}
           <div class="checkbox-field">
