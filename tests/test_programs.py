@@ -514,3 +514,20 @@ def test_type_tabs_only_set_type_and_skip_the_stale_hidden_field(client, vdp_pro
     }
     for _, include in tabs:
         assert include == "#program-filter-form [name]:not([name='type'])"
+
+
+def test_program_form_is_grouped_by_topic(client_for, coordinator, vdp_program):
+    client = client_for(coordinator)
+    for url in (
+        reverse("programs:create"),
+        reverse("programs:manage", args=[vdp_program.slug]),
+    ):
+        html = client.get(url).content.decode()
+        for section in (
+            "Identification",
+            "Règles et cadre légal",
+            "Réception des signalements",
+        ):
+            assert section in html, (url, section)
+        assert "js/program-form.js" in html
+        assert html.count('name="allows_anonymous_reports"') == 1
