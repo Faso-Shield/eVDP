@@ -538,6 +538,11 @@ table.table tbody tr:hover { background: var(--surface-alt); }
 .sla-text-breached { color: var(--sev-critical); }
 .kanban-card .kc-deadline { font-size: .74rem; color: var(--text-muted); margin-top: .35rem; }
 .kanban-card .kc-deadline.sla-text-breached { color: var(--sev-critical); font-weight: 600; }
+
+/* Liste a croissance continue (chronologie, historique) : hauteur plafonnee
+   et defilement interne, pour que la colonne laterale d'un dossier ancien ne
+   s'etire pas sans fin. */
+.scroll-list { max-height: 320px; overflow-y: auto; }
 .wf-stepper { display: flex; flex-wrap: wrap; gap: .25rem; list-style: none; padding: 0; margin: 0 0 1rem; }
 .wf-stepper li { font-size: .75rem; padding: .2rem .5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
 .wf-stepper li.done { background: var(--evdp-accent-light); color: #0a5843; border-color: #bfe3d6; }

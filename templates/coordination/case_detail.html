@@ -355,7 +355,7 @@
     {% if timeline %}
     <div class="card">
       <div class="card-header"><h3>Chronologie</h3></div>
-      <div class="card-body">
+      <div class="card-body scroll-list">
         <ul class="timeline">
           {% for event in timeline %}
             <li>
@@ -422,7 +422,7 @@
     {% if status_history %}
     <div class="card">
       <div class="card-header"><h3>Historique des statuts</h3></div>
-      <div class="card-body small">
+      <div class="card-body small scroll-list">
         {% for entry in status_history %}
           <div style="padding:.25rem 0;border-bottom:1px solid var(--border)">
             <span class="muted mono">{{ entry.created_at|date:"d/m/Y H:i" }}</span><br>
