@@ -118,3 +118,18 @@ def test_no_model_change_is_left_without_a_migration():
         call_command("makemigrations", "--check", "--dry-run", stdout=sortie, verbosity=1)
     except SystemExit:
         pytest.fail("Des changements de modele n'ont pas de migration : " + sortie.getvalue())
+
+
+INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>", re.IGNORECASE)
+INLINE_HANDLER = re.compile(r"""\son[a-z]+\s*=\s*["']""", re.IGNORECASE)
+
+
+def test_no_inline_script_in_templates():
+    """La CSP de production (script-src 'self') bloquerait tout script inline,
+    y compris les attributs onclick/onchange : la page casserait en silence."""
+    offenders = []
+    for template in _template_files():
+        content = template.read_text(encoding="utf-8")
+        if INLINE_SCRIPT.search(content) or INLINE_HANDLER.search(content):
+            offenders.append(template.name)
+    assert not offenders, "Script inline dans : " + ", ".join(sorted(offenders))

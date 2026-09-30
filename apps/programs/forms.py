@@ -74,6 +74,7 @@ class ProgramForm(forms.ModelForm):
         if user is not None and not user.is_national:
             queryset = queryset.filter(id__in=user.organization_ids())
         self.fields["organization"].queryset = queryset
+        self.fields["organization"].widget.attrs["class"] = "ts-select"
 
 
 class ProgramFilterForm(forms.Form):

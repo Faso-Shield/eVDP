@@ -1,4 +1,5 @@
 {% extends "base_dashboard.html" %}
+{% block head %}{% include "partials/select_enhance.html" %}{% endblock %}
 {% block title %}Nouveau programme{% endblock %}
 {% block dashboard_content %}
 <h1>{% if creating %}Créer un programme{% else %}Modifier le programme{% endif %}</h1>

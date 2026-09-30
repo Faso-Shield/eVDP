@@ -152,6 +152,7 @@ class TriageForm(forms.Form):
         label="Organisation affectée",
         queryset=Organization.objects.filter(status=OrganizationStatus.ACTIVE),
         required=False,
+        widget=forms.Select(attrs={"class": "ts-select"}),
     )
     tags = forms.CharField(
         label="Étiquettes", required=False, help_text="Séparées par des virgules."
@@ -182,7 +183,12 @@ class QualificationForm(TriageForm):
         max_length=255,
         help_text="CVSS:3.1/AV:N/… ou CVSS:4.0/AV:N/AC:L/AT:N/…",
     )
-    cwe = forms.ModelChoiceField(label="CWE", queryset=CWE.objects.all(), required=False)
+    cwe = forms.ModelChoiceField(
+        label="CWE",
+        queryset=CWE.objects.all(),
+        required=False,
+        widget=forms.Select(attrs={"class": "ts-select"}),
+    )
 
     field_order = ["severity", "cvss_vector", "cwe", "organization", "scope", "tags"]
 
@@ -259,4 +265,5 @@ class CaseFilterForm(forms.Form):
         required=False,
         queryset=Organization.objects.all(),
         empty_label="Toutes les organisations",
+        widget=forms.Select(attrs={"class": "ts-select"}),
     )

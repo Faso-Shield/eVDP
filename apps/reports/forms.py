@@ -109,6 +109,9 @@ class VulnerabilityReportForm(forms.ModelForm):
         self.fields["affected_organization"].required = False
         self.fields["cwe"].queryset = CWE.objects.all()
         self.fields["cwe"].required = False
+        # Listes longues : recherche au fil de la frappe (static/js/select-enhance.js).
+        for name in ("program", "affected_organization", "cwe"):
+            self.fields[name].widget.attrs["class"] = "ts-select"
         self.fields["vulnerability_type"].choices = VulnerabilityType.choices
         self.fields["reported_severity"].choices = Severity.choices
         if user is not None and user.is_authenticated:

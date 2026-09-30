@@ -1,5 +1,6 @@
 {% extends "base_dashboard.html" %}
 {% load evdp_tags humanize static %}
+{% block head %}{% include "partials/select_enhance.html" %}{% endblock %}
 {% block title %}{{ case.case_id }}{% endblock %}
 
 {% block dashboard_content %}
