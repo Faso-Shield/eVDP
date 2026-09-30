@@ -26,7 +26,7 @@ from apps.core.utils import hash_text
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify_external
 from apps.programs.models import ProgramType
-from apps.vulnerabilities.constants import ReportSource, Severity
+from apps.vulnerabilities.constants import HIGH_URGENCY_SEVERITIES, ReportSource, Severity
 from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
 
 from .models import ReportStatus, VulnerabilityReport
@@ -210,6 +210,33 @@ def submit_report(
     return case
 
 
+def _alert_on_high_urgency(case):
+    """Critique ou elevee : coordinateurs et analystes sont prevenus des
+    l'arrivee, pour anticiper la suite. Ils ne voient pas encore le dossier
+    (triage en cours) : l'avis mene a leur tableau de bord, pas au dossier.
+    """
+    from django.urls import reverse
+
+    from apps.accounts.models import User
+    from apps.accounts.roles import Role
+    from apps.notifications.models import NotificationKind
+    from apps.notifications.services import notify_many
+
+    if case.severity not in HIGH_URGENCY_SEVERITIES:
+        return []
+    recipients = User.objects.filter(
+        is_active=True, role__in=[Role.NATIONAL_COORDINATOR, Role.CSIRT_ANALYST]
+    )
+    return notify_many(
+        recipients,
+        NotificationKind.REPORT_RECEIVED,
+        case=case,
+        title=f"[{case.case_id}] Signalement {case.get_severity_display().lower()} en triage",
+        body="Sévérité déclarée par le signaleur, à confirmer au triage.",
+        url=reverse("dashboard:home"),
+    )
+
+
 def _notify_new_case(case, report):
     """Avise l'equipe de coordination et accuse reception au declarant.
 
@@ -226,6 +253,7 @@ def _notify_new_case(case, report):
     # seul avise dans la plateforme et par email.
     auto_claim(case)
     notify_step_owners(case)
+    _alert_on_high_urgency(case)
 
     if report.reporter_id:
         from apps.notifications.services import notify

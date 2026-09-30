@@ -270,3 +270,25 @@ def test_cvss_vector_is_recomputable():
     )
     assert vector == "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
     assert base_score(vector) == 9.8
+
+
+# ------------------------------------------------ alerte selon la gravite
+@pytest.mark.parametrize(("severity", "alerted"), [("CRITICAL", True), ("LOW", False)])
+def test_high_urgency_report_alerts_analysts_and_coordinators(
+    severity, alerted, researcher_a, organization, analyst, coordinator, triager
+):
+    from apps.notifications.models import Notification, NotificationKind
+
+    from .conftest import build_report, submit
+
+    case = submit(build_report(researcher_a, organization, reported_severity=severity))
+    recipients = set(
+        Notification.objects.filter(case=case, kind=NotificationKind.REPORT_RECEIVED)
+        .exclude(recipient=researcher_a)
+        .values_list("recipient_id", flat=True)
+    )
+    assert recipients == ({analyst.pk, coordinator.pk} if alerted else set())
+    if alerted:
+        note = Notification.objects.get(case=case, recipient=analyst)
+        # Le dossier n'est pas encore visible de l'analyste : pas de lien direct.
+        assert case.case_id not in note.url
