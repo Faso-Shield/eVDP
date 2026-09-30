@@ -20,6 +20,11 @@ urlpatterns = [
     path("resend-verification/", views.resend_verification, name="resend_verification"),
     path("profile/", views.profile, name="profile"),
     path("profile/password/", views.change_password, name="change_password"),
+    path("profile/api-keys/new/", views.api_key_create, name="api_key_create"),
+    path("profile/api-keys/created/", views.api_key_created, name="api_key_created"),
+    path(
+        "profile/api-keys/<uuid:key_id>/revoke/", views.api_key_revoke, name="api_key_revoke"
+    ),
     path("password-reset/", views.EvdpPasswordResetView.as_view(), name="password_reset"),
     path(
         "password-reset/done/",

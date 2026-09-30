@@ -4,6 +4,9 @@ import json
 import re
 
 import pytest
+from django.test import Client
+from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.models import ApiKey
 from apps.api.authentication import generate_key
@@ -631,3 +634,48 @@ def test_swagger_bootstrap_script_is_served_separately(client):
     assert response.status_code == 200
     assert "javascript" in response["Content-Type"]
     assert "SwaggerUIBundle" in response.content.decode()
+
+
+# ------------------------------------------------ cles d'API en libre-service
+def test_user_creates_an_api_key_shown_only_once(client_for, researcher_a):
+    client = client_for(researcher_a)
+    reponse = client.post(
+        reverse("accounts:api_key_create"), {"label": "Intégration", "expires_in_days": "30"}
+    )
+    assert reponse["Location"] == reverse("accounts:api_key_created")
+    page = client.get(reponse["Location"])
+    assert page["Cache-Control"] == "no-store"
+    raw = page.context["key"]
+    assert raw in page.content.decode()
+    assert client.get(reverse("accounts:api_key_created")).status_code == 302
+
+    key = ApiKey.objects.get(user=researcher_a)
+    assert key.key_hash != raw and raw.startswith(key.prefix)
+    assert 29 <= (key.expires_at - timezone.now()).days <= 30
+    anonymous = Client()
+    assert anonymous.get("/api/v1/reports/", HTTP_X_EVDP_API_KEY=raw).status_code == 200
+
+
+def test_api_key_revocation_is_limited_to_its_owner(client_for, researcher_a, researcher_b):
+    client_for(researcher_a).post(
+        reverse("accounts:api_key_create"), {"label": "A", "expires_in_days": "90"}
+    )
+    key = ApiKey.objects.get(user=researcher_a)
+    url = reverse("accounts:api_key_revoke", args=[key.pk])
+    assert client_for(researcher_b).post(url).status_code == 404
+    assert client_for(researcher_a).post(url).status_code == 302
+    key.refresh_from_db()
+    assert key.is_active is False
+
+
+def test_active_api_keys_are_capped(client_for, researcher_a):
+    from apps.accounts.views import MAX_ACTIVE_API_KEYS
+
+    client = client_for(researcher_a)
+    for i in range(MAX_ACTIVE_API_KEYS + 1):
+        client.post(
+            reverse("accounts:api_key_create"), {"label": f"k{i}", "expires_in_days": "30"}
+        )
+    assert (
+        ApiKey.objects.filter(user=researcher_a, is_active=True).count() == MAX_ACTIVE_API_KEYS
+    )

@@ -1,5 +1,7 @@
 """Vues d'authentification et de gestion de compte."""
 
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -13,7 +15,7 @@ from django.contrib.auth.views import (
     PasswordResetView,
 )
 from django.db import transaction
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -22,6 +24,7 @@ from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_en
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_POST
 
+from apps.accounts.permissions import require_not_read_only
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.core.middleware import get_client_ip
@@ -32,6 +35,7 @@ from apps.researchers.services import get_or_create_profile
 
 from . import mfa
 from .forms import (
+    ApiKeyForm,
     EmailAuthenticationForm,
     ProfileForm,
     RegistrationForm,
@@ -40,7 +44,7 @@ from .forms import (
     TotpCodeForm,
 )
 from .middleware import elevate, session_is_elevated
-from .models import TokenPurpose, UserToken
+from .models import ApiKey, TokenPurpose, UserToken
 
 #: Secret candidat d'un enrolement en cours. Il ne rejoint le compte qu'une
 #: fois un code valide fourni : un enrolement abandonne ne laisse rien
@@ -257,6 +261,81 @@ def mfa_challenge(request):
     return render(request, "accounts/mfa_challenge.html", {"form": form})
 
 
+#: Cles d'API actives par compte : au-dela, en revoquer une d'abord.
+MAX_ACTIVE_API_KEYS = 5
+#: Cle tout juste creee, en attente de son unique affichage.
+API_KEY_SESSION_KEY = "api_key_created"
+
+
+@login_required
+@require_POST
+@require_not_read_only
+def api_key_create(request):
+    """Cree une cle d'API pour son titulaire.
+
+    La valeur en clair ne transite ni par un message flash (stocke dans un
+    cookie) ni par l'URL : elle est montree une fois, sur une page non mise
+    en cache.
+    """
+    from apps.api.authentication import generate_key
+
+    form = ApiKeyForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Clé non créée : indiquez un nom et une durée de validité.")
+        return redirect("accounts:profile")
+    if request.user.api_keys.filter(is_active=True).count() >= MAX_ACTIVE_API_KEYS:
+        messages.error(
+            request,
+            f"{MAX_ACTIVE_API_KEYS} clés actives au maximum : révoquez-en une d'abord.",
+        )
+        return redirect("accounts:profile")
+    raw, prefix, key_hash = generate_key()
+    api_key = ApiKey.objects.create(
+        user=request.user,
+        label=form.cleaned_data["label"],
+        prefix=prefix,
+        key_hash=key_hash,
+        expires_at=timezone.now() + timedelta(days=form.cleaned_data["expires_in_days"]),
+    )
+    log_action(
+        AuditAction.API_KEY_CREATED,
+        actor=request.user,
+        obj=api_key,
+        request=request,
+        label=api_key.label,
+        expires_at=api_key.expires_at.isoformat(),
+    )
+    request.session[API_KEY_SESSION_KEY] = {"label": api_key.label, "key": raw}
+    return redirect("accounts:api_key_created")
+
+
+@login_required
+def api_key_created(request):
+    created = request.session.pop(API_KEY_SESSION_KEY, None)
+    if not created:
+        return redirect("accounts:profile")
+    response = render(request, "accounts/api_key_created.html", created)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@login_required
+@require_POST
+def api_key_revoke(request, key_id):
+    api_key = get_object_or_404(ApiKey, pk=key_id, user=request.user, is_active=True)
+    api_key.is_active = False
+    api_key.save(update_fields=["is_active", "updated_at"])
+    log_action(
+        AuditAction.API_KEY_REVOKED,
+        actor=request.user,
+        obj=api_key,
+        request=request,
+        label=api_key.label,
+    )
+    messages.success(request, f"Clé « {api_key.label} » révoquée.")
+    return redirect("accounts:profile")
+
+
 #: Codes de secours tout juste generes, en attente de leur unique affichage.
 BACKUP_CODES_SESSION_KEY = "mfa_backup_codes"
 
@@ -371,6 +450,7 @@ def profile(request):
             "profile_form": profile_form,
             "researcher_profile": researcher_profile,
             "api_keys": request.user.api_keys.filter(is_active=True),
+            "api_key_form": ApiKeyForm(),
             "backup_codes_left": (
                 mfa.remaining_backup_codes(request.user) if request.user.mfa_enabled else None
             ),

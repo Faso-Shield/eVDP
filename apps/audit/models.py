@@ -22,6 +22,8 @@ class AuditAction(models.TextChoices):
     MFA_VERIFIED = "MFA_VERIFIED", "Second facteur validé"
     MFA_FAILED = "MFA_FAILED", "Second facteur refusé"
     MFA_RESET = "MFA_RESET", "Double authentification réinitialisée"
+    API_KEY_CREATED = "API_KEY_CREATED", "Clé d'API créée"
+    API_KEY_REVOKED = "API_KEY_REVOKED", "Clé d'API révoquée"
     MFA_BACKUP_CODES_GENERATED = (
         "MFA_BACKUP_CODES_GENERATED",
         "Codes de secours générés",

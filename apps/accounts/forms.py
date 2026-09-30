@@ -169,3 +169,26 @@ class ResearcherProfileForm(forms.ModelForm):
 
 class StrongPasswordChangeForm(PasswordChangeForm):
     pass
+
+
+class ApiKeyForm(forms.Form):
+    """Creation d'une cle d'API par son titulaire."""
+
+    label = forms.CharField(
+        label="Nom de la clé",
+        max_length=120,
+        help_text="À quoi sert-elle ? Ex. « intégration SIEM ».",
+    )
+    expires_in_days = forms.TypedChoiceField(
+        label="Validité",
+        coerce=int,
+        initial=90,
+        choices=[
+            (30, "30 jours"),
+            (90, "90 jours"),
+            (180, "6 mois"),
+            (365, "1 an"),
+            (730, "2 ans"),
+        ],
+        help_text="Une clé expire toujours : renouvelez-la plutôt que de la garder indéfiniment.",
+    )

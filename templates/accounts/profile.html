@@ -129,7 +129,7 @@
     {% if api_keys %}
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Libellé</th><th>Préfixe</th><th>Dernière utilisation</th><th>Expiration</th></tr></thead>
+          <thead><tr><th>Libellé</th><th>Préfixe</th><th>Dernière utilisation</th><th>Expiration</th><th></th></tr></thead>
           <tbody>
           {% for key in api_keys %}
             <tr>
@@ -137,15 +137,29 @@
               <td class="mono">{{ key.prefix }}…</td>
               <td class="small">{{ key.last_used_at|date:"d/m/Y H:i"|default:"—" }}</td>
               <td class="small">{{ key.expires_at|date:"d/m/Y"|default:"—" }}</td>
+              <td class="text-right">
+                <form method="post" action="{% url 'accounts:api_key_revoke' key.pk %}">
+                  {% csrf_token %}
+                  <button class="btn btn-sm btn-danger" type="submit">Révoquer</button>
+                </form>
+              </td>
             </tr>
           {% endfor %}
           </tbody>
         </table>
       </div>
     {% else %}
-      <p class="muted">Aucune clé d'API active. Les clés sont créées par un administrateur
-      (commande <code>manage.py create_api_key</code>) et affichées une seule fois.</p>
+      <p class="muted">Aucune clé d'API active.</p>
     {% endif %}
+    <hr>
+    <h3>Créer une clé</h3>
+    <p class="small muted">Pour une intégration automatisée (soumission, suivi).
+    La clé agit avec les droits de votre compte et n'est affichée qu'une fois.</p>
+    <form method="post" action="{% url 'accounts:api_key_create' %}" class="filters">
+      {% csrf_token %}
+      {% for field in api_key_form %}{% include "partials/form_field.html" %}{% endfor %}
+      <button class="btn btn-outline" type="submit">Créer la clé</button>
+    </form>
   </div>
 </div>
 {% endblock %}
