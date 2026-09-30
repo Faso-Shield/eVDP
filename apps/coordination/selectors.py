@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from apps.vulnerabilities.constants import Severity
 
-from .constants import SLAState
+from .constants import SLAKind, SLAState
 from .models import Case
 from .workflow import DISMISSED_STATES, KANBAN_COLUMNS, TERMINAL_STATES, CaseStatus
 
@@ -64,6 +64,35 @@ def search_cases(
 
 #: Etat SLA -> couleur de badge (vert, orange a 75 % du delai, rouge a echeance).
 SLA_COLORS = {"ok": "sla-ok", "warning": "sla-warning", "breached": "sla-breached"}
+
+#: Echeances qui ne dependent que du CSIRT.
+INTERNAL_SLA_KINDS = frozenset(
+    {
+        SLAKind.ACKNOWLEDGEMENT,
+        SLAKind.TRIAGE,
+        SLAKind.VALIDATION,
+        SLAKind.VERIFICATION,
+        SLAKind.DISCLOSURE,
+    }
+)
+#: Echeances qui dependent de l'organisation affectee.
+EXTERNAL_SLA_KINDS = frozenset({SLAKind.VENDOR_RESPONSE, SLAKind.REMEDIATION})
+
+_ACTIVE_SLA_STATES = (SLAState.PENDING, SLAState.APPROACHING, SLAState.BREACHED)
+
+
+def next_deadline(case, now=None):
+    """Echeance active la plus proche : (date, depassee) ou None.
+
+    Lit les echeances prechargees. Une echeance passee compte comme depassee
+    meme avant que la tache periodique ne l'ait marquee BREACHED.
+    """
+    now = now or timezone.now()
+    events = [event for event in case.sla_events.all() if event.state in _ACTIVE_SLA_STATES]
+    if not events:
+        return None
+    event = min(events, key=lambda item: item.due_at)
+    return event.due_at, event.state == SLAState.BREACHED or event.due_at <= now
 
 
 def sla_color(case, now=None):
@@ -271,7 +300,20 @@ def _overdue(user):
 
 
 def overdue_cases(user, limit=20):
-    return list(_overdue(user).order_by("-priority_score")[:limit])
+    """Dossiers en retard, chacun marque selon qui porte le retard.
+
+    `overdue_internal` : une echeance du CSIRT est depassee ;
+    `overdue_external` : une echeance de l'organisation l'est. Les deux
+    peuvent coexister.
+    """
+    cases = list(
+        _overdue(user).prefetch_related("sla_events").order_by("-priority_score")[:limit]
+    )
+    for case in cases:
+        breached = {e.kind for e in case.sla_events.all() if e.state == SLAState.BREACHED}
+        case.overdue_internal = bool(breached & INTERNAL_SLA_KINDS)
+        case.overdue_external = bool(breached & EXTERNAL_SLA_KINDS)
+    return cases
 
 
 def overdue_by_severity(user):

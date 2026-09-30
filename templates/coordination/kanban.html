@@ -27,6 +27,11 @@ workflow respirent au lieu de tenir dans la gouttiere commune de 1240px.
           <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
           {% if case.organization %}<span class="pill">{% firstof case.organization.acronym case.organization.name %}</span>{% endif %}
         </div>
+        {% with deadline=case|next_deadline %}{% if deadline %}
+          <div class="kc-deadline{% if deadline.1 %} sla-text-breached{% endif %}">
+            {% if deadline.1 %}Échéance dépassée{% else %}Échéance{% endif %} : {{ deadline.0|date:"d/m/Y H:i" }}
+          </div>
+        {% endif %}{% endwith %}
       </a>
     {% empty %}
       <p class="muted small">Aucun dossier.</p>

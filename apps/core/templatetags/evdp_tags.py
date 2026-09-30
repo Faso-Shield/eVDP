@@ -81,6 +81,14 @@ def case_status(context, case):
     return case.get_status_display()
 
 
+@register.filter(name="next_deadline")
+def next_deadline(case):
+    """(date, depassee) de l'echeance active la plus proche, ou None."""
+    from apps.coordination.selectors import next_deadline as compute
+
+    return compute(case)
+
+
 @register.filter(name="sla_badge")
 def sla_badge(case):
     """Badge d'echeance d'une carte Kanban : vert, orange a 75 %, rouge a echeance."""

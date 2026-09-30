@@ -1079,3 +1079,34 @@ def test_coordinator_sees_a_proposed_bounty(bounty_case, analyst, coordinator):
     act(bounty_case, "propose_bounty", analyst)
     assert bounty_case.bounty_stage == BountyStage.PROPOSED
     assert bounty_case in Case.objects.visible_to(coordinator)
+
+
+# ------------------------------------------------ echeances visibles
+def test_kanban_card_shows_the_next_deadline(client_for, case_alpha, triager):
+    from .conftest import claim
+
+    claim(case_alpha, triager)
+    due = case_alpha.sla_events.order_by("due_at").first().due_at
+    html = client_for(triager).get(reverse("coordination:kanban")).content.decode()
+    local = timezone.localtime(due).strftime("%d/%m/%Y %H:%M")
+    assert f"Échéance : {local}" in html
+
+
+def test_past_deadline_shows_as_overdue_before_the_sweep(case_alpha):
+    from apps.coordination.selectors import next_deadline
+
+    event = case_alpha.sla_events.order_by("due_at").first()
+    event.due_at = timezone.now() - timedelta(hours=1)
+    event.save(update_fields=["due_at"])
+    assert next_deadline(case_alpha)[1] is True
+
+
+def test_overdue_cases_say_who_is_late(auditor, case_alpha):
+    from apps.coordination.selectors import overdue_cases
+
+    event = case_alpha.sla_events.first()
+    event.kind = SLAKind.VENDOR_RESPONSE
+    event.state = SLAState.BREACHED
+    event.save(update_fields=["kind", "state"])
+    (case,) = [c for c in overdue_cases(auditor) if c.pk == case_alpha.pk]
+    assert case.overdue_external and not case.overdue_internal

@@ -536,6 +536,8 @@ table.table tbody tr:hover { background: var(--surface-alt); }
 .sla-dot.sla-warning { background: #d98a00; }
 .sla-dot.sla-breached { background: var(--sev-critical); }
 .sla-text-breached { color: var(--sev-critical); }
+.kanban-card .kc-deadline { font-size: .74rem; color: var(--text-muted); margin-top: .35rem; }
+.kanban-card .kc-deadline.sla-text-breached { color: var(--sev-critical); font-weight: 600; }
 .wf-stepper { display: flex; flex-wrap: wrap; gap: .25rem; list-style: none; padding: 0; margin: 0 0 1rem; }
 .wf-stepper li { font-size: .75rem; padding: .2rem .5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
 .wf-stepper li.done { background: var(--evdp-accent-light); color: #0a5843; border-color: #bfe3d6; }
