@@ -120,17 +120,42 @@ def test_organization_count_unaffected_by_query_injection_attempt(client):
 
 # --------------------------------------------------------------- membres
 def test_manager_can_add_existing_user_as_member(
-    client_for, manager_alpha, organization, analyst
+    client_for, manager_alpha, organization, dsi_beta
 ):
+    """Le compte rattache en est prevenu : il devient participant des
+    dossiers de l'organisation."""
+    from apps.notifications.models import Notification, NotificationKind
     from apps.organizations.models import MembershipRole, OrganizationMember
 
     client = client_for(manager_alpha)
     response = client.post(
         reverse("organizations:member_add", args=[organization.slug]),
-        {"email": analyst.email, "membership_role": MembershipRole.ANALYST, "is_primary": ""},
+        {"email": dsi_beta.email, "membership_role": MembershipRole.DSI, "is_primary": ""},
     )
     assert response.status_code == 302
-    assert OrganizationMember.objects.filter(organization=organization, user=analyst).exists()
+    assert OrganizationMember.objects.filter(organization=organization, user=dsi_beta).exists()
+    note = Notification.objects.get(recipient=dsi_beta, kind=NotificationKind.ACCOUNT)
+    assert organization.name in note.title
+
+
+@pytest.mark.parametrize("fixture", ["analyst", "triager", "researcher_a"])
+def test_researchers_and_csirt_accounts_cannot_join_an_organization(
+    request, client_for, manager_alpha, organization, fixture
+):
+    """Conflit d'interet : le compte deviendrait participant des dossiers de
+    l'organisation, dont un dossier qu'il a signale ou qu'il instruit."""
+    from django.core.exceptions import ValidationError
+
+    from apps.organizations.models import MembershipRole, OrganizationMember
+
+    user = request.getfixturevalue(fixture)
+    client_for(manager_alpha).post(
+        reverse("organizations:member_add", args=[organization.slug]),
+        {"email": user.email, "membership_role": MembershipRole.ANALYST, "is_primary": ""},
+    )
+    assert not OrganizationMember.objects.filter(organization=organization, user=user).exists()
+    with pytest.raises(ValidationError):
+        OrganizationMember(organization=organization, user=user).full_clean()
 
 
 def test_manager_cannot_add_member_to_another_organization(

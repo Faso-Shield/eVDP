@@ -11,6 +11,8 @@ from apps.accounts.roles import Capability, Role
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination import selectors
+from apps.notifications.models import NotificationKind
+from apps.notifications.services import notify
 
 from .forms import OrganizationForm, OrganizationMemberForm
 from .models import MembershipRole, Organization, OrganizationMember, OrganizationStatus
@@ -199,6 +201,19 @@ def organization_member_add(request, slug):
                         "choisir son mot de passe lui a été transmis.",
                     )
                 else:
+                    # Une invitation previent la personne ; un rattachement a
+                    # un compte existant la rendait participante des dossiers
+                    # de l'organisation sans qu'elle le sache.
+                    notify(
+                        target_user,
+                        NotificationKind.ACCOUNT,
+                        title=f"Rattaché à {organization.name} sur eVDP",
+                        body=(
+                            f"{request.user.display_name or request.user.email} vous a "
+                            f"rattaché à l'organisation {organization.name}, avec le rôle "
+                            f"« {member.get_membership_role_display()} »."
+                        ),
+                    )
                     messages.success(
                         request, f"{target_user.email} ajouté comme membre de l'organisation."
                     )

@@ -2,7 +2,13 @@
 
 from django import forms
 
-from .models import MembershipRole, Organization, SecurityContact
+from .models import (
+    INCOMPATIBLE_MEMBER_MESSAGE,
+    MembershipRole,
+    Organization,
+    SecurityContact,
+    incompatible_member,
+)
 
 
 class OrganizationForm(forms.ModelForm):
@@ -101,4 +107,6 @@ class OrganizationMemberForm(forms.Form):
                 "Aucun compte eVDP actif avec cette adresse email : indiquez "
                 "le nom complet pour envoyer une invitation.",
             )
+        elif self.user is not None and incompatible_member(self.user):
+            self.add_error("email", INCOMPATIBLE_MEMBER_MESSAGE)
         return cleaned

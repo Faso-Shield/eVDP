@@ -158,6 +158,26 @@ class OrganizationMember(BaseModel):
     def __str__(self):
         return f"{self.user} @ {self.organization} ({self.membership_role})"
 
+    def clean(self):
+        super().clean()
+        if self.user_id and incompatible_member(self.user):
+            raise ValidationError({"user": INCOMPATIBLE_MEMBER_MESSAGE})
+
+
+INCOMPATIBLE_MEMBER_MESSAGE = (
+    "Ce compte a un rôle incompatible avec un rattachement à une organisation "
+    "(chercheur ou équipe CSIRT nationale)."
+)
+
+
+def incompatible_member(user):
+    """Un chercheur ou un compte CSIRT national ne represente pas une
+    organisation : rattache, il deviendrait participant des dossiers de
+    celle-ci, y compris d'un dossier qu'il a signale ou qu'il instruit."""
+    from apps.accounts.roles import NATIONAL_ROLES, RESEARCHER_ROLES
+
+    return user.role in NATIONAL_ROLES | RESEARCHER_ROLES
+
 
 class SecurityContact(BaseModel):
     """Point de contact securite publie dans les programmes de l'organisation."""
