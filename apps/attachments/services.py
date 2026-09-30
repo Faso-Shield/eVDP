@@ -1,5 +1,6 @@
 """Validation et enregistrement securises des pieces jointes."""
 
+import logging
 import mimetypes
 import zipfile
 
@@ -13,6 +14,17 @@ from apps.core.pgp import is_encrypted_blob
 from apps.core.utils import sha256_hexdigest
 
 from .models import Attachment, ScanStatus
+
+logger = logging.getLogger("evdp.attachments")
+
+#: Une seule reprise rapide : l'envoi a lieu pendant la requete HTTP du
+#: deposant, une panne du broker ne doit pas la faire attendre.
+SCAN_PUBLISH_RETRY_POLICY = {
+    "max_retries": 1,
+    "interval_start": 0,
+    "interval_step": 0.2,
+    "interval_max": 0.2,
+}
 
 #: Signatures binaires refusees quel que soit le nom du fichier.
 DANGEROUS_MAGIC = (
@@ -235,10 +247,30 @@ def store_attachment(
         filename=attachment.original_filename,
     )
 
+    transaction.on_commit(lambda: dispatch_scan(attachment.pk))
+    return attachment
+
+
+def dispatch_scan(attachment_id):
+    """Confie l'analyse antivirus a Celery, sans jamais faire echouer l'appel.
+
+    Broker injoignable : la piece reste PENDING et sweep_pending_scans la
+    reprend plus tard. Le depot, lui, est deja enregistre et journalise.
+    """
     from .tasks import scan_attachment
 
-    transaction.on_commit(lambda: scan_attachment.delay(str(attachment.pk)))
-    return attachment
+    try:
+        scan_attachment.apply_async(
+            args=[str(attachment_id)], retry=True, retry_policy=SCAN_PUBLISH_RETRY_POLICY
+        )
+    except Exception:
+        logger.warning(
+            "attachment_scan_dispatch_failed",
+            extra={"attachment": str(attachment_id)},
+            exc_info=True,
+        )
+        return False
+    return True
 
 
 def authorize_download(attachment, user, request=None):

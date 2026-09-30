@@ -2,9 +2,11 @@
 
 import logging
 import socket
+from datetime import timedelta
 
 from celery import shared_task
 from django.conf import settings
+from django.utils import timezone
 
 from .models import Attachment, ScanStatus
 
@@ -47,7 +49,10 @@ def _clamav_scan(data):
         return ScanStatus.ERROR, f"ClamAV injoignable: {exc}"[:255]
 
 
-@shared_task(name="apps.attachments.tasks.scan_attachment")
+# ignore_result : le verdict est ecrit sur la piece. Stocker un resultat
+# Celery abonnait l'appelant au backend Redis, qui retentait 20 fois la
+# connexion (plus d'une minute) si Redis etait indisponible.
+@shared_task(name="apps.attachments.tasks.scan_attachment", ignore_result=True)
 def scan_attachment(attachment_id):
     """Analyse antivirus d'une piece jointe (service optionnel)."""
     attachment = Attachment.objects.filter(pk=attachment_id).first()
@@ -72,3 +77,18 @@ def scan_attachment(attachment_id):
             extra={"attachment": str(attachment.pk), "detail": detail},
         )
     return status
+
+
+#: Delai au-dela duquel une analyse encore en attente est relancee : l'envoi
+#: initial a pu echouer (broker indisponible au moment du depot).
+PENDING_SCAN_GRACE = timedelta(minutes=10)
+
+
+@shared_task(name="apps.attachments.tasks.sweep_pending_scans", ignore_result=True)
+def sweep_pending_scans():
+    """Relance l'analyse des pieces restees PENDING."""
+    from .services import dispatch_scan
+
+    cutoff = timezone.now() - PENDING_SCAN_GRACE
+    pending = Attachment.objects.filter(scan_status=ScanStatus.PENDING, created_at__lt=cutoff)
+    return sum(dispatch_scan(pk) for pk in pending.values_list("pk", flat=True))

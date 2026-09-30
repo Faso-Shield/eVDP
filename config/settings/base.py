@@ -236,6 +236,9 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ALWAYS_EAGER = False
+# Un broker injoignable doit echouer vite plutot que de figer la requete web
+# qui publie une tache.
+CELERY_BROKER_TRANSPORT_OPTIONS = {"socket_connect_timeout": 3}
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # ---------------------------------------------------------------------------
@@ -268,6 +271,10 @@ CELERY_BEAT_SCHEDULE = {
     "evdp-relance-comptes-non-verifies": {
         "task": "apps.accounts.tasks.remind_unverified_accounts",
         "schedule": crontab(minute=30, hour=8),
+    },
+    "evdp-analyses-en-attente": {
+        "task": "apps.attachments.tasks.sweep_pending_scans",
+        "schedule": crontab(minute="*/15"),
     },
 }
 

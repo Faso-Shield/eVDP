@@ -330,3 +330,48 @@ def test_webp_signature_is_checked():
 def test_pcapng_capture_is_accepted():
     pcapng = b"\x0a\x0d\x0d\x0a\x1c\x00\x00\x00\x4d\x3c\x2b\x1a" + b"\0" * 16
     assert validate_upload(upload("trafic.pcap", pcapng))["extension"] == "pcap"
+
+
+# ------------------------------------------------ analyse antivirus en panne
+def test_upload_survives_an_unreachable_broker(
+    monkeypatch, django_capture_on_commit_callbacks, case_alpha, researcher_a
+):
+    """Broker injoignable : le depot aboutit, la piece reste en attente."""
+    from kombu.exceptions import OperationalError
+
+    from apps.attachments.models import ScanStatus
+    from apps.attachments.tasks import scan_attachment
+
+    def broker_down(*args, **kwargs):
+        raise OperationalError("Timeout connecting to server")
+
+    monkeypatch.setattr(scan_attachment, "apply_async", broker_down)
+    with django_capture_on_commit_callbacks(execute=True) as callbacks:
+        attachment = store_attachment(upload("p.txt"), researcher_a, case=case_alpha)
+    assert callbacks, "l'analyse n'a pas ete confiee a Celery"
+    attachment.refresh_from_db()
+    assert attachment.scan_status == ScanStatus.PENDING
+
+
+def test_pending_scans_are_dispatched_again(monkeypatch, case_alpha, researcher_a):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.attachments import services
+    from apps.attachments.models import Attachment, ScanStatus
+    from apps.attachments.tasks import sweep_pending_scans
+
+    ancienne = store_attachment(upload("a.txt"), researcher_a, case=case_alpha)
+    recente = store_attachment(upload("b.txt"), researcher_a, case=case_alpha)
+    Attachment.objects.filter(pk__in=[ancienne.pk, recente.pk]).update(
+        scan_status=ScanStatus.PENDING
+    )
+    Attachment.objects.filter(pk=ancienne.pk).update(
+        created_at=timezone.now() - timedelta(hours=1)
+    )
+    relancees = []
+    monkeypatch.setattr(services, "dispatch_scan", lambda pk: relancees.append(pk) or True)
+
+    assert sweep_pending_scans() == 1
+    assert relancees == [ancienne.pk]
