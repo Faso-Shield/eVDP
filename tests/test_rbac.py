@@ -360,3 +360,38 @@ def test_super_admin_never_reaches_the_payout_reference(
         == 404
     )
     assert client.get(reverse("bounty:detail", args=[bounty.pk])).status_code == 404
+
+
+# --------------------------------------------- tableaux de bord par role
+def test_business_accounts_are_sent_to_their_own_dashboard(client_for, coordinator, dsi_alpha):
+    """Hors organisation, /dashboard/organization/ listait tout le perimetre
+    du compte (tous les dossiers pour un role national)."""
+    response = client_for(coordinator).get(reverse("dashboard:organization"))
+    assert response.status_code == 302
+    assert response["Location"] == reverse("dashboard:national")
+    response = client_for(dsi_alpha).get(reverse("dashboard:researcher"))
+    assert response["Location"] == reverse("dashboard:organization")
+
+
+def test_researcher_keeps_its_space_and_cannot_search_globally(client_for, researcher_a):
+    client = client_for(researcher_a)
+    assert client.get(reverse("dashboard:researcher")).status_code == 200
+    assert client.get(reverse("dashboard:organization"))["Location"] == reverse(
+        "dashboard:researcher"
+    )
+    assert client.get(reverse("dashboard:search"), {"q": "x"}).status_code == 403
+
+
+def test_national_dashboard_counts_overdue_cases_without_naming_them(
+    client_for, auditor, case_alpha
+):
+    from apps.coordination.constants import SLAState
+    from apps.vulnerabilities.constants import Severity
+
+    Case.objects.filter(pk=case_alpha.pk).update(severity=Severity.HIGH)
+    assert case_alpha.sla_events.update(state=SLAState.BREACHED)
+    html = client_for(auditor).get(reverse("dashboard:national")).content.decode()
+    assert "Risques : dossiers en dépassement" in html
+    assert case_alpha.case_id not in html
+    assert case_alpha.title not in html
+    assert '<strong class="mono">1</strong>' in html

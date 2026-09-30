@@ -41,6 +41,9 @@ def home(request):
 def researcher_dashboard(request):
     """Espace du chercheur : rapports, recompenses, reputation."""
     user = request.user
+    if not user.is_researcher and landing_route(user) != "dashboard:researcher":
+        # Un compte metier a son propre tableau de bord.
+        return redirect(landing_route(user))
     profile = get_or_create_profile(user) if user.is_researcher else None
     cases = Case.objects.filter(reporter=user).select_related("organization", "program")
     bounties = Bounty.objects.filter(researcher=user).select_related("case")
@@ -91,6 +94,10 @@ def researcher_dashboard(request):
 def organization_dashboard(request):
     """Espace d'une organisation / DSI : uniquement ses vulnerabilites."""
     user = request.user
+    if not user.is_organization_user:
+        # Hors organisation, Case.visible_to rendait tout le perimetre du
+        # compte (tous les dossiers pour un role national) sous ce titre.
+        return redirect(landing_route(user))
     org_ids = user.organization_ids()
     organizations = Organization.objects.filter(id__in=org_ids)
     cases = Case.objects.visible_to(user).select_related("organization", "assignee")
@@ -193,12 +200,15 @@ def national_dashboard(request):
             "rewards_total": rewards["total"] or 0,
             "rewards_count": rewards["count"] or 0,
             "average_remediation": selectors.average_remediation_days(user),
-            "overdue": selectors.overdue_cases(user, limit=10),
+            # Posture nationale : des nombres, jamais la liste des dossiers
+            # (identifiant, titre et organisation designent une cible).
+            "overdue_by_severity": selectors.overdue_by_severity(user),
         },
     )
 
 
 @login_required
+@require_capability(Capability.VIEW_ALL_CASES, Capability.VIEW_ORG_CASES)
 def search(request):
     """Recherche globale, limitee au perimetre visible de l'utilisateur."""
     query = (request.GET.get("q") or "").strip()

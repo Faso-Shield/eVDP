@@ -266,13 +266,25 @@ def vulnerability_type_distribution(user, limit=10):
     ]
 
 
+def _overdue(user):
+    return visible_cases(user).filter(sla_events__state=SLAState.BREACHED).distinct()
+
+
 def overdue_cases(user, limit=20):
-    return list(
+    return list(_overdue(user).order_by("-priority_score")[:limit])
+
+
+def overdue_by_severity(user):
+    """Nombre de dossiers en depassement par severite, sans les identifier."""
+    rows = (
         visible_cases(user)
-        .filter(sla_events__state=SLAState.BREACHED)
-        .distinct()
-        .order_by("-priority_score")[:limit]
+        .filter(pk__in=_overdue(user).values("pk"))
+        .values("severity")
+        .annotate(total=Count("id"))
+        .order_by()
     )
+    counts = {row["severity"]: row["total"] for row in rows}
+    return [(label, counts.get(value, 0)) for value, label in Severity.choices]
 
 
 def dismissed_count(user):
