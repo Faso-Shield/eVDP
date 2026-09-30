@@ -1,6 +1,7 @@
 """Tests des programmes : annuaire public (recherche, filtres, tri) et
 gestion (creation, edition, coherence de la politique de recompense)."""
 
+import re
 from decimal import Decimal
 
 import pytest
@@ -479,3 +480,22 @@ def test_program_detail_hall_of_fame_lists_credited_researchers_only(client, bou
     assert "bb-hunter" in response.context["hall_of_fame"]
     assert "Chercheur anonyme" not in response.context["hall_of_fame"]
     assert "bb-hunter" in response.content.decode()
+
+
+def test_type_tabs_only_set_type_and_skip_the_stale_hidden_field(client, vdp_program):
+    """Le champ cache "type" porte l'onglet precedent : inclus en plus de
+    celui de l'URL de l'onglet, c'est lui que Django retenait et "Tous" ne
+    levait jamais le filtre."""
+    html = client.get(reverse("programs:list"), {"type": "VDP", "q": "Test"}).content.decode()
+    assert '<input type="hidden" name="type" value="VDP">' in html
+
+    tabs = re.findall(r'hx-get="([^"]*)"\s+hx-include="([^"]*)"', html)
+    assert tabs, "onglets introuvables"
+    base = reverse("programs:list")
+    assert {url for url, _ in tabs} == {
+        f"{base}?type=",
+        f"{base}?type=VDP",
+        f"{base}?type=BUG_BOUNTY",
+    }
+    for _, include in tabs:
+        assert include == "#program-filter-form [name]:not([name='type'])"

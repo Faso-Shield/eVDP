@@ -15,23 +15,25 @@ actif et le contenu du formulaire.
 <div id="program-app">
   <div class="btn-row mb-2">
     {% comment %}
-    hx-include reprend les valeurs ACTUELLES du formulaire (y compris un
-    texte tape mais pas encore "soumis" par le debounce) : sans cela, un
-    clic d'onglet juste apres une frappe perdrait la recherche en cours,
-    puisque les hrefs ci-dessous sont figes au dernier rendu serveur de
-    cette zone (voir le commentaire sur la zone etroite plus bas).
+    L'URL hx-get d'un onglet ne porte que "type". Le reste vient de
+    hx-include, qui relit le formulaire au moment du clic (y compris un
+    texte tape mais pas encore "soumis" par le debounce). Le champ cache
+    "type" du formulaire en est exclu : il porte l'onglet PRECEDENT, et
+    envoye en double avec celui de l'URL, c'est lui que Django retenait
+    ("Tous" ne levait jamais le filtre). Les hrefs gardent query_replace
+    pour la navigation sans JavaScript.
     {% endcomment %}
     <a class="btn btn-sm {% if not program_type %}btn-accent{% else %}btn-outline{% endif %}"
        href="?{% query_replace type='' page='' %}"
-       hx-get="{% url 'programs:list' %}?{% query_replace type='' page='' %}"
-       hx-include="#program-filter-form"
+       hx-get="{% url 'programs:list' %}?type="
+       hx-include="#program-filter-form [name]:not([name='type'])"
        hx-select="#program-app" hx-target="#program-app" hx-swap="outerHTML"
        hx-push-url="true" hx-indicator="#program-loading">Tous</a>
     {% for value, label in types %}
       <a class="btn btn-sm {% if program_type == value %}btn-accent{% else %}btn-outline{% endif %}"
          href="?{% query_replace type=value page='' %}"
-         hx-get="{% url 'programs:list' %}?{% query_replace type=value page='' %}"
-         hx-include="#program-filter-form"
+         hx-get="{% url 'programs:list' %}?type={{ value }}"
+         hx-include="#program-filter-form [name]:not([name='type'])"
          hx-select="#program-app" hx-target="#program-app" hx-swap="outerHTML"
          hx-push-url="true" hx-indicator="#program-loading">{{ label }}</a>
     {% endfor %}
