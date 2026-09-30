@@ -7,7 +7,7 @@
   <h1 class="mb-0">Dossiers de vulnérabilité</h1>
   <div class="btn-row">
     <a class="btn btn-sm btn-outline" href="{% url 'coordination:kanban' %}">Vue Kanban</a>
-    {% if user.is_national or user.is_organization_user %}
+    {% if can_export %}
       <a class="btn btn-sm btn-outline" href="{% url 'dashboard:export_cases_csv' %}">Export CSV</a>
       <a class="btn btn-sm btn-outline" href="{% url 'dashboard:export_cases_xlsx' %}">Export Excel</a>
     {% endif %}

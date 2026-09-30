@@ -306,3 +306,58 @@ def test_successful_login_resets_the_counter(client, settings):
     assert hit("login", "198.51.100.7", "2/5m")[0]
     reset("login", "198.51.100.7")
     assert hit("login", "198.51.100.7", "2/5m")[0]
+
+
+# ------------------------------------------------------ durcissements divers
+def test_export_links_follow_the_export_capability(client_for, triager, analyst):
+    """Le lien s'affichait a tout role national, menant a un 403 pour qui n'a
+    pas EXPORT_DATA."""
+    url = reverse("coordination:case_list")
+    assert "Export CSV" not in client_for(triager).get(url).content.decode()
+    assert "Export CSV" in client_for(analyst).get(url).content.decode()
+
+
+def test_api_search_and_bounties_are_throttled(client_for, analyst, monkeypatch):
+    """Sans throttle_scope, ScopedRateThrottle ne limitait pas ces vues."""
+    from django.core.cache import cache
+
+    from apps.api.throttling import ResilientScopedRateThrottle
+
+    cache.clear()
+    # DRF fige les debits a l'import de la classe : on les fixe sur elle.
+    monkeypatch.setattr(
+        ResilientScopedRateThrottle, "THROTTLE_RATES", {"authenticated": "2/day"}
+    )
+    client = client_for(analyst)
+    statuses = [client.get("/api/v1/search/", {"q": "x"}).status_code for _ in range(3)]
+    assert statuses == [200, 200, 429]
+    assert client.get("/api/v1/bounties/").status_code == 429
+
+
+def test_anonymous_report_never_asks_for_public_credit(organization):
+    from .conftest import build_report, submit
+
+    report = build_report(None, organization, is_anonymous=True, wants_credit=True)
+    report.reporter_email = "contact@exemple.bf"
+    case = submit(report)
+    case.report.refresh_from_db()
+    assert case.report.wants_credit is False
+
+
+def test_admin_cannot_delete_advisories_nor_edit_payout_details(rf, db):
+    from django.contrib.admin.sites import site
+
+    from apps.disclosures.models import Advisory
+    from apps.researchers.models import PayoutMethod, PayoutProfile
+
+    request = rf.get("/")
+    request.user = make_superuser()
+    assert not site._registry[Advisory].has_delete_permission(request)
+    for model, field in [(PayoutProfile, "legal_full_name"), (PayoutMethod, "account_number")]:
+        assert field in site._registry[model].get_readonly_fields(request)
+
+
+def make_superuser():
+    from .conftest import make_user
+
+    return make_user("root@test.bf", is_superuser=True, is_staff=True)

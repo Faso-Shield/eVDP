@@ -251,7 +251,12 @@ def case_list(request):
     return render(
         request,
         "coordination/case_list.html",
-        {"page_obj": page, "form": form, "stats": selectors.case_statistics(request.user)},
+        {
+            "page_obj": page,
+            "form": form,
+            "stats": selectors.case_statistics(request.user),
+            "can_export": request.user.has_capability(Capability.EXPORT_DATA),
+        },
     )
 
 

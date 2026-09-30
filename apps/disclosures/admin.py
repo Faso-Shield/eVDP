@@ -86,3 +86,8 @@ class AdvisoryAdmin(admin.ModelAdmin):
     inlines = [AdvisoryTimelineInline, AdvisoryReferenceInline]
     date_hierarchy = "created_at"
     actions = [action_publish, action_retract]
+
+    def has_delete_permission(self, request, obj=None):
+        # Un advisory publie est une reference publique (CVE, CSAF) : on le
+        # retire avec un motif, on ne l'efface pas.
+        return False

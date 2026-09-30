@@ -433,6 +433,8 @@ class ResearcherViewSet(
 class BountyViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = BountySerializer
     permission_classes = [IsAuthenticated]
+    # Sans scope, ScopedRateThrottle ne limite rien.
+    throttle_scope = "authenticated"
     filterset_fields = ["status", "severity"]
 
     def get_queryset(self):
@@ -444,6 +446,7 @@ class BountyViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
 
 class SearchView(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
+    throttle_scope = "authenticated"
 
     @extend_schema(responses={200: CaseListSerializer(many=True)})
     def list(self, request):

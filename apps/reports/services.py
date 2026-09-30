@@ -132,6 +132,9 @@ def submit_report(
         if motif:
             raise ValidationError({"program": motif})
 
+    if report.is_anonymous:
+        # Le credit public nommerait un declarant qui a choisi l'anonymat.
+        report.wants_credit = False
     report.source = source
     report.status = ReportStatus.SUBMITTED
     report.submitted_at = timezone.now()
