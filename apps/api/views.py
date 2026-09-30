@@ -13,7 +13,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.accounts.permissions import HasCapability, ReadOnlyForAuditors
@@ -34,6 +34,7 @@ from apps.coordination.workflow import OutOfScope, TransitionNotAllowed
 from apps.disclosures.models import Advisory
 from apps.organizations.models import Organization, OrganizationStatus
 from apps.programs.models import Program
+from apps.programs.permissions import can_manage_program
 from apps.reports.services import submit_report
 from apps.researchers.models import IdentityMode, ResearcherProfile
 from apps.vulnerabilities.constants import ReportSource
@@ -307,6 +308,20 @@ class ReportViewSet(
         return Response(CaseDetailSerializer(case, context={"request": request}).data)
 
 
+class CanManageProgram(BasePermission):
+    """Controle l'objet vise, que HasCapability ne regarde pas.
+
+    La liste d'un compte d'organisation inclut les programmes publics des
+    autres organisations : sans ce controle, un DSI pouvait les modifier ou
+    les supprimer par l'API.
+    """
+
+    message = "Vous ne pouvez gérer que les programmes de votre organisation."
+
+    def has_object_permission(self, request, view, obj):
+        return can_manage_program(request.user, obj)
+
+
 class ProgramViewSet(viewsets.ModelViewSet):
     serializer_class = ProgramSerializer
     lookup_field = "slug"
@@ -316,7 +331,7 @@ class ProgramViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return [AllowAny()]
-        return [IsAuthenticated(), HasCapability(), ReadOnlyForAuditors()]
+        return [IsAuthenticated(), HasCapability(), ReadOnlyForAuditors(), CanManageProgram()]
 
     @property
     def required_capabilities(self):

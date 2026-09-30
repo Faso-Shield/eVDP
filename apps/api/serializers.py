@@ -137,6 +137,16 @@ class ProgramWriteSerializer(serializers.ModelSerializer):
             "allows_anonymous_reports",
         ]
 
+    def validate_organization(self, organization):
+        """Meme restriction que ProgramForm : hors rôle national, un programme
+        ne se cree ou ne se rattache qu'a l'une de ses organisations."""
+        user = self.context["request"].user
+        if not user.is_national and organization.id not in set(user.organization_ids()):
+            raise serializers.ValidationError(
+                "Vous ne pouvez gérer un programme que pour votre propre organisation."
+            )
+        return organization
+
     def validate(self, attrs):
         """Fait passer l'ecriture API par Program.clean().
 

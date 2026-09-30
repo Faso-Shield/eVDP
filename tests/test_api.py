@@ -559,3 +559,54 @@ def test_api_rejects_a_bug_bounty_open_to_anonymous_reports(
     )
     assert response.status_code == 201
     assert not Program.objects.get(name="Bug Bounty par API").accepts_anonymous_reports
+
+
+def test_api_refuses_to_edit_another_organizations_program(
+    client_for, manager_beta, vdp_program
+):
+    """Un programme public d'une autre organisation se lit, il ne se gere pas."""
+    client = client_for(manager_beta)
+    url = f"/api/v1/programs/{vdp_program.slug}/"
+    assert client.get(url).status_code == 200
+
+    response = client.patch(
+        url, data=json.dumps({"name": "Detourne"}), content_type="application/json"
+    )
+    # Refus sur un objet precis : presente comme un 404 (apps/api/exceptions.py).
+    assert response.status_code == 404
+    assert client.delete(url).status_code == 404
+
+    vdp_program.refresh_from_db()
+    assert vdp_program.name == "VDP Test"
+
+
+def test_api_refuses_to_create_a_program_for_another_organization(
+    client_for, manager_beta, organization
+):
+    client = client_for(manager_beta)
+    response = client.post(
+        "/api/v1/programs/",
+        data=json.dumps(
+            {
+                "name": "Programme usurpe",
+                "program_type": "VDP",
+                "organization": str(organization.pk),
+            }
+        ),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert "organization" in response.json()
+    assert not Program.objects.filter(name="Programme usurpe").exists()
+
+
+def test_api_lets_a_manager_edit_its_own_program(client_for, manager_alpha, vdp_program):
+    client = client_for(manager_alpha)
+    response = client.patch(
+        f"/api/v1/programs/{vdp_program.slug}/",
+        data=json.dumps({"name": "VDP renomme"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    vdp_program.refresh_from_db()
+    assert vdp_program.name == "VDP renomme"
