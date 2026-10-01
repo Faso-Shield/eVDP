@@ -306,3 +306,32 @@ def test_submit_form_announces_each_program_rule(client, bounty_program, vdp_pro
     assert "identifié" in rules[str(bounty_program.pk)]["refus"]
     assert rules[str(vdp_program.pk)]["refus"] == ""
     assert "js/report-submit.js" in html
+
+
+def test_submit_form_leaves_technical_qualification_to_the_csirt(client):
+    """La qualification technique revient a l'analyste (etape 3) : le
+    declarant n'a plus a la renseigner."""
+    html = client.get(reverse("reports:submit")).content.decode()
+    assert "Qualification technique" not in html
+    for name in ("vulnerability_type", "cwe", "cvss_vector", "reported_severity"):
+        assert f'name="{name}"' not in html
+    # Pieces jointes obligatoires : signalees comme les autres champs requis.
+    label = html.split('for="attachments"')[1].split("</label>")[0]
+    assert 'class="required"' in label
+
+
+def test_anonymous_report_cannot_ask_for_public_credit(organization):
+    from apps.reports.forms import VulnerabilityReportForm
+
+    form = VulnerabilityReportForm(
+        data={
+            "title": "Titre de test",
+            "affected_organization": organization.pk,
+            "description": "Description suffisamment longue pour la validation.",
+            "is_anonymous": "on",
+            "wants_credit": "on",
+            "accept_policy": "on",
+        }
+    )
+    assert not form.is_valid()
+    assert "wants_credit" in form.errors

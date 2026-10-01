@@ -690,3 +690,10 @@ def test_redoc_runs_without_external_fonts_and_with_its_worker(client, settings)
     assert "worker-src 'self' blob:" in response["Content-Security-Policy"]
     # L'exception reste propre a Redoc.
     assert "worker-src" not in client.get("/api/docs/")["Content-Security-Policy"]
+
+
+def test_api_refuses_anonymous_report_with_public_credit(client_for, researcher_a):
+    payload = {**REPORT_PAYLOAD, "is_anonymous": True, "wants_credit": True}
+    response = post_report(client_for(researcher_a), payload)
+    assert response.status_code == 400
+    assert "wants_credit" in response.json()

@@ -803,14 +803,4 @@ table.table td { overflow-wrap: normal; }
   display: flex; justify-content: space-between; align-items: center; gap: .5rem;
   padding: .3rem 0; border-bottom: 1px solid var(--border); font-size: .88rem;
 }
-.cvss-calculator { margin-top: .8rem; }
-.cvss-calculator summary { cursor: pointer; font-weight: 600; }
-.cvss-metric { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .45rem 0; }
-.cvss-metric-label { min-width: 11rem; font-size: .85rem; color: var(--text-muted); }
-.cvss-options { display: flex; flex-wrap: wrap; gap: .25rem; }
-.cvss-option {
-  font: inherit; font-size: .8rem; padding: .25rem .6rem; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 999px; background: transparent; color: inherit;
-}
-.cvss-option.selected { background: var(--evdp-accent); border-color: var(--evdp-accent); color: #fff; }
 #description-counter.counter-ok { color: var(--evdp-accent); }

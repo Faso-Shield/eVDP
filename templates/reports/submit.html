@@ -88,31 +88,6 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><h2>Qualification technique</h2></div>
-        <div class="card-body">
-          <div class="form-grid">
-            {% include "partials/form_field.html" with field=form.vulnerability_type %}
-            {% include "partials/form_field.html" with field=form.cwe %}
-            {% include "partials/form_field.html" with field=form.reported_severity %}
-            {% include "partials/form_field.html" with field=form.cvss_vector %}
-            {% include "partials/form_field.html" with field=form.affected_version %}
-            {% include "partials/form_field.html" with field=form.fixed_version %}
-            {% include "partials/form_field.html" with field=form.environment %}
-            {% include "partials/form_field.html" with field=form.external_reference %}
-          </div>
-          <div class="notice" id="pgp-severity-hint" hidden>
-            Gravité critique : envisagez de chiffrer les détails sensibles avec la
-            clé publique nationale (champ « bloc PGP » plus bas).
-          </div>
-          <details class="cvss-calculator" id="cvss-calculator" hidden>
-            <summary>Composer le vecteur CVSS 3.1</summary>
-            <div id="cvss-metrics"></div>
-            <p class="small mono" id="cvss-readout" aria-live="polite"></p>
-          </details>
-        </div>
-      </div>
-
-      <div class="card">
         <div class="card-header">
           <h2>Description</h2>
           <span class="pill">Markdown accepté</span>
@@ -134,7 +109,7 @@
         <div class="card-header"><h2>Pièces jointes</h2></div>
         <div class="card-body">
           <div class="form-field">
-            <label for="attachments">Fichiers ({{ max_attachments }} maximum)</label>
+            <label for="attachments">Fichiers ({{ max_attachments }} maximum)<abbr class="required" title="Champ obligatoire">*</abbr></label>
             <input type="file" name="attachments" id="attachments" multiple required>
             <div class="dropzone" id="dropzone" role="button" tabindex="0" hidden>
               Glissez vos fichiers ici, ou cliquez pour les choisir.
