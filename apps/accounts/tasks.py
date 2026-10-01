@@ -31,7 +31,9 @@ def purge_pending_activations():
     from .models import User
 
     cutoff = timezone.now() - timedelta(days=PENDING_ACTIVATION_DAYS)
-    stale = User.objects.filter(pending_activation=True, is_active=False, created_at__lt=cutoff)
+    stale = User.objects.filter(
+        pending_activation=True, is_active=False, created_at__lt=cutoff
+    )
     count = stale.count()
     stale.delete()
     return count

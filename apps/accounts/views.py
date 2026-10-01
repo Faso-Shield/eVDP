@@ -153,7 +153,9 @@ def resend_activation(request):
         user = User.objects.filter(email=email, pending_activation=True).first()
         if user is not None:
             send_activation_email(user, UserToken.issue(user, TokenPurpose.EMAIL_VERIFICATION))
-        return render(request, "accounts/activation_sent.html", {"email": email, "resent": True})
+        return render(
+            request, "accounts/activation_sent.html", {"email": email, "resent": True}
+        )
     return render(request, "accounts/activation_resend.html")
 
 
@@ -429,7 +431,11 @@ def verify_email(request, token):
     user.save(update_fields=fields)
     entry.consume()
     log_action(
-        AuditAction.EMAIL_VERIFIED, actor=user, obj=user, request=request, activation=activating
+        AuditAction.EMAIL_VERIFIED,
+        actor=user,
+        obj=user,
+        request=request,
+        activation=activating,
     )
     if activating:
         login(request, user, backend="django.contrib.auth.backends.ModelBackend")
