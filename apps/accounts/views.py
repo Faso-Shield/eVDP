@@ -387,7 +387,9 @@ def mfa_lost_device(request):
     user = request.user
     if not user.mfa_required or not user.mfa_enabled:
         return redirect("accounts:mfa_challenge")
-    roles = [role for role, caps in ROLE_CAPABILITIES.items() if Capability.MANAGE_USERS in caps]
+    roles = [
+        role for role, caps in ROLE_CAPABILITIES.items() if Capability.MANAGE_USERS in caps
+    ]
     managers = User.objects.filter(is_active=True, role__in=roles).exclude(pk=user.pk)
     notify_many(
         managers,
