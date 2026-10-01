@@ -119,8 +119,11 @@ jobs:
         run: bandit -r apps config -ll -f screen
 
       - name: pip-audit (vulnerabilites des dependances)
-        run: pip-audit -r requirements/base.txt --strict
-        continue-on-error: true
+        # Bloquant : une dependance vulnerable ne doit pas partir en image.
+        # lock.txt est ce que l'image installe reellement.
+        run: |
+          pip-audit -r requirements/base.txt --strict
+          pip-audit -r requirements/lock.txt --strict
 
       - name: Verifier l'absence de secret commite
         run: |
@@ -199,12 +202,12 @@ jobs:
           ignore-unfixed: true
           exit-code: "0"
 
-      - name: Trivy (echec sur CRITICAL corrigeable)
+      - name: Trivy (echec sur CRITICAL ou HIGH corrigeable)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: evdp-app:ci
           format: table
-          severity: CRITICAL
+          severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
 
