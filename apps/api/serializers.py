@@ -222,7 +222,9 @@ class ReportSubmissionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs.get("is_anonymous") and attrs.get("wants_credit"):
             raise serializers.ValidationError(
-                {"wants_credit": "Un signalement anonyme ne peut pas être crédité publiquement."}
+                {
+                    "wants_credit": "Un signalement anonyme ne peut pas être crédité publiquement."
+                }
             )
         program = attrs.get("program")
         if program is not None and not program.is_open:
