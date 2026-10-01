@@ -367,8 +367,8 @@ REST_FRAMEWORK = {
 SPECTACULAR_SETTINGS = {
     "TITLE": "eVDP API",
     "DESCRIPTION": (
-        "API de la plateforme nationale de divulgation coordonnee de "
-        "vulnerabilites et de Bug Bounty (CYBER-DEF 2)."
+        "API de la plateforme nationale de divulgation coordonnée de "
+        "vulnérabilités et de Bug Bounty (CYBER-DEF 2)."
     ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,

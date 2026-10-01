@@ -679,3 +679,14 @@ def test_active_api_keys_are_capped(client_for, researcher_a):
     assert (
         ApiKey.objects.filter(user=researcher_a, is_active=True).count() == MAX_ACTIVE_API_KEYS
     )
+
+
+def test_redoc_runs_without_external_fonts_and_with_its_worker(client, settings):
+    """Google Fonts et le worker « blob: » de la recherche Redoc etaient
+    bloques par la CSP de production : erreurs en console a chaque visite."""
+    settings.CSP_DIRECTIVES = {"default-src": "'self'", "script-src": "'self'"}
+    response = client.get("/api/redoc/")
+    assert "fonts.googleapis" not in response.content.decode()
+    assert "worker-src 'self' blob:" in response["Content-Security-Policy"]
+    # L'exception reste propre a Redoc.
+    assert "worker-src" not in client.get("/api/docs/")["Content-Security-Policy"]

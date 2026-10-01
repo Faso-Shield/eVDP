@@ -1,11 +1,7 @@
 """Routage de l'API v1."""
 
 from django.urls import include, path
-from drf_spectacular.views import (
-    SpectacularAPIView,
-    SpectacularRedocView,
-    SpectacularSwaggerSplitView,
-)
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerSplitView
 from rest_framework.routers import DefaultRouter
 
 from apps.csaf.views import CsafExportView, CsafImportView
@@ -41,7 +37,7 @@ urlpatterns = [
     ),
     path(
         "redoc/",
-        SpectacularRedocView.as_view(url_name="api:schema"),
+        views.RedocView.as_view(url_name="api:schema"),
         name="redoc",
     ),
 ]

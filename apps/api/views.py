@@ -4,10 +4,12 @@ Toutes les listes partent d'un queryset filtre par le perimetre de
 l'utilisateur : aucune vue ne renvoie de donnee hors habilitation.
 """
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.views import SpectacularRedocView
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -455,3 +457,22 @@ class SearchView(viewsets.ViewSet):
         return Response(
             CaseListSerializer(cases, many=True, context={"request": request}).data
         )
+
+
+class RedocView(SpectacularRedocView):
+    """Redoc sous la CSP du site, plus les workers « blob: ».
+
+    Redoc indexe sa recherche dans un worker cree depuis un blob, que
+    script-src 'self' interdit. L'exception vaut pour cette seule page : le
+    middleware de securite garde la CSP deja posee par la vue.
+    """
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        directives = dict(getattr(settings, "CSP_DIRECTIVES", {}) or {})
+        if directives:
+            directives["worker-src"] = "'self' blob:"
+            response["Content-Security-Policy"] = "; ".join(
+                f"{name} {value}".strip() for name, value in directives.items()
+            )
+        return response

@@ -1,0 +1,30 @@
+{% load static %}
+{% comment %}
+Surcharge de drf_spectacular/redoc.html (drf-spectacular 0.30), ajustee a la
+CSP de production :
+- pas de feuille Google Fonts (style-src 'self' la bloquait) : polices du
+  systeme ;
+- pas de branche « settings », qui amorcait Redoc par un script inline
+  (script-src 'self') : aucun reglage REDOC_UI_SETTINGS n'est utilise ;
+- favicon du site, sinon /favicon.ico finissait en 404 ;
+- encart « API docs by Redocly » masque : son logo vient d'un CDN externe,
+  que la CSP refuse.
+Le worker de recherche de Redoc est autorise par apps.api.views.RedocView.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <title>{{ title|default:"Redoc" }}</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="{% static 'img/favicon-32.png' %}" type="image/png" sizes="32x32">
+    <style>
+      body { margin: 0; padding: 0; }
+      a[href*="redocly.com"] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <redoc spec-url="{{ schema_url }}"></redoc>
+    <script src="{{ redoc_standalone }}"></script>
+  </body>
+</html>
