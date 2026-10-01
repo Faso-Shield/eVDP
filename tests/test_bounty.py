@@ -1312,3 +1312,27 @@ def test_proposal_without_amount_uses_the_suggestion(bounty_case, analyst):
     _set_score(bounty_case, Severity.MEDIUM, Decimal("6.5"))
     bounty = propose_bounty(bounty_case, analyst)
     assert bounty.proposed_amount == Decimal("270000")
+
+
+# ------------------------------------------------ liste : indicateurs, onglets
+def test_bounty_list_counts_and_filters_by_group(client_for, bounty_case, analyst):
+    from apps.bounty.models import Bounty, BountyStatus
+
+    propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    client = client_for(analyst)
+    indicators = client.get(reverse("bounty:list")).context["indicators"]
+    assert indicators["total"] == 1
+    assert indicators["groups"]["pending"] == 1
+    assert indicators["paid"] == []
+    assert not client.get(reverse("bounty:list"), {"status": "paid"}).context["page_obj"]
+
+    Bounty.objects.filter(case=bounty_case).update(
+        status=BountyStatus.PAID, approved_amount=Decimal("150000")
+    )
+    page = client.get(reverse("bounty:list"))
+    assert page.context["indicators"]["paid"] == [("XOF", Decimal("150000"))]
+    assert 'href="?status=paid"' in page.content.decode()
+    paid = client.get(reverse("bounty:list"), {"status": "paid"}).context["page_obj"]
+    assert [b.status for b in paid] == [BountyStatus.PAID]
+    # Ancien filtre par statut exact toujours accepte.
+    assert len(client.get(reverse("bounty:list"), {"status": "PAID"}).context["page_obj"]) == 1

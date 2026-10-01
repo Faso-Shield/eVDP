@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
+from django.db.models import Count, Sum
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -25,7 +26,7 @@ from .forms import (
     PaymentForm,
     SettlementForm,
 )
-from .models import BountyPayment
+from .models import BountyPayment, BountyStatus
 from .services import (
     SETTLEMENT_ELIGIBLE_CASE_STATUSES,
     authorize_proof_download,
@@ -123,19 +124,57 @@ def _instruit_les_recompenses(user):
     )
 
 
+#: Onglets de la liste : cle -> (libelle, statuts regroupes).
+BOUNTY_TABS = {
+    "pending": ("En attente", [BountyStatus.PENDING, BountyStatus.UNDER_REVIEW]),
+    "approved": ("Approuvées", [BountyStatus.APPROVED, BountyStatus.PAYMENT_PENDING]),
+    "paid": ("Payées", [BountyStatus.PAID]),
+    "closed": ("Rejetées ou annulées", [BountyStatus.REJECTED, BountyStatus.CANCELLED]),
+}
+
+
+def _bounty_indicators(bounties):
+    """Nombres par groupe et montant verse par devise, sur le perimetre visible."""
+    counts = {
+        row["status"]: row["total"]
+        for row in bounties.order_by().values("status").annotate(total=Count("id"))
+    }
+    paid = (
+        bounties.filter(status=BountyStatus.PAID)
+        .order_by()
+        .values("currency")
+        .annotate(total=Sum("approved_amount"))
+        .order_by("currency")
+    )
+    return {
+        "total": sum(counts.values()),
+        "groups": {
+            key: sum(counts.get(status, 0) for status in statuses)
+            for key, (_label, statuses) in BOUNTY_TABS.items()
+        },
+        "paid": [(row["currency"], row["total"] or 0) for row in paid],
+    }
+
+
 @login_required
 def bounty_list(request):
-    queryset = _visible_bounties(request.user).order_by("-created_at")
-    status = request.GET.get("status", "").upper()
-    if status:
-        queryset = queryset.filter(status=status)
+    visible = _visible_bounties(request.user)
+    queryset = visible.order_by("-created_at")
+    selected = request.GET.get("status", "")
+    if selected in BOUNTY_TABS:
+        queryset = queryset.filter(status__in=BOUNTY_TABS[selected][1])
+    elif selected.upper() in BountyStatus.values:
+        # Filtre par statut exact : liens deja diffuses.
+        queryset = queryset.filter(status=selected.upper())
     page = Paginator(queryset, 25).get_page(request.GET.get("page"))
     return render(
         request,
         "bounty/list.html",
         {
             "page_obj": page,
-            "selected_status": status,
+            "selected_status": selected,
+            "tabs": [(key, label) for key, (label, _statuses) in BOUNTY_TABS.items()],
+            "indicators": _bounty_indicators(visible),
             "peut_instruire": _instruit_les_recompenses(request.user),
         },
     )
