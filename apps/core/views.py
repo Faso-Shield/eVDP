@@ -216,11 +216,20 @@ périmètre du programme concerne, est consideree comme autorisée. eVDP
 s'engage à ne pas engager de poursuites à l'encontre d'un chercheur respectant
 ces conditions et à l'accompagner en cas de sollicitation d'un tiers.
 
+Cette autorisation ne vaut que dans ces conditions : hors périmètre ou hors
+règles, l'accès et le maintien frauduleux dans un système d'information
+relèvent du Code pénal (loi n°025-2018/AN, Livre VII).
+
 ## Confidentialité
 
 Les rapports sont prives par défaut. Aucun rapport n'est publié
 automatiquement. Seule une version assainie (advisory) peut être publiée après
 coordination avec l'organisation affectée.
+
+Les données personnelles d'un déclarant (identité, coordonnées) sont traitées
+conformément à la loi n°001-2021/AN portant protection des personnes à l'égard
+du traitement des données à caractère personnel, sous le contrôle de la
+Commission de l'Informatique et des Libertés (CIL).
 
 ## Délais
 
@@ -233,4 +242,28 @@ coordination avec l'organisation affectée.
 
 Le chercheur choisit d'apparaître sous son identité réelle, sous pseudonyme ou
 de rester anonyme. Ce choix est respecte dans toute publication.
+
+## Cadre légal applicable (Burkina Faso)
+
+- **Loi n°014-2024/ALT** du 9 juillet 2024 portant sécurité des systèmes
+  d'information au Burkina Faso, qui fixe le cadre national de la
+  cybersécurité et le rôle de l'ANSSI.
+- **Loi n°025-2018/AN** du 31 mai 2018 portant Code pénal, Livre VII :
+  infractions relatives aux systèmes d'information.
+- **Loi n°001-2021/AN** du 30 mars 2021 portant protection des personnes à
+  l'égard du traitement des données à caractère personnel (CIL).
+- **Loi n°045-2009/AN** du 10 novembre 2009 portant réglementation des
+  services et des transactions électroniques : valeur juridique d'un
+  signalement, d'un accusé de réception ou d'une notification électronique.
+- **Décret n°2013-1053** portant création de l'ANSSI, dont relève l'équipe
+  nationale de réponse aux incidents (CIRT-BF).
+
+## Références normatives
+
+- **ISO/IEC 29147:2018** (divulgation de vulnérabilités) : réception des
+  rapports, politique de divulgation et publication d'un avis — étapes
+  « Soumis », « Réception accusée » et « Advisory en relecture » jusqu'à la
+  clôture.
+- **ISO/IEC 30111:2019** (traitement des vulnérabilités) : vérification,
+  priorisation et correction — étapes « En analyse » à « Correctif vérifié ».
 """
