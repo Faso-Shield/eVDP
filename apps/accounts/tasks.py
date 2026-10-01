@@ -20,6 +20,23 @@ def purge_expired_tokens():
     return count
 
 
+#: Inscription jamais confirmee : supprimee apres ce delai, ce qui libere
+#: l'adresse pour une nouvelle inscription.
+PENDING_ACTIVATION_DAYS = 7
+
+
+@shared_task(name="apps.accounts.tasks.purge_pending_activations")
+def purge_pending_activations():
+    """Supprime les inscriptions dont le lien d'activation n'a jamais servi."""
+    from .models import User
+
+    cutoff = timezone.now() - timedelta(days=PENDING_ACTIVATION_DAYS)
+    stale = User.objects.filter(pending_activation=True, is_active=False, created_at__lt=cutoff)
+    count = stale.count()
+    stale.delete()
+    return count
+
+
 @shared_task(name="apps.accounts.tasks.remind_unverified_accounts")
 def remind_unverified_accounts():
     """Relance les comptes non verifies avant l'expiration de leur sursis.

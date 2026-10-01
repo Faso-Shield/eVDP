@@ -78,6 +78,12 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     is_active = models.BooleanField(default=True, verbose_name="Compte actif")
     is_staff = models.BooleanField(default=False, verbose_name="Accès à l'administration")
     email_verified = models.BooleanField(default=False, verbose_name="Adresse vérifiée")
+    #: Inscription publique pas encore confirmee par le lien envoye par email.
+    #: Distinct de is_active=False pose par un administrateur : seul un compte
+    #: en attente d'activation peut etre active par ce lien.
+    pending_activation = models.BooleanField(
+        default=False, verbose_name="Activation par email en attente"
+    )
     verification_reminded_on = models.DateField(
         null=True,
         blank=True,

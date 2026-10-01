@@ -44,7 +44,7 @@ from .forms import (
     TotpCodeForm,
 )
 from .middleware import elevate, session_is_elevated
-from .models import ApiKey, TokenPurpose, UserToken
+from .models import ApiKey, TokenPurpose, User, UserToken
 
 #: Secret candidat d'un enrolement en cours. Il ne rejoint le compte qu'une
 #: fois un code valide fourni : un enrolement abandonne ne laisse rien
@@ -92,7 +92,12 @@ def register(request):
         form = RegistrationForm(request.POST)
         if form.is_valid():
             with transaction.atomic():
-                user = form.save()
+                # Le compte reste inactif tant que l'adresse n'est pas confirmee :
+                # une adresse saisie par erreur ou usurpee ne donne acces a rien.
+                user = form.save(commit=False)
+                user.is_active = False
+                user.pending_activation = True
+                user.save()
                 get_or_create_profile(
                     user,
                     pseudonym=form.cleaned_data.get("pseudonym") or "",
@@ -105,24 +110,51 @@ def register(request):
                 obj=user,
                 request=request,
                 role=user.role,
+                pending_activation=True,
             )
-            notify(
-                user,
-                NotificationKind.ACCOUNT,
-                title="Bienvenue sur eVDP",
-                body="Confirmez votre adresse email pour activer toutes les fonctions.",
-                url=f"/verify-email/{token.token}/",
-            )
-            messages.success(
-                request,
-                "Compte créé. Un email de vérification vous a été envoyé : "
-                "confirmez votre adresse pour soumettre des rapports.",
-            )
-            login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-            return redirect("dashboard:home")
+            send_activation_email(user, token)
+            return render(request, "accounts/activation_sent.html", {"email": user.email})
     else:
         form = RegistrationForm()
     return render(request, "accounts/register.html", {"form": form})
+
+
+def send_activation_email(user, token):
+    """Lien d'activation, envoye directement : notify() ignore un compte inactif."""
+    from django.conf import settings
+    from django.core.mail import send_mail
+
+    from apps.notifications.services import _absolute
+
+    link = _absolute(reverse("accounts:verify_email", args=[token.token]))
+    send_mail(
+        subject="[eVDP] Activez votre compte",
+        message=(
+            "Votre compte eVDP a été créé. Confirmez votre adresse email pour "
+            f"l'activer :\n\n{link}\n\nCe lien est valable 24 heures. Si vous "
+            "n'êtes pas à l'origine de cette inscription, ignorez ce message : "
+            "le compte ne sera jamais activé."
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+        fail_silently=True,
+    )
+
+
+@rate_limited("activation")
+def resend_activation(request):
+    """Nouveau lien d'activation, sur simple saisie de l'adresse.
+
+    La reponse est la meme que l'adresse corresponde ou non a une inscription
+    en attente : la page ne revele pas quels comptes existent.
+    """
+    if request.method == "POST":
+        email = (request.POST.get("email") or "").strip().lower()
+        user = User.objects.filter(email=email, pending_activation=True).first()
+        if user is not None:
+            send_activation_email(user, UserToken.issue(user, TokenPurpose.EMAIL_VERIFICATION))
+        return render(request, "accounts/activation_sent.html", {"email": email, "resent": True})
+    return render(request, "accounts/activation_resend.html")
 
 
 def _safe_next(request):
@@ -382,11 +414,28 @@ def verify_email(request, token):
         messages.error(request, "Lien de vérification invalide ou expiré.")
         return redirect("core:home")
     user = entry.user
+    activating = user.pending_activation
+    if not user.is_active and not activating:
+        # Compte desactive par un administrateur : un ancien lien ne le
+        # reactive pas.
+        messages.error(request, "Ce compte est désactivé.")
+        return redirect("core:home")
     user.email_verified = True
-    user.save(update_fields=["email_verified", "updated_at"])
+    fields = ["email_verified", "updated_at"]
+    if activating:
+        user.is_active = True
+        user.pending_activation = False
+        fields += ["is_active", "pending_activation"]
+    user.save(update_fields=fields)
     entry.consume()
-    log_action(AuditAction.EMAIL_VERIFIED, actor=user, obj=user, request=request)
-    messages.success(request, "Adresse email vérifiée. Merci.")
+    log_action(
+        AuditAction.EMAIL_VERIFIED, actor=user, obj=user, request=request, activation=activating
+    )
+    if activating:
+        login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        messages.success(request, "Adresse confirmée : votre compte est activé. Bienvenue !")
+    else:
+        messages.success(request, "Adresse email vérifiée. Merci.")
     return redirect("dashboard:home")
 
 

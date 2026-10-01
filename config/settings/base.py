@@ -271,6 +271,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.accounts.tasks.purge_expired_tokens",
         "schedule": crontab(minute=0, hour=3),
     },
+    "evdp-inscriptions-non-activees": {
+        "task": "apps.accounts.tasks.purge_pending_activations",
+        "schedule": crontab(minute=15, hour=3),
+    },
     "evdp-relance-comptes-non-verifies": {
         "task": "apps.accounts.tasks.remind_unverified_accounts",
         "schedule": crontab(minute=30, hour=8),
@@ -510,6 +514,8 @@ EVDP = {
         # passe reparti sur de nombreuses IP contre un seul compte.
         "login_account": env("EVDP_RL_LOGIN_ACCOUNT", default="10/15m"),
         "register": env("EVDP_RL_REGISTER", default="5/1h"),
+        # Renvoi du lien d'activation (inscription en attente).
+        "activation": env("EVDP_RL_ACTIVATION", default="5/1h"),
         "report": env("EVDP_RL_REPORT", default="10/1h"),
         "password_reset": env("EVDP_RL_PASSWORD_RESET", default="5/1h"),
         # Second facteur : limite par compte, pas par IP. Un code a six

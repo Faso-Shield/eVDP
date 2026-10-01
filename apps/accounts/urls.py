@@ -18,6 +18,7 @@ urlpatterns = [
     ),
     path("verify-email/<str:token>/", views.verify_email, name="verify_email"),
     path("resend-verification/", views.resend_verification, name="resend_verification"),
+    path("activation/renvoyer/", views.resend_activation, name="resend_activation"),
     path("profile/", views.profile, name="profile"),
     path("profile/password/", views.change_password, name="change_password"),
     path("profile/api-keys/new/", views.api_key_create, name="api_key_create"),

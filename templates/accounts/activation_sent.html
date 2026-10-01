@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Activez votre compte{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px;margin:2rem auto">
+  <div class="card-header"><h1 style="font-size:1.4rem">Vérifiez votre boîte mail</h1></div>
+  <div class="card-body">
+    {% if resent %}
+      <p>Si une inscription en attente correspond à <strong>{{ email }}</strong>,
+      un nouveau lien d'activation vient d'y être envoyé.</p>
+    {% else %}
+      <p>Un lien d'activation a été envoyé à <strong>{{ email }}</strong>.</p>
+      <p>Votre compte ne sera utilisable qu'après avoir cliqué sur ce lien :
+      l'adresse doit être la vôtre, c'est par elle que le CSIRT vous joindra.</p>
+    {% endif %}
+    <p class="small muted">Le lien est valable 24 heures. Pensez à vérifier le
+    dossier des indésirables. Une inscription non confirmée sous 7 jours est
+    supprimée.</p>
+    <a class="btn btn-outline" href="{% url 'accounts:resend_activation' %}">Renvoyer le lien</a>
+  </div>
+</div>
+{% endblock %}

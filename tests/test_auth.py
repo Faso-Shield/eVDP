@@ -154,3 +154,79 @@ def test_anonymous_is_redirected_from_dashboard(client):
 def test_password_hashing_uses_configured_hasher(researcher_a):
     assert not researcher_a.password.startswith("plain")
     assert researcher_a.check_password(PASSWORD)
+
+
+# ------------------------------------------------ activation par email
+REGISTRATION = {
+    "email": "activation@test.bf",
+    "full_name": "A Activer",
+    "role": Role.SECURITY_RESEARCHER,
+    "password1": "MotDePasseTresSolide2026",
+    "password2": "MotDePasseTresSolide2026",
+    "identity_mode": "PSEUDONYM",
+    "accept_policy": "on",
+}
+
+
+def _activation_link(mailbox):
+    import re
+
+    return re.search(r"https?://[^\s]+/verify-email/[^\s/]+/", mailbox[-1].body).group(0)
+
+
+def test_account_stays_inactive_until_its_email_is_confirmed(client, mailoutbox):
+    response = client.post(reverse("accounts:register"), REGISTRATION)
+    assert "Vérifiez votre boîte mail" in response.content.decode()
+    user = User.objects.get(email="activation@test.bf")
+    assert not user.is_active and user.pending_activation
+    # Ni connecte d'office, ni capable de se connecter.
+    assert "_auth_user_id" not in client.session
+    client.post(
+        reverse("accounts:login"),
+        {"username": "activation@test.bf", "password": "MotDePasseTresSolide2026"},
+    )
+    assert "_auth_user_id" not in client.session
+
+    link = _activation_link(mailoutbox)
+    response = client.get(link[link.index("/verify-email/") :])
+    user.refresh_from_db()
+    assert user.is_active and user.email_verified and not user.pending_activation
+    assert response["Location"] == reverse("dashboard:home")
+    assert client.session["_auth_user_id"] == str(user.pk)
+
+
+def test_old_link_does_not_revive_a_disabled_account(client, mailoutbox, researcher_a):
+    token = UserToken.issue(researcher_a, TokenPurpose.EMAIL_VERIFICATION)
+    researcher_a.is_active = False
+    researcher_a.save(update_fields=["is_active"])
+    client.get(reverse("accounts:verify_email", args=[token.token]))
+    researcher_a.refresh_from_db()
+    assert not researcher_a.is_active
+
+
+def test_activation_link_can_be_resent_without_revealing_accounts(client, mailoutbox):
+    client.post(reverse("accounts:register"), REGISTRATION)
+    sent = len(mailoutbox)
+    url = reverse("accounts:resend_activation")
+    known = client.post(url, {"email": "activation@test.bf"}).content.decode()
+    assert len(mailoutbox) == sent + 1
+    unknown = client.post(url, {"email": "personne@test.bf"}).content.decode()
+    assert len(mailoutbox) == sent + 1
+    assert ("Si une inscription en attente" in known) and (
+        "Si une inscription en attente" in unknown
+    )
+
+
+def test_unconfirmed_registrations_are_purged_after_a_week(client):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.accounts.tasks import purge_pending_activations
+
+    client.post(reverse("accounts:register"), REGISTRATION)
+    User.objects.filter(email="activation@test.bf").update(
+        created_at=timezone.now() - timedelta(days=8)
+    )
+    assert purge_pending_activations() == 1
+    assert not User.objects.filter(email="activation@test.bf").exists()
