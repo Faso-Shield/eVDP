@@ -1201,7 +1201,7 @@ def set_severity(case, actor, severity=None, cvss_vector="", request=None):
     add_timeline_event(
         case,
         TimelineEventType.SEVERITY_SET,
-        f"Severite retenue : {case.get_severity_display()}",
+        f"Sévérité retenue : {case.get_severity_display()}",
         actor=actor,
     )
     log_action(
@@ -1228,7 +1228,7 @@ def schedule_disclosure(case, actor, disclosure_date, request=None):
     add_timeline_event(
         case,
         TimelineEventType.DISCLOSURE_SCHEDULED,
-        f"Divulgation planifiee le {disclosure_date:%d/%m/%Y}",
+        f"Divulgation planifiée le {disclosure_date:%d/%m/%Y}",
         actor=actor,
     )
     log_action(

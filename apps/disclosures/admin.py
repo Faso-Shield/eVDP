@@ -46,7 +46,7 @@ def _apply(modeladmin, request, queryset, service, success_label, **kwargs):
 
 @admin.action(description="Publier l'advisory")
 def action_publish(modeladmin, request, queryset):
-    _apply(modeladmin, request, queryset, publish_advisory, "publie(s)")
+    _apply(modeladmin, request, queryset, publish_advisory, "publié(s)")
 
 
 @admin.action(description="Retirer l'advisory")
@@ -56,7 +56,7 @@ def action_retract(modeladmin, request, queryset):
         request,
         queryset,
         retract_advisory,
-        "retire(s)",
+        "retiré(s)",
         reason="Retrait depuis l'administration.",
     )
 

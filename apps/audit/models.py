@@ -15,7 +15,7 @@ class AuditAction(models.TextChoices):
     LOGIN = "LOGIN", "Connexion"
     LOGIN_FAILED = "LOGIN_FAILED", "Échec de connexion"
     LOGOUT = "LOGOUT", "Déconnexion"
-    PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED", "Réinitialisation demandee"
+    PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED", "Réinitialisation demandée"
     PASSWORD_CHANGED = "PASSWORD_CHANGED", "Mot de passe modifié"
     EMAIL_VERIFIED = "EMAIL_VERIFIED", "Email vérifié"
     MFA_ENROLLED = "MFA_ENROLLED", "Double authentification activée"
@@ -38,7 +38,7 @@ class AuditAction(models.TextChoices):
     PROGRAM_UPDATED = "PROGRAM_UPDATED", "Programme modifié"
     REPORT_SUBMITTED = "REPORT_SUBMITTED", "Rapport soumis"
     CASE_CREATED = "CASE_CREATED", "Case créé"
-    CASE_VIEWED = "CASE_VIEWED", "Case consulte"
+    CASE_VIEWED = "CASE_VIEWED", "Case consulté"
     CASE_UPDATED = "CASE_UPDATED", "Case modifié"
     CASE_ASSIGNED = "CASE_ASSIGNED", "Case assigné"
     STATUS_CHANGED = "STATUS_CHANGED", "Statut modifié"
@@ -65,19 +65,19 @@ class AuditAction(models.TextChoices):
     PERMISSION_DENIED = "PERMISSION_DENIED", "Accès refusé"
     SLA_BREACHED = "SLA_BREACHED", "SLA dépassé"
     CSAF_IMPORTED = "CSAF_IMPORTED", "Import CSAF"
-    PAYOUT_PROFILE_UPDATED = "PAYOUT_PROFILE_UPDATED", "Profil de versement modifie"
-    PAYOUT_METHOD_ADDED = "PAYOUT_METHOD_ADDED", "Moyen de paiement ajoute"
-    PAYOUT_METHOD_UPDATED = "PAYOUT_METHOD_UPDATED", "Moyen de paiement modifie"
-    PAYOUT_METHOD_REMOVED = "PAYOUT_METHOD_REMOVED", "Moyen de paiement retire"
-    PAYOUT_DOCUMENT_UPLOADED = "PAYOUT_DOCUMENT_UPLOADED", "Piece d'identite televersee"
-    PAYOUT_DOCUMENT_DOWNLOADED = "PAYOUT_DOCUMENT_DOWNLOADED", "Piece d'identite telechargee"
+    PAYOUT_PROFILE_UPDATED = "PAYOUT_PROFILE_UPDATED", "Profil de versement modifié"
+    PAYOUT_METHOD_ADDED = "PAYOUT_METHOD_ADDED", "Moyen de paiement ajouté"
+    PAYOUT_METHOD_UPDATED = "PAYOUT_METHOD_UPDATED", "Moyen de paiement modifié"
+    PAYOUT_METHOD_REMOVED = "PAYOUT_METHOD_REMOVED", "Moyen de paiement retiré"
+    PAYOUT_DOCUMENT_UPLOADED = "PAYOUT_DOCUMENT_UPLOADED", "Pièce d'identité téléversée"
+    PAYOUT_DOCUMENT_DOWNLOADED = "PAYOUT_DOCUMENT_DOWNLOADED", "Pièce d'identité téléchargée"
     PAYOUT_REFERENCE_VIEWED = (
         "PAYOUT_REFERENCE_VIEWED",
-        "Reference de paiement consultee en clair",
+        "Référence de paiement consultée en clair",
     )
     PAYOUT_DETAILS_REQUESTED = (
         "PAYOUT_DETAILS_REQUESTED",
-        "Coordonnees de paiement demandees au chercheur",
+        "Coordonnées de paiement demandées au chercheur",
     )
 
 
@@ -126,7 +126,7 @@ class AuditLog(models.Model):
     class Meta:
         db_table = "audit_logs"
         ordering = ["-timestamp"]
-        verbose_name = "Entree d'audit"
+        verbose_name = "Entrée d'audit"
         verbose_name_plural = "Journal d'audit"
         indexes = [
             models.Index(fields=["object_type", "object_id"]),

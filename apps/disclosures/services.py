@@ -299,7 +299,7 @@ def publish_advisory(advisory, actor, request=None, published_at=None, from_work
         add_timeline_event(
             advisory.case,
             TimelineEventType.ADVISORY_PUBLISHED,
-            f"Advisory {advisory.advisory_id} publie",
+            f"Advisory {advisory.advisory_id} publié",
             actor=actor,
         )
         if advisory.case.reporter_id:

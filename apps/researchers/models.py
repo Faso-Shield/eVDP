@@ -145,8 +145,8 @@ class ReputationEvent(BaseModel):
     class Meta:
         db_table = "reputation_events"
         ordering = ["-created_at"]
-        verbose_name = "Evenement de reputation"
-        verbose_name_plural = "Evenements de reputation"
+        verbose_name = "Événement de réputation"
+        verbose_name_plural = "Événements de réputation"
 
     def __str__(self):
         return f"{self.profile} {self.points:+d} ({self.reason})"
@@ -165,9 +165,9 @@ class ReputationEvent(BaseModel):
 
 
 class IdDocumentType(models.TextChoices):
-    CNIB = "CNIB", "Carte Nationale d'Identite Burkinabe (CNIB)"
+    CNIB = "CNIB", "Carte Nationale d'Identité Burkinabè (CNIB)"
     PASSPORT = "PASSPORT", "Passeport"
-    OTHER = "OTHER", "Autre piece d'identite"
+    OTHER = "OTHER", "Autre pièce d'identité"
 
 
 def payout_document_upload_path(instance, filename):
@@ -190,7 +190,7 @@ class PayoutProfile(BaseModel):
     legal_full_name = EncryptedCharField(
         max_length=150,
         blank=True,
-        help_text="Nom complet tel qu'il figure sur votre piece d'identite.",
+        help_text="Nom complet tel qu'il figure sur votre pièce d'identité.",
     )
     id_document_type = models.CharField(
         max_length=16, choices=IdDocumentType.choices, blank=True
@@ -199,7 +199,7 @@ class PayoutProfile(BaseModel):
     contact_phone = EncryptedCharField(
         max_length=32,
         blank=True,
-        help_text="Numero utilisable pour vous joindre au sujet d'un versement.",
+        help_text="Numéro utilisable pour vous joindre au sujet d'un versement.",
     )
     address = EncryptedTextField(blank=True)
     country = models.CharField(max_length=80, default="Burkina Faso")
@@ -254,7 +254,7 @@ class MobileMoneyOperator(models.TextChoices):
     ORANGE_MONEY = "ORANGE_MONEY", "Orange Money"
     MOOV_MONEY = "MOOV_MONEY", "Moov Money"
     TELECEL_MONEY = "TELECEL_MONEY", "Telecel Money"
-    OTHER = "OTHER", "Autre operateur"
+    OTHER = "OTHER", "Autre opérateur"
 
 
 class PayoutMethod(BaseModel):
@@ -280,7 +280,7 @@ class PayoutMethod(BaseModel):
     bank_name = models.CharField(max_length=150, blank=True)
     account_holder_name = EncryptedCharField(max_length=150, blank=True)
     account_number = EncryptedCharField(
-        max_length=64, blank=True, help_text="IBAN ou numero de compte."
+        max_length=64, blank=True, help_text="IBAN ou numéro de compte."
     )
 
     # -- Mobile money -----------------------------------------------------------
@@ -295,8 +295,8 @@ class PayoutMethod(BaseModel):
     crypto_network = models.CharField(
         max_length=60,
         blank=True,
-        help_text="Reseau/chaine (ex. Bitcoin, Ethereum ERC-20, Tron TRC-20). "
-        "Un envoi sur le mauvais reseau est irrecuperable.",
+        help_text="Réseau/chaîne (ex. Bitcoin, Ethereum ERC-20, Tron TRC-20). "
+        "Un envoi sur le mauvais réseau est irrécupérable.",
     )
     crypto_wallet_address = EncryptedCharField(max_length=128, blank=True)
 

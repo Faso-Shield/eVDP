@@ -62,8 +62,8 @@ class SiteSetting(TimeStampedModel):
     class Meta:
         db_table = "site_settings"
         ordering = ["key"]
-        verbose_name = "Parametre de site"
-        verbose_name_plural = "Parametres de site"
+        verbose_name = "Paramètre de site"
+        verbose_name_plural = "Paramètres de site"
 
     def __str__(self):
         return self.label or self.key

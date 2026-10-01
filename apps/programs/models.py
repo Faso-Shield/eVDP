@@ -334,7 +334,7 @@ class ProgramScope(BaseModel):
     application = models.CharField(max_length=180, blank=True)
     platform = models.CharField(max_length=120, blank=True)
     environment = models.CharField(
-        max_length=60, blank=True, help_text="Production, preproduction, test…"
+        max_length=60, blank=True, help_text="Production, préproduction, test…"
     )
     description = models.TextField(blank=True)
     priority = models.CharField(
@@ -345,8 +345,8 @@ class ProgramScope(BaseModel):
     class Meta:
         db_table = "program_scopes"
         ordering = ["-in_scope", "priority", "identifier"]
-        verbose_name = "Perimetre"
-        verbose_name_plural = "Perimetres"
+        verbose_name = "Périmètre"
+        verbose_name_plural = "Périmètres"
         indexes = [models.Index(fields=["program", "in_scope"])]
 
     def __str__(self):
@@ -383,8 +383,8 @@ class ProgramRule(BaseModel):
     class Meta:
         db_table = "program_rules"
         ordering = ["kind", "position", "title"]
-        verbose_name = "Regle de programme"
-        verbose_name_plural = "Regles de programme"
+        verbose_name = "Règle de programme"
+        verbose_name_plural = "Règles de programme"
 
     def __str__(self):
         return self.title
@@ -411,7 +411,7 @@ class RewardPolicy(BaseModel):
         verbose_name_plural = "Politiques de récompense"
 
     def __str__(self):
-        return f"Recompenses - {self.program.name}"
+        return f"Récompenses - {self.program.name}"
 
     def clean(self):
         if self.program_id and self.program.program_type != ProgramType.BUG_BOUNTY:

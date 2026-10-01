@@ -393,7 +393,7 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
         warnings.append("montant hors matrice du programme")
     if budget and budget["exceeded"]:
         warnings.append(
-            f"budget du programme depasse ({budget['projected']} / "
+            f"budget du programme dépassé ({budget['projected']} / "
             f"{budget['total']} {budget['currency']})"
         )
     if warnings:
@@ -427,7 +427,7 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
     add_timeline_event(
         bounty.case,
         TimelineEventType.REWARD_APPROVED,
-        f"Recompense approuvee et creditee : {bounty.display_amount}",
+        f"Récompense approuvée et créditée : {bounty.display_amount}",
         actor=approver,
     )
     if bounty.researcher_id:
@@ -500,7 +500,7 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
     if not payout_profile or not payout_profile.is_complete:
         payout_warnings.append("portefeuille du chercheur incomplet")
     if not primary_method:
-        payout_warnings.append("aucun moyen de paiement principal declare")
+        payout_warnings.append("aucun moyen de paiement principal déclaré")
 
     payment = BountyPayment.objects.create(
         bounty=bounty,
@@ -555,12 +555,12 @@ def confirm_settlement(payment, actor, proof_file, note="", request=None):
     apps.bounty.views.payment_proof_download).
     """
     if not actor.has_capability(Capability.RECORD_PAYMENT):
-        raise PermissionDenied("Capacite requise pour confirmer un versement.")
+        raise PermissionDenied("Capacité requise pour confirmer un versement.")
     if payment.status != PaymentStatus.RECORDED:
-        raise ValidationError("Seul un versement enregistre peut etre confirme regle.")
+        raise ValidationError("Seul un versement enregistré peut être confirmé réglé.")
     if payment.bounty.case.status not in SETTLEMENT_ELIGIBLE_CASE_STATUSES:
         raise ValidationError(
-            "Le correctif du dossier doit etre verifie avant de confirmer le versement "
+            "Le correctif du dossier doit être vérifié avant de confirmer le versement "
             f"(statut actuel : {payment.bounty.case.get_status_display()})."
         )
     if not proof_file:
@@ -621,12 +621,12 @@ def confirm_settlement(payment, actor, proof_file, note="", request=None):
 def mark_payment_failed(payment, actor, reason, request=None):
     """Signale qu'un versement enregistre n'a finalement pas abouti."""
     if not actor.has_capability(Capability.RECORD_PAYMENT):
-        raise PermissionDenied("Capacite requise pour signaler un echec de versement.")
+        raise PermissionDenied("Capacité requise pour signaler un échec de versement.")
     if payment.status != PaymentStatus.RECORDED:
-        raise ValidationError("Seul un versement enregistre peut etre marque en echec.")
+        raise ValidationError("Seul un versement enregistré peut être marqué en échec.")
     if payment.bounty.case.status not in SETTLEMENT_ELIGIBLE_CASE_STATUSES:
         raise ValidationError(
-            "Le correctif du dossier doit etre verifie avant de statuer sur ce versement "
+            "Le correctif du dossier doit être vérifié avant de statuer sur ce versement "
             f"(statut actuel : {payment.bounty.case.get_status_display()})."
         )
     if not reason.strip():

@@ -109,12 +109,12 @@ def parse_vector(vector):
     metrics = {}
     for chunk in parts[1:]:
         if ":" not in chunk:
-            raise CVSSError(f"Metrique illisible: {chunk!r}")
+            raise CVSSError(f"Métrique illisible : {chunk!r}")
         key, _, value = chunk.partition(":")
         metrics[key] = value
     missing = [m for m in METRIC_ORDER if m not in metrics]
     if missing:
-        raise CVSSError("Metriques de base manquantes: " + ", ".join(missing))
+        raise CVSSError("Métriques de base manquantes : " + ", ".join(missing))
     for key in METRIC_ORDER:
         allowed = METRIC_LABELS[key][1]
         if metrics[key] not in allowed:
@@ -219,7 +219,7 @@ def build_vector(metrics):
     """Construit un vecteur normalise a partir d'un dict de metriques."""
     missing = [m for m in METRIC_ORDER if not metrics.get(m)]
     if missing:
-        raise CVSSError("Metriques manquantes: " + ", ".join(missing))
+        raise CVSSError("Métriques manquantes : " + ", ".join(missing))
     body = "/".join(f"{key}:{metrics[key].upper()}" for key in METRIC_ORDER)
     vector = f"{PREFIX_31}/{body}"
     base_score(vector)  # validation

@@ -61,7 +61,7 @@ class BusinessAccountCreationForm(DjangoUserAdmin.add_form):
         if cleaned.get("role") in ORGANIZATION_ROLES and not cleaned.get("organization"):
             self.add_error(
                 "organization",
-                "Un compte DSI ou responsable d'organisation doit etre rattache a "
+                "Un compte DSI ou responsable d'organisation doit être rattaché à "
                 "son organisation : sans elle, il ne verrait aucun dossier.",
             )
         return cleaned
@@ -131,7 +131,7 @@ class BaseAccountAdmin(DjangoUserAdmin):
                 # il disparaitrait de la liste sans explication.
                 self.message_user(
                     request,
-                    f"{obj.email} porte desormais le role "
+                    f"{obj.email} porte désormais le rôle "
                     f"{obj.get_role_display()} : le compte figure maintenant "
                     "dans l'autre liste.",
                     messages.WARNING,
@@ -274,7 +274,7 @@ class BusinessAccountAdmin(BaseAccountAdmin):
         self.message_user(
             request,
             f"{len(concernes)} compte(s) devront enregistrer un nouvel "
-            "authentificateur a la prochaine connexion.",
+            "authentificateur à la prochaine connexion.",
         )
 
 

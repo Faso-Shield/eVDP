@@ -271,8 +271,8 @@ class BusinessAccount(User):
 
     class Meta:
         proxy = True
-        verbose_name = "Compte metier"
-        verbose_name_plural = "Comptes metiers et administrateurs"
+        verbose_name = "Compte métier"
+        verbose_name_plural = "Comptes métiers et administrateurs"
 
 
 class ReporterAccount(User):

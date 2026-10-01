@@ -141,7 +141,7 @@ def validate_upload(uploaded_file):
     if extension not in config["ATTACHMENT_ALLOWED_EXTENSIONS"]:
         allowed = ", ".join(sorted(config["ATTACHMENT_ALLOWED_EXTENSIONS"]))
         raise ValidationError(
-            f"Extension non autorisée : .{extension}. Extensions acceptees : {allowed}."
+            f"Extension non autorisée : .{extension}. Extensions acceptées : {allowed}."
         )
     # Plafond selon le type : une video a le sien, plus eleve.
     limit = (

@@ -19,42 +19,42 @@ logger = logging.getLogger("evdp.notifications")
 #: Modeles par defaut, surchargeables via EmailTemplate en base.
 DEFAULT_TEMPLATES = {
     NotificationKind.REPORT_RECEIVED: (
-        "[eVDP] Nouveau signalement recu",
-        "Un nouveau signalement à été enregistré sur la plateforme eVDP "
+        "[eVDP] Nouveau signalement reçu",
+        "Un nouveau signalement a été enregistré sur la plateforme eVDP "
         "sous la référence {case_id}.\n\n"
-        "Connectez-vous à votre espace securise pour le consulter :\n{link}",
+        "Connectez-vous à votre espace sécurisé pour le consulter :\n{link}",
     ),
     NotificationKind.ACKNOWLEDGEMENT: (
         "[eVDP] Accusé de réception de votre signalement",
-        "Votre signalement a bien été reçu et enregistre sous la référence "
+        "Votre signalement a bien été reçu et enregistré sous la référence "
         "{case_id}.\n\nSuivez son traitement dans votre espace eVDP :\n{link}",
     ),
     NotificationKind.STATUS_CHANGED: (
         "[eVDP] Mise à jour du dossier {case_id}",
         "Le statut du dossier {case_id} a évolué.\n\n"
-        "Consultez le détail dans votre espace securise :\n{link}",
+        "Consultez le détail dans votre espace sécurisé :\n{link}",
     ),
     NotificationKind.NEW_MESSAGE: (
-        "[eVDP] Nouveau message securise",
-        "Un nouveau message securise est disponible dans votre espace eVDP "
+        "[eVDP] Nouveau message sécurisé",
+        "Un nouveau message sécurisé est disponible dans votre espace eVDP "
         "pour le dossier {case_id}.\n\n{link}",
     ),
     NotificationKind.NEW_ATTACHMENT: (
-        "[eVDP] Nouvelle piece jointe",
+        "[eVDP] Nouvelle pièce jointe",
         "Une nouvelle pièce jointe a été ajoutée au dossier {case_id}.\n\n{link}",
     ),
     NotificationKind.INFORMATION_REQUESTED: (
-        "[eVDP] Informations complementaires demandees",
+        "[eVDP] Informations complémentaires demandées",
         "L'équipe de coordination demande des informations complémentaires "
         "concernant le dossier {case_id}.\n\n{link}",
     ),
     NotificationKind.CASE_ASSIGNED: (
-        "[eVDP] Dossier assigne",
-        "Le dossier {case_id} vous à été assigné.\n\n{link}",
+        "[eVDP] Dossier assigné",
+        "Le dossier {case_id} vous a été assigné.\n\n{link}",
     ),
     NotificationKind.VALIDATED: (
         "[eVDP] Signalement valide",
-        "Votre signalement {case_id} à été validé par l'équipe de " "coordination.\n\n{link}",
+        "Votre signalement {case_id} a été validé par l'équipe de " "coordination.\n\n{link}",
     ),
     NotificationKind.REJECTED: (
         "[eVDP] Signalement non retenu",
@@ -62,9 +62,9 @@ DEFAULT_TEMPLATES = {
         "consultable dans votre espace eVDP.\n\n{link}",
     ),
     NotificationKind.DUPLICATE: (
-        "[eVDP] Signalement identifie comme doublon",
+        "[eVDP] Signalement identifié comme doublon",
         "Votre rapport a été identifié comme doublon d'un signalement déjà "
-        "enregistre (dossier {case_id}).\n\n{link}",
+        "enregistré (dossier {case_id}).\n\n{link}",
     ),
     NotificationKind.SLA_APPROACHING: (
         "[eVDP] Échéance proche sur le dossier {case_id}",
@@ -96,19 +96,19 @@ DEFAULT_TEMPLATES = {
         "Le dossier {case_id} attend une action de votre part.\n\n{link}",
     ),
     NotificationKind.DISCLOSURE_UPCOMING: (
-        "[eVDP] Divulgation planifiee",
+        "[eVDP] Divulgation planifiée",
         "La divulgation coordonnée du dossier {case_id} approche.\n\n{link}",
     ),
     NotificationKind.ADVISORY_PUBLISHED: (
-        "[eVDP] Advisory publie",
-        "Un advisory à été publié sur la plateforme eVDP.\n\n{link}",
+        "[eVDP] Advisory publié",
+        "Un advisory a été publié sur la plateforme eVDP.\n\n{link}",
     ),
     NotificationKind.BOUNTY_PROPOSED: (
-        "[eVDP] Recompense proposee",
+        "[eVDP] Récompense proposée",
         "Une récompense a été proposée pour le dossier {case_id}.\n\n{link}",
     ),
     NotificationKind.BOUNTY_APPROVED: (
-        "[eVDP] Recompense approuvee",
+        "[eVDP] Récompense approuvée",
         "Une récompense a été approuvée pour votre signalement {case_id}. "
         "Le détail est disponible dans votre espace eVDP.\n\n{link}",
     ),
@@ -118,8 +118,8 @@ DEFAULT_TEMPLATES = {
         "{case_id}.\n\n{link}",
     ),
     NotificationKind.BOUNTY_PAID: (
-        "[eVDP] Recompense versee",
-        "Le versement de la récompense du dossier {case_id} a été " "enregistre.\n\n{link}",
+        "[eVDP] Récompense versée",
+        "Le versement de la récompense du dossier {case_id} a été " "enregistré.\n\n{link}",
     ),
     NotificationKind.ACCOUNT: (
         "[eVDP] Notification de compte",
@@ -127,9 +127,9 @@ DEFAULT_TEMPLATES = {
     ),
     NotificationKind.TRACKING_LINK: (
         "[eVDP] Suivre votre signalement {case_id}",
-        "Votre signalement a bien ete enregistre sous la reference {case_id}.\n\n"
-        "Vous pouvez suivre son avancement, sans creer de compte, via ce lien "
-        "personnel et confidentiel - ne le transmettez a personne :\n{link}\n\n"
+        "Votre signalement a bien été enregistré sous la référence {case_id}.\n\n"
+        "Vous pouvez suivre son avancement, sans créer de compte, via ce lien "
+        "personnel et confidentiel - ne le transmettez à personne :\n{link}\n\n"
         "Ce lien reste valable plusieurs mois.",
     ),
 }

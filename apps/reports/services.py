@@ -173,7 +173,7 @@ def submit_report(
     add_timeline_event(
         case,
         TimelineEventType.REPORT_RECEIVED,
-        "Rapport recu",
+        "Rapport reçu",
         actor=report.reporter,
         occurred_at=report.submitted_at,
     )

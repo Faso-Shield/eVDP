@@ -52,11 +52,11 @@ class OrganizationAdmin(OrganizationManagersOnlyMixin, admin.ModelAdmin):
     inlines = [OrganizationMemberInline, SecurityContactInline]
     actions = ["activate", "suspend"]
 
-    @admin.action(description="Activer les organisations selectionnees")
+    @admin.action(description="Activer les organisations sélectionnées")
     def activate(self, request, queryset):
         queryset.update(status="ACTIVE")
 
-    @admin.action(description="Suspendre les organisations selectionnees")
+    @admin.action(description="Suspendre les organisations sélectionnées")
     def suspend(self, request, queryset):
         queryset.update(status="SUSPENDED")
 

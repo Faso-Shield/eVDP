@@ -53,7 +53,7 @@ class CaseAdmin(CaseContentAdminMixin, admin.ModelAdmin):
     inlines = [CaseParticipantInline, CaseTimelineInline, SLAEventInline]
     actions = ["recompute_priority"]
 
-    @admin.action(description="Recalculer le score de priorite")
+    @admin.action(description="Recalculer le score de priorité")
     def recompute_priority(self, request, queryset):
         for case in queryset:
             case.refresh_priority()

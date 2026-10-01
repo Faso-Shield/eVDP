@@ -83,9 +83,9 @@ class OrganizationMemberForm(forms.Form):
         required=False,
         max_length=150,
         help_text="Uniquement si la personne n'a pas encore de compte eVDP : "
-        "necessaire pour l'invitation.",
+        "nécessaire pour l'invitation.",
     )
-    membership_role = forms.ChoiceField(choices=MembershipRole.choices, label="Role")
+    membership_role = forms.ChoiceField(choices=MembershipRole.choices, label="Rôle")
     is_primary = forms.BooleanField(required=False, label="Contact principal")
 
     #: renseigne apres nettoyage : l'utilisateur existant, ou None si une

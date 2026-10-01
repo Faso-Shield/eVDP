@@ -112,7 +112,7 @@ class RegistrationForm(forms.ModelForm):
         cleaned = super().clean()
         p1, p2 = cleaned.get("password1"), cleaned.get("password2")
         if p1 and p2 and p1 != p2:
-            self.add_error("password2", "Les deux mots de passe different.")
+            self.add_error("password2", "Les deux mots de passe diffèrent.")
         if p1:
             validate_password(p1)
         return cleaned

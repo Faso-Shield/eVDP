@@ -398,13 +398,13 @@ def payment(request, bounty_id):
             if recorded.payout_warning:
                 messages.warning(
                     request,
-                    f"Versement enregistre, mais {recorded.payout_warning} "
-                    "cote portefeuille : verifiez aupres du chercheur avant "
-                    "d'executer le versement reel.",
+                    f"Versement enregistré, mais {recorded.payout_warning} "
+                    "côté portefeuille : vérifiez auprès du chercheur avant "
+                    "d'exécuter le versement réel.",
                 )
             messages.success(
                 request,
-                "Versement enregistre. Aucun flux financier réel n'est déclenché "
+                "Versement enregistré. Aucun flux financier réel n'est déclenché "
                 "par la plateforme.",
             )
         except (PermissionDenied, ValidationError) as exc:

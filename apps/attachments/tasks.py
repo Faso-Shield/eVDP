@@ -30,7 +30,7 @@ def _clamav_scan(handle, size=0):
     host = getattr(settings, "CLAMAV_HOST", None) or ""
     port = int(getattr(settings, "CLAMAV_PORT", 3310))
     if not host:
-        return ScanStatus.SKIPPED, "Service ClamAV non configure."
+        return ScanStatus.SKIPPED, "Service ClamAV non configuré."
     if size > settings.CLAMAV_STREAM_MAX_LENGTH:
         return ScanStatus.SKIPPED, "Fichier trop volumineux pour l'antivirus (non analysé)."
 

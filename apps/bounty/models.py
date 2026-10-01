@@ -123,8 +123,8 @@ class Bounty(BaseModel):
     class Meta:
         db_table = "bounties"
         ordering = ["-created_at"]
-        verbose_name = "Recompense"
-        verbose_name_plural = "Recompenses"
+        verbose_name = "Récompense"
+        verbose_name_plural = "Récompenses"
 
     def __str__(self):
         return f"{self.case.case_id} - {self.display_amount}"
@@ -188,8 +188,8 @@ class BountyReview(BaseModel):
     class Meta:
         db_table = "bounty_reviews"
         ordering = ["-created_at"]
-        verbose_name = "Revue de recompense"
-        verbose_name_plural = "Revues de recompense"
+        verbose_name = "Revue de récompense"
+        verbose_name_plural = "Revues de récompense"
 
     def __str__(self):
         return f"{self.bounty} - {self.decision}"
@@ -236,10 +236,10 @@ class BountyPayment(BaseModel):
         max_length=255,
         blank=True,
         help_text=(
-            "Resume masque du moyen de paiement principal declare par le "
+            "Résumé masqué du moyen de paiement principal déclaré par le "
             "chercheur au moment du versement (voir apps.researchers.PayoutMethod). "
-            "Copie a titre indicatif, jamais une reference forte : le wallet "
-            "peut changer ou etre desactive apres coup sans alterer cet historique."
+            "Copie à titre indicatif, jamais une référence forte : le wallet "
+            "peut changer ou être désactivé après coup sans altérer cet historique."
         ),
     )
     settled_at = models.DateTimeField(null=True, blank=True)
@@ -272,8 +272,8 @@ class BountyPayment(BaseModel):
     class Meta:
         db_table = "bounty_payments"
         ordering = ["-created_at"]
-        verbose_name = "Paiement de recompense"
-        verbose_name_plural = "Paiements de recompense"
+        verbose_name = "Paiement de récompense"
+        verbose_name_plural = "Paiements de récompense"
 
     def __str__(self):
         return f"{self.amount} {self.currency} ({self.status})"

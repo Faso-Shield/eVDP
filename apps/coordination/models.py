@@ -561,7 +561,7 @@ class CaseTimelineEvent(BaseModel):
     class Meta:
         db_table = "case_timeline_events"
         ordering = ["occurred_at", "created_at"]
-        verbose_name = "Evenement de chronologie"
+        verbose_name = "Événement de chronologie"
         verbose_name_plural = "Chronologie"
 
     def __str__(self):
@@ -588,8 +588,8 @@ class SLAEvent(BaseModel):
         db_table = "sla_events"
         unique_together = [("case", "kind")]
         ordering = ["due_at"]
-        verbose_name = "Echeance SLA"
-        verbose_name_plural = "Echeances SLA"
+        verbose_name = "Échéance SLA"
+        verbose_name_plural = "Échéances SLA"
 
     def __str__(self):
         return f"{self.case.case_id} {self.kind} ({self.state})"

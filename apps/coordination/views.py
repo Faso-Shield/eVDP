@@ -385,7 +385,7 @@ def workflow_action(request, case_id, action_key):
     except TransitionNotAllowed as exc:
         raise Http404("Action inconnue.") from exc
     if getattr(request.user, "is_read_only", False):
-        deny(request, "Role en lecture seule.", obj=case)
+        deny(request, "Rôle en lecture seule.", obj=case)
 
     form = WorkflowActionForm(request.POST, action=action)
     if not form.is_valid():
@@ -576,7 +576,7 @@ def link_cve(request, case_id):
             request=request,
             cve=case.cve_id,
         )
-        messages.success(request, f"CVE {case.cve_id} associe au dossier.")
+        messages.success(request, f"CVE {case.cve_id} associé au dossier.")
     else:
         messages.error(request, form.errors.as_text())
     return redirect("coordination:case_detail", case_id=case.case_id)

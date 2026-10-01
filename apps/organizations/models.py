@@ -195,8 +195,8 @@ class SecurityContact(BaseModel):
     class Meta:
         db_table = "organization_security_contacts"
         ordering = ["-is_primary", "name"]
-        verbose_name = "Contact securite"
-        verbose_name_plural = "Contacts securite"
+        verbose_name = "Contact sécurité"
+        verbose_name_plural = "Contacts sécurité"
 
     def __str__(self):
         return f"{self.name} <{self.email}>"

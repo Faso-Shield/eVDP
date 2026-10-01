@@ -42,13 +42,13 @@ def validate_public_key(blob):
         return ""
     if contains_private_key(blob):
         raise PGPError(
-            "Un bloc de cle privee a ete detecte. eVDP ne stocke jamais de "
-            "cle privee : ne transmettez que votre cle publique."
+            "Un bloc de clé privée a été détecté. eVDP ne stocke jamais de "
+            "clé privée : ne transmettez que votre clé publique."
         )
     if PUBLIC_KEY_HEADER not in blob or PUBLIC_KEY_FOOTER not in blob:
-        raise PGPError("Bloc de cle publique PGP invalide (en-tete ou pied manquant).")
+        raise PGPError("Bloc de clé publique PGP invalide (en-tête ou pied manquant).")
     if len(blob) > 65536:
-        raise PGPError("Bloc de cle publique PGP trop volumineux.")
+        raise PGPError("Bloc de clé publique PGP trop volumineux.")
     return blob
 
 

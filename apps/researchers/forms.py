@@ -23,7 +23,7 @@ class PayoutProfileForm(forms.ModelForm):
     """
 
     id_document = forms.FileField(
-        label="Justificatif d'identite (CNIB, passeport…)",
+        label="Justificatif d'identité (CNIB, passeport…)",
         required=False,
         widget=forms.FileInput(
             attrs={
@@ -35,9 +35,9 @@ class PayoutProfileForm(forms.ModelForm):
             }
         ),
         help_text=(
-            "Formats acceptes : "
+            "Formats acceptés : "
             + ", ".join(sorted(ID_DOCUMENT_ALLOWED_EXTENSIONS))
-            + ". Televerser un nouveau fichier remplace le document existant."
+            + ". Téléverser un nouveau fichier remplace le document existant."
         ),
     )
 
@@ -53,10 +53,10 @@ class PayoutProfileForm(forms.ModelForm):
             "accepted_terms",
         ]
         labels = {
-            "legal_full_name": "Nom complet (piece d'identite)",
-            "id_document_type": "Type de piece d'identite",
-            "id_document_number": "Numero de piece",
-            "contact_phone": "Telephone de contact",
+            "legal_full_name": "Nom complet (pièce d'identité)",
+            "id_document_type": "Type de pièce d'identité",
+            "id_document_number": "Numéro de pièce",
+            "contact_phone": "Téléphone de contact",
             "address": "Adresse",
             "country": "Pays",
             "accepted_terms": "J'atteste l'exactitude des informations fournies",
@@ -128,16 +128,16 @@ class PayoutMethodForm(forms.ModelForm):
             "label": "Nom (facultatif, pour vous y retrouver)",
             "bank_name": "Nom de la banque",
             "account_holder_name": "Titulaire du compte",
-            "account_number": "IBAN / numero de compte",
-            "mobile_operator": "Operateur",
-            "mobile_number": "Numero mobile money",
+            "account_number": "IBAN / numéro de compte",
+            "mobile_operator": "Opérateur",
+            "mobile_number": "Numéro mobile money",
             "mobile_holder_name": "Titulaire du compte mobile money",
             "crypto_currency": "Cryptomonnaie",
-            "crypto_network": "Reseau",
+            "crypto_network": "Réseau",
             "crypto_wallet_address": "Adresse du portefeuille",
             "paypal_email": "Adresse email PayPal",
-            "other_label": "Intitule",
-            "other_reference": "Reference",
+            "other_label": "Intitulé",
+            "other_reference": "Référence",
         }
         widgets = {
             "crypto_currency": forms.TextInput(

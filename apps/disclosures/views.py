@@ -212,7 +212,7 @@ def advisory_manage(request, advisory_id):
             return redirect("disclosures:manage", advisory_id=advisory.advisory_id)
         messages.error(
             request,
-            "Le formulaire comporte des erreurs : rien n'a été enregistre.",
+            "Le formulaire comporte des erreurs : rien n'a été enregistré.",
         )
     else:
         form = AdvisoryForm(instance=advisory)

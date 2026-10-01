@@ -81,7 +81,7 @@ def wallet_home(request):
 
     if request.method == "POST" and request.POST.get("form") == "profile":
         if getattr(request.user, "is_read_only", False):
-            raise PermissionDenied("Role en lecture seule.")
+            raise PermissionDenied("Rôle en lecture seule.")
         profile_form = PayoutProfileForm(request.POST, request.FILES, instance=profile)
         if profile_form.is_valid():
             uploaded_document = profile_form.cleaned_data.pop("id_document", None)

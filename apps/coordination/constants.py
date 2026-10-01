@@ -65,7 +65,7 @@ class SLAKind(models.TextChoices):
 class SLAState(models.TextChoices):
     PENDING = "PENDING", "En cours"
     APPROACHING = "APPROACHING", "Échéance proche"
-    MET = "MET", "Respecte"
+    MET = "MET", "Respecté"
     BREACHED = "BREACHED", "Dépassé"
     CANCELLED = "CANCELLED", "Annulé"
 

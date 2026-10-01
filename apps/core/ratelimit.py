@@ -85,7 +85,7 @@ def rate_limited(scope, rate=None, key_func=None, methods=("POST",)):
                 allowed, retry_after = hit(scope, identifier, effective)
                 if not allowed:
                     response = HttpResponse(
-                        "Trop de tentatives. Veuillez reessayer plus tard.",
+                        "Trop de tentatives. Veuillez réessayer plus tard.",
                         status=429,
                         content_type="text/plain; charset=utf-8",
                     )

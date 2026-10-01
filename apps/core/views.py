@@ -34,7 +34,7 @@ def about(request):
     return render(
         request,
         "core/page.html",
-        {"page_title": "A propos", "body": render_markdown(body)},
+        {"page_title": "À propos", "body": render_markdown(body)},
     )
 
 
@@ -136,7 +136,7 @@ def metrics(request):
     from apps.disclosures.models import Advisory
 
     lines = [
-        "# HELP evdp_cases_total Nombre total de cases enregistres.",
+        "# HELP evdp_cases_total Nombre total de cases enregistrés.",
         "# TYPE evdp_cases_total gauge",
         f"evdp_cases_total {Case.objects.count()}",
         "# HELP evdp_cases_open Nombre de cases non clos.",
@@ -145,7 +145,7 @@ def metrics(request):
         "# HELP evdp_cases_sla_breached Cases en dépassement de SLA.",
         "# TYPE evdp_cases_sla_breached gauge",
         f"evdp_cases_sla_breached {Case.objects.sla_breached().count()}",
-        "# HELP evdp_advisories_published Advisories publies.",
+        "# HELP evdp_advisories_published Advisories publiés.",
         "# TYPE evdp_advisories_published gauge",
         f"evdp_advisories_published {Advisory.objects.published().count()}",
     ]
@@ -188,31 +188,31 @@ def error_preview(request, code):
 DEFAULT_DISCLOSURE_POLICY = """
 ## Objectif
 
-eVDP offre un canal officiel, securise et juridiquement encadré permettant de
+eVDP offre un canal officiel, sécurisé et juridiquement encadré permettant de
 signaler une vulnérabilité affectant un service public ou une infrastructure
 numérique nationale.
 
 ## Comportement attendu
 
-- Signaler la vulnérabilité des sa découverte, sans délai injustifie.
+- Signaler la vulnérabilité dès sa découverte, sans délai injustifié.
 - Limiter strictement les tests au nécessaire pour démontrer l'existence de la faille.
-- Ne jamais degrader, alterer ou interrompre un service.
+- Ne jamais dégrader, altérer ou interrompre un service.
 - Ne jamais exfiltrer, conserver ou diffuser des données à caractère personnel.
 - Conserver la confidentialité du signalement jusqu'à la divulgation coordonnée.
 
 ## Règles de test
 
 Sont autorisés : la reconnaissance passive, les tests non destructifs sur les
-périmètres explicitement declares dans un programme actif.
+périmètres explicitement déclarés dans un programme actif.
 
 Sont interdits : l'ingénierie sociale, le hameçonnage, le déni de service,
 les attaques physiques, le spam, la compromission de comptes tiers et toute
-exploitation depassant la preuve de concept.
+exploitation dépassant la preuve de concept.
 
 ## Safe Harbor
 
 Une recherche conduite de bonne foi, conforme à la présente politique et au
-périmètre du programme concerne, est consideree comme autorisée. eVDP
+périmètre du programme concerné, est considérée comme autorisée. eVDP
 s'engage à ne pas engager de poursuites à l'encontre d'un chercheur respectant
 ces conditions et à l'accompagner en cas de sollicitation d'un tiers.
 
@@ -222,7 +222,7 @@ relèvent du Code pénal (loi n°025-2018/AN, Livre VII).
 
 ## Confidentialité
 
-Les rapports sont prives par défaut. Aucun rapport n'est publié
+Les rapports sont privés par défaut. Aucun rapport n'est publié
 automatiquement. Seule une version assainie (advisory) peut être publiée après
 coordination avec l'organisation affectée.
 
@@ -234,14 +234,14 @@ Commission de l'Informatique et des Libertés (CIL).
 ## Délais
 
 - Accusé de réception : 72 heures.
-- Premier triage : 5 jours ouvres.
+- Premier triage : 5 jours ouvrés.
 - Réponse de l'organisation : 7 jours.
 - Divulgation coordonnée par défaut : 90 jours après validation.
 
 ## Crédit au chercheur
 
 Le chercheur choisit d'apparaître sous son identité réelle, sous pseudonyme ou
-de rester anonyme. Ce choix est respecte dans toute publication.
+de rester anonyme. Ce choix est respecté dans toute publication.
 
 ## Cadre légal applicable (Burkina Faso)
 

@@ -39,7 +39,7 @@ def cipher():
     keys = tuple(getattr(settings, "FIELD_ENCRYPTION_KEYS", ()) or ())
     if not keys:
         raise ImproperlyConfigured(
-            "FIELD_ENCRYPTION_KEYS est vide : aucune cle de chiffrement."
+            "FIELD_ENCRYPTION_KEYS est vide : aucune clé de chiffrement."
         )
     return _cipher(keys)
 
@@ -61,7 +61,7 @@ def decrypt(value):
         return cipher().decrypt(value.encode()).decode()
     except InvalidToken as exc:
         raise ImproperlyConfigured(
-            "Valeur chiffree illisible avec FIELD_ENCRYPTION_KEYS : cle absente ou erronee."
+            "Valeur chiffrée illisible avec FIELD_ENCRYPTION_KEYS : clé absente ou erronée."
         ) from exc
 
 

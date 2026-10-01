@@ -56,7 +56,7 @@ def sweep_sla():
             # Etapes 6 et 7 : un SLA depasse cote organisation escalade le
             # dossier (alerte rouge, Coordinateur notifie).
             if event.kind in ESCALATING_SLA_KINDS and event.case.status in ESCALATION_STATES:
-                escalate_case(event.case, None, f"SLA {event.kind} depasse")
+                escalate_case(event.case, None, f"SLA {event.kind} dépassé")
             event.case.refresh_priority()
             continue
 

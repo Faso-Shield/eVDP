@@ -33,7 +33,7 @@ class CsafImportView(APIView):
     @extend_schema(
         request={"application/json": {"type": "object"}},
         responses={201: {"type": "object"}},
-        description="Importe un document CSAF 2.0 et cree les cases correspondants.",
+        description="Importe un document CSAF 2.0 et crée les cases correspondants.",
     )
     def post(self, request):
         payload = request.data
@@ -96,8 +96,8 @@ class CsafExportView(APIView):
     @extend_schema(
         responses={200: {"type": "object"}},
         description=(
-            "Exporte un advisory publie au format CSAF 2.0. Seuls les champs "
-            "publics de l'advisory sont exposes."
+            "Exporte un advisory publié au format CSAF 2.0. Seuls les champs "
+            "publics de l'advisory sont exposés."
         ),
     )
     def get(self, request, advisory_id):

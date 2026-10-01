@@ -62,7 +62,7 @@
       {% csrf_token %}
       <p class="form-legend">
         Les champs suivis d'une <abbr class="required" title="Champ obligatoire">*</abbr>
-        sont obligatoires. Les autres accelerent le triage sans etre exiges.
+        sont obligatoires. Les autres accélèrent le triage sans être exigés.
       </p>
       {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
 
@@ -80,8 +80,8 @@
           <div class="help">
             <abbr class="required" title="Champ obligatoire">*</abbr>
             Renseignez au moins l'un de ces trois champs : le programme, l'organisation
-            affectee, ou son nom si elle n'est pas dans la liste. Sans cela, le
-            signalement ne peut pas etre oriente.
+            affectée, ou son nom si elle n'est pas dans la liste. Sans cela, le
+            signalement ne peut pas être orienté.
           </div>
           {% include "partials/form_field.html" with field=form.target_url %}
         </div>

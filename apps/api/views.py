@@ -102,7 +102,7 @@ class ReportViewSet(
     @extend_schema(
         request=ReportSubmissionSerializer,
         responses={201: CaseDetailSerializer},
-        description="Soumet un rapport de vulnerabilite et cree le Case associe.",
+        description="Soumet un rapport de vulnérabilité et crée le Case associé.",
     )
     def create(self, request, *args, **kwargs):
         """Soumission : multipart, avec au moins un fichier `attachments`.

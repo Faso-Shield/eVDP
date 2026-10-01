@@ -48,30 +48,30 @@ def _apply(modeladmin, request, queryset, service, success_label, **kwargs):
             applied += 1
     if applied:
         modeladmin.message_user(
-            request, f"{applied} recompense(s) : {success_label}.", messages.SUCCESS
+            request, f"{applied} récompense(s) : {success_label}.", messages.SUCCESS
         )
 
 
-@admin.action(description="Approuver la recompense (montant propose)")
+@admin.action(description="Approuver la récompense (montant proposé)")
 def action_approve(modeladmin, request, queryset):
-    _apply(modeladmin, request, queryset, approve_bounty, "approuvee(s)")
+    _apply(modeladmin, request, queryset, approve_bounty, "approuvée(s)")
 
 
-@admin.action(description="Rejeter la recompense")
+@admin.action(description="Rejeter la récompense")
 def action_reject(modeladmin, request, queryset):
     _apply(
         modeladmin,
         request,
         queryset,
         reject_bounty,
-        "rejetee(s)",
+        "rejetée(s)",
         note="Rejet depuis l'administration.",
     )
 
 
 @admin.action(description="Enregistrer le versement (trace comptable)")
 def action_record_payment(modeladmin, request, queryset):
-    _apply(modeladmin, request, queryset, record_payment, "versement enregistre")
+    _apply(modeladmin, request, queryset, record_payment, "versement enregistré")
 
 
 @admin.register(Bounty)

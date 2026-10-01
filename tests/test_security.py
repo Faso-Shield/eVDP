@@ -184,7 +184,7 @@ def test_message_integrity_hash(case_alpha, triager):
 
 # ------------------------------------------------------------------------ PGP
 def test_private_key_block_is_refused():
-    with pytest.raises(PGPError, match="privee"):
+    with pytest.raises(PGPError, match="privée"):
         validate_public_key(
             "-----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n-----END PGP PRIVATE KEY BLOCK-----"
         )

@@ -115,7 +115,7 @@ def register(request):
             )
             messages.success(
                 request,
-                "Compte créé. Un email de vérification vous à été envoyé : "
+                "Compte créé. Un email de vérification vous a été envoyé : "
                 "confirmez votre adresse pour soumettre des rapports.",
             )
             login(request, user, backend="django.contrib.auth.backends.ModelBackend")
@@ -400,10 +400,10 @@ def resend_verification(request):
         request.user,
         NotificationKind.ACCOUNT,
         title="Vérification de votre adresse email",
-        body="Un nouveau lien de verification est disponible.",
+        body="Un nouveau lien de vérification est disponible.",
         url=f"/verify-email/{token.token}/",
     )
-    messages.success(request, "Un nouveau lien de vérification vous à été envoyé.")
+    messages.success(request, "Un nouveau lien de vérification vous a été envoyé.")
     return redirect("accounts:profile")
 
 

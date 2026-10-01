@@ -92,8 +92,8 @@ class EmailTemplate(TimeStampedModel):
     class Meta:
         db_table = "email_templates"
         ordering = ["code"]
-        verbose_name = "Modele d'email"
-        verbose_name_plural = "Modeles d'email"
+        verbose_name = "Modèle d'email"
+        verbose_name_plural = "Modèles d'email"
 
     def __str__(self):
         return self.code
