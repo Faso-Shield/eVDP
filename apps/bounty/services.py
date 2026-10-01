@@ -256,8 +256,8 @@ def propose_bounty(case, actor, amount=None, justification="", request=None):
         raise PermissionDenied("Capacité requise pour proposer une récompense.")
     if case.bounty_stage != BountyStage.ELIGIBLE:
         raise ValidationError(
-            "La branche prime n'est pas ouverte : une prime se propose après la "
-            "validation de la qualification (étape B1)."
+            "La branche prime n'est pas ouverte : une prime se propose une fois le "
+            "correctif confirmé (étape 8)."
         )
     if not case.program_id or case.program.program_type != ProgramType.BUG_BOUNTY:
         raise ValidationError(

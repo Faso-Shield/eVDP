@@ -1027,7 +1027,11 @@ def my_claims(user):
             object_id=str(case.pk),
             action__in=_WORK_ACTIONS,
             result=AuditResult.SUCCESS,
-            timestamp__gt=since,
+            # >= : sous Windows, l'horloge avance par pas d'environ 15 ms ; un
+            # message ecrit juste apres la prise en charge peut porter le meme
+            # horodatage. La prise en charge elle-meme (CASE_ASSIGNED) n'est
+            # pas un travail : elle ne fausse pas le resultat.
+            timestamp__gte=since,
         )
         # La transition qui a amene le dossier a l'etape en cours n'est pas un
         # travail sur cette etape (son audit suit l'historique de quelques ms).

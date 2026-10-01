@@ -32,7 +32,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def credited_bounty(submitted_bounty_case, analyst, coordinator):
     """Prime de 200 000 XOF approuvee : une ecriture de credit au Wallet."""
-    case = advance(submitted_bounty_case, CaseStatus.VALIDATED)
+    case = advance(submitted_bounty_case, CaseStatus.FIX_VERIFIED)
     Case.objects.filter(pk=case.pk).update(severity=Severity.MEDIUM)
     case.refresh_from_db()
     bounty = propose_bounty(case, analyst, amount=Decimal("200000"))
