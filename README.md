@@ -93,7 +93,7 @@ cp .env.example .env
 # 2. Générer une clé secrète et renseigner les mots de passe
 python -c "import secrets; print(secrets.token_urlsafe(64))"
 #   → reporter la valeur dans SECRET_KEY
-#   → définir POSTGRES_PASSWORD et MINIO_ROOT_PASSWORD
+#   → définir POSTGRES_PASSWORD et FIELD_ENCRYPTION_KEY
 
 # 3. Démarrer la plateforme
 docker compose up -d
@@ -121,8 +121,8 @@ La plateforme est disponible sur **http://localhost/**.
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
-Expose en plus, **uniquement sur 127.0.0.1** : Mailpit (`:8025`), console MinIO
-(`:9001`), PostgreSQL (`:5432`), Redis (`:6379`), Django (`:8000`).
+Expose en plus, **uniquement sur 127.0.0.1** : Mailpit (`:8025`),
+PostgreSQL (`:5432`), Redis (`:6379`), Django (`:8000`).
 
 ### Vérification
 
@@ -166,15 +166,15 @@ Bounty), 3 dossiers à des stades différents, 1 récompense approuvée et
 INTERNET → Nginx → Django/DRF ─┬─ PostgreSQL
                                ├─ Redis ─┬─ Celery worker
                                │         └─ Celery beat
-                               ├─ MinIO (pièces jointes, privé)
+                               ├─ Volume evdp-media (pièces jointes, privé)
                                └─ Mailpit (emails)
 ```
 
-Seul Nginx publie un port. PostgreSQL, Redis et MinIO restent sur le réseau
+Seul Nginx publie un port. PostgreSQL et Redis restent sur le réseau
 interne `evdp-backend`.
 
 **Pile technique :** Python 3.12 · Django 5.2 · Django REST Framework ·
-PostgreSQL 16 · Redis 7 · Celery 5 · MinIO · Nginx · Django Templates + HTMX
+PostgreSQL 16 · Redis 7 · Celery 5 · Nginx · Django Templates + HTMX
 
 Voir **[ARCHITECTURE.md](ARCHITECTURE.md)** pour les décisions structurantes.
 

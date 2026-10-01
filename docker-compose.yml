@@ -2,8 +2,9 @@
 # eVDP - Plateforme nationale de divulgation coordonnee de vulnerabilites
 # Projet CYBER-DEF 2
 #
-# Seul Nginx est expose. PostgreSQL, Redis et MinIO restent sur le reseau
-# interne et ne sont joignables que par les services applicatifs.
+# Seul Nginx est expose. PostgreSQL et Redis restent sur le reseau interne
+# et ne sont joignables que par les services applicatifs. Les pieces jointes
+# sont stockees sur disque, dans le volume evdp-media.
 #
 #   docker compose up -d
 #   docker compose run --rm evdp-web seed
@@ -26,11 +27,10 @@ x-app-env: &app-env
   REDIS_URL: redis://evdp-redis:6379/0
   REDIS_HOST: evdp-redis
   REDIS_PORT: "6379"
-  USE_S3: ${USE_S3:-True}
-  MINIO_ENDPOINT: http://evdp-minio:9000
-  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-evdp-minio}
-  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
-  MINIO_BUCKET: ${MINIO_BUCKET:-evdp-attachments}
+  # Pieces jointes sur disque (volume evdp-media). Les images MinIO ne sont
+  # plus distribuees publiquement ; USE_S3=True reste possible vers un
+  # stockage S3 externe (variables MINIO_* dans .env).
+  USE_S3: ${USE_S3:-False}
   # Mailpit par defaut ; un relais reel (avec authentification) se
   # configure dans .env, sans toucher a ce fichier.
   EMAIL_HOST: ${EMAIL_HOST:-evdp-mailpit}
@@ -122,50 +122,6 @@ services:
         limits:
           memory: 384m
 
-  evdp-minio:
-    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
-    container_name: evdp-minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-evdp-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
-      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
-    volumes:
-      - evdp-minio-data:/data
-    networks:
-      - evdp-backend
-    # MVP : MinIO n'est pas expose publiquement. La console est accessible
-    # uniquement en local via docker-compose.dev.yml.
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 15s
-      timeout: 5s
-      retries: 6
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-
-  evdp-minio-init:
-    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
-    container_name: evdp-minio-init
-    depends_on:
-      evdp-minio:
-        condition: service_healthy
-    environment:
-      MINIO_ENDPOINT: http://evdp-minio:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-evdp-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
-      MINIO_BUCKET: ${MINIO_BUCKET:-evdp-attachments}
-    volumes:
-      - ./docker/minio/init.sh:/init.sh:ro
-    entrypoint: ["/bin/sh", "/init.sh"]
-    networks:
-      - evdp-backend
-    restart: "no"
-
   evdp-mailpit:
     image: axllent/mailpit:v1.21
     container_name: evdp-mailpit
@@ -217,8 +173,6 @@ services:
       evdp-db:
         condition: service_healthy
       evdp-redis:
-        condition: service_healthy
-      evdp-minio:
         condition: service_healthy
     deploy:
       resources:
@@ -302,7 +256,6 @@ networks:
 volumes:
   evdp-db-data:
   evdp-redis-data:
-  evdp-minio-data:
   evdp-static:
   evdp-media:
   evdp-clamav-data:

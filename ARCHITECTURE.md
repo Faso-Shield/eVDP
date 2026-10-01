@@ -34,14 +34,16 @@ leurs justifications. Les diagrammes Mermaid sont dans `docs/diagrams/`.
                           └──────┬──────┘            └──────────────┘
                                  │
                           ┌──────▼──────┐        ┌──────────────┐
-                          │ evdp-minio  │        │ evdp-mailpit │
-                          │ pièces      │        │ emails (dev) │
-                          │ jointes     │        └──────────────┘
+                          │ evdp-media  │        │ evdp-mailpit │
+                          │ (volume)    │        │ emails (dev) │
+                          │ pièces j.   │        └──────────────┘
                           └─────────────┘
 ```
 
-Seul `evdp-nginx` publie un port. PostgreSQL, Redis et MinIO restent
-strictement sur le réseau interne `evdp-backend`.
+Seul `evdp-nginx` publie un port. PostgreSQL et Redis restent
+strictement sur le réseau interne `evdp-backend`. Les pièces jointes sont
+stockées sur disque, dans le volume `evdp-media` partagé par `evdp-web` et
+`evdp-worker` ; Nginx ne les sert jamais.
 
 ---
 
@@ -169,7 +171,7 @@ apps/
 ├── reports/         Rapport déclaré, formulaire public, service de soumission
 ├── coordination/    Case management, machine à états, messagerie, SLA,
 │                    chronologie, tâches Celery
-├── attachments/     Validation, stockage MinIO, téléchargement contrôlé,
+├── attachments/     Validation, stockage disque, téléchargement contrôlé,
 │                    analyse antivirus
 ├── bounty/          Récompenses, revues, versements
 ├── disclosures/     Advisories : rédaction, cycle de vie, publication

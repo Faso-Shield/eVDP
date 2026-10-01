@@ -52,12 +52,6 @@ services:
     volumes:
       - ./docker/nginx/dev/evdp.conf:/etc/nginx/conf.d/evdp.conf:ro
 
-  # Console MinIO, strictement locale.
-  evdp-minio:
-    ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
-
   # Base exposee en local pour l'inspection avec psql / DBeaver.
   evdp-db:
     ports:

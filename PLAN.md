@@ -25,7 +25,7 @@ projet.
 | Redis 7 | ✅ | Non exposé, AOF, limite mémoire, politique LRU |
 | Celery worker + beat | ✅ | Planificateur en base (`django_celery_beat`) |
 | Nginx | ✅ | Rate limiting bordure, en-têtes de sécurité, `/media/` interdit, bloc TLS documenté |
-| MinIO | ✅ | Bucket privé versionné, jamais exposé publiquement |
+| Stockage des pièces jointes | ✅ | Volume disque `evdp-media`, jamais exposé (MinIO retiré : images plus distribuées) |
 | Mailpit | ✅ | Capture des emails de développement |
 | Réseaux séparés | ✅ | `evdp-backend` (interne) / `evdp-frontend` |
 | Limites de ressources | ✅ | `deploy.resources.limits` sur chaque service |
@@ -132,7 +132,7 @@ projet.
 | Bandit / pip-audit | ✅ | Intégrés à la CI |
 | Trivy | ✅ | Scan de l'image dans la CI |
 | Documentation | ✅ | 9 documents + 5 diagrammes Mermaid |
-| Sauvegardes | ✅ | `backup_db.sh`, `restore_db.sh`, `backup_minio.sh` |
+| Sauvegardes | ✅ | `backup_db.sh`, `restore_db.sh`, `backup_media.sh` |
 | Données de démonstration | ✅ | `manage.py seed_demo` — idempotent |
 
 ---

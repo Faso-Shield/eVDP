@@ -166,7 +166,7 @@ les plus sensibles de la plateforme.
 | Antivirus | Service ClamAV optionnel (INSTREAM) ; un fichier `INFECTED` est définitivement bloqué |
 | Accès | `/media/` renvoie 404 sur Nginx ; le téléchargement passe par une vue qui vérifie les droits et journalise |
 | Réponse | `application/octet-stream` + `nosniff` + CSP `sandbox` : le navigateur n'interprète jamais le contenu |
-| Chiffrement au repos | Assuré au niveau du volume MinIO (voir docs/deployment.md) |
+| Chiffrement au repos | Assuré au niveau du disque hébergeant le volume `evdp-media` (voir docs/deployment.md) |
 
 ---
 
@@ -245,7 +245,7 @@ de la protection anti-abus. **La supervision doit alerter sur ces deux
 - Image applicative multi-étapes ; les outils de compilation ne sont pas embarqués.
 - Exécution sous l'utilisateur **non privilégié** `evdp` (uid 10001).
 - Aucun secret dans les images ni dans le dépôt : tout provient de l'environnement.
-- PostgreSQL, Redis et MinIO ne publient **aucun port** ; en développement ils sont liés à `127.0.0.1`.
+- PostgreSQL et Redis ne publient **aucun port** ; en développement ils sont liés à `127.0.0.1`.
 - Réseaux Docker séparés (`evdp-backend` interne, `evdp-frontend`).
 - Healthchecks et limites mémoire sur chaque service.
 - Versions d'images explicites (jamais `latest`).

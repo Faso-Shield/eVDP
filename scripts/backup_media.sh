@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# eVDP - sauvegarde des pieces jointes (MinIO)
+# eVDP - sauvegarde des pieces jointes (volume evdp-media)
 #
-#   ./scripts/backup_minio.sh
+#   ./scripts/backup_media.sh
 #
 # Variables : BACKUP_DIR (defaut ./backups), RETENTION_DAYS (defaut 30)
 #
@@ -15,38 +15,24 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_DIR="${BACKUP_DIR:-${PROJECT_DIR}/backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-STAGING="${BACKUP_DIR}/.minio-${TIMESTAMP}"
-ARCHIVE="${BACKUP_DIR}/evdp-minio-${TIMESTAMP}.tar.gz"
+ARCHIVE="${BACKUP_DIR}/evdp-media-${TIMESTAMP}.tar.gz"
 
 log() { printf '[evdp-backup] %s\n' "$*"; }
 fail() { printf '[evdp-backup] ERREUR: %s\n' "$*" >&2; exit 1; }
-cleanup() { rm -rf "${STAGING}"; }
-trap cleanup EXIT
 
 cd "${PROJECT_DIR}"
 
-docker compose ps evdp-minio --format '{{.State}}' 2>/dev/null | grep -q running \
-    || fail "Le service evdp-minio n'est pas demarre."
+command -v docker >/dev/null 2>&1 || fail "docker est introuvable."
+docker compose ps evdp-web --format '{{.State}}' 2>/dev/null | grep -q running \
+    || fail "Le service evdp-web n'est pas demarre."
 
-mkdir -p "${STAGING}"
-chmod 700 "${BACKUP_DIR}" "${STAGING}"
+mkdir -p "${BACKUP_DIR}"
+chmod 700 "${BACKUP_DIR}"
+umask 077
 
-BUCKET="${MINIO_BUCKET:-evdp-attachments}"
-if [ -f "${PROJECT_DIR}/.env" ]; then
-    BUCKET="$(grep -E '^MINIO_BUCKET=' "${PROJECT_DIR}/.env" | cut -d= -f2- || echo "${BUCKET}")"
-fi
-
-log "Miroir du bucket ${BUCKET}…"
-docker compose run --rm --no-deps \
-    -v "${STAGING}:/backup" \
-    --entrypoint sh evdp-minio-init -c '
-        set -e
-        mc alias set evdp "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
-        mc mirror --overwrite --remove "evdp/$MINIO_BUCKET" "/backup/$MINIO_BUCKET"
-    ' || fail "Echec du miroir MinIO."
-
-log "Compression…"
-tar -czf "${ARCHIVE}" -C "${STAGING}" .
+log "Archivage de /app/media vers ${ARCHIVE}…"
+docker compose exec -T evdp-web tar -C /app -czf - media > "${ARCHIVE}" \
+    || fail "Echec de l'archivage."
 chmod 600 "${ARCHIVE}"
 
 tar -tzf "${ARCHIVE}" >/dev/null || fail "Archive corrompue : ${ARCHIVE}"
@@ -56,7 +42,7 @@ SIZE="$(du -h "${ARCHIVE}" | cut -f1)"
 log "Sauvegarde terminee : ${FILES} entrees, ${SIZE}."
 
 log "Purge des sauvegardes de plus de ${RETENTION_DAYS} jours…"
-find "${BACKUP_DIR}" -name 'evdp-minio-*.tar.gz' -type f -mtime "+${RETENTION_DAYS}" -print -delete
+find "${BACKUP_DIR}" -name 'evdp-media-*.tar.gz' -type f -mtime "+${RETENTION_DAYS}" -print -delete
 
 cat <<'REMINDER'
 
