@@ -1,12 +1,18 @@
 """Pages publiques institutionnelles et sondes d'observabilite."""
 
 from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.db import connection
 from django.http import Http404, HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
 
+from apps.accounts.permissions import require_capability
+from apps.accounts.roles import Capability
+from apps.audit.models import AuditAction
+from apps.audit.services import log_action
 from apps.core import pgp
 from apps.core.markdown_utils import render_markdown
 from apps.core.models import SiteSetting
@@ -48,6 +54,41 @@ def disclosure_policy(request):
             "body": render_markdown(body),
             "pgp_key": pgp.national_public_key(),
             "pgp_fingerprint": pgp.national_fingerprint(),
+            "pgp_active": pgp.active_national_key(),
+        },
+    )
+
+
+@login_required
+@require_capability(Capability.MANAGE_PGP_KEYS)
+def pgp_key_manage(request):
+    """Depot et rotation de la cle publique nationale (jamais la privee)."""
+    from .models import NationalPGPKey
+
+    if request.method == "POST" and not getattr(request.user, "is_read_only", False):
+        try:
+            key = pgp.publish_national_key(request.POST.get("public_key", ""), request.user)
+        except pgp.PGPError as exc:
+            messages.error(request, str(exc))
+        else:
+            log_action(
+                AuditAction.PGP_KEY_PUBLISHED,
+                actor=request.user,
+                obj=key,
+                request=request,
+                fingerprint=key.fingerprint,
+                expires_at=key.expires_at.isoformat() if key.expires_at else None,
+            )
+            messages.success(request, f"Clé publiée : {key.readable_fingerprint}.")
+            return redirect("core:pgp_key_manage")
+    return render(
+        request,
+        "core/pgp_key_manage.html",
+        {
+            "active": pgp.active_national_key(),
+            "history": NationalPGPKey.objects.filter(is_active=False)[:20],
+            "env_fallback": not pgp.active_national_key() and bool(pgp.national_public_key()),
+            "expiry_warning_days": pgp.EXPIRY_WARNING_DAYS,
         },
     )
 

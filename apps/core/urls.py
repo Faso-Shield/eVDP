@@ -9,5 +9,6 @@ urlpatterns = [
     path("about/", views.about, name="about"),
     path("disclosure-policy/", views.disclosure_policy, name="disclosure_policy"),
     path("pgp-key.asc", views.pgp_key, name="pgp_key"),
+    path("pgp/cle-nationale/", views.pgp_key_manage, name="pgp_key_manage"),
     path(".well-known/security.txt", views.security_txt, name="security_txt"),
 ]

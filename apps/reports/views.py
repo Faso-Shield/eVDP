@@ -10,6 +10,7 @@ from apps.accounts.verification import grace_deadline
 from apps.coordination.services import public_status_for, resolve_tracking_token
 from apps.core.markdown_utils import render_markdown
 from apps.core.models import SiteSetting
+from apps.core.pgp import national_public_key
 from apps.core.ratelimit import rate_limited
 from apps.core.views import DEFAULT_DISCLOSURE_POLICY
 from apps.programs.models import Program
@@ -92,6 +93,7 @@ def submit(request):
             "form": form,
             "program": program,
             "program_rules": _program_rules(request.user),
+            "pgp_available": bool(national_public_key()),
             "max_attachments": MAX_SUBMISSION_FILES,
             "policy_excerpt": render_markdown(policy[:1200]),
             "delai_verification": grace_deadline(request.user),

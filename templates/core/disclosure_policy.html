@@ -11,15 +11,18 @@
   <div class="card-header"><h2>Chiffrement PGP</h2></div>
   <div class="card-body">
     {% if pgp_key %}
-      <p>Pour un signalement particulièrement sensible, chiffrez son contenu avec la clé publique nationale.</p>
+      <p>Pour un signalement particulièrement sensible, le formulaire chiffre vos
+      informations dans votre navigateur avec la clé publique nationale, sans aucun
+      logiciel à installer. Vous pouvez aussi chiffrer vous-même avec cette clé.</p>
       {% if pgp_fingerprint %}<p class="mono small">Empreinte : {{ pgp_fingerprint }}</p>{% endif %}
+      {% if pgp_active.expires_at %}<p class="small muted">Valable jusqu'au {{ pgp_active.expires_at|date:"d/m/Y" }}.</p>{% endif %}
       <a class="btn btn-outline" href="{% url 'core:pgp_key' %}">Télécharger la clé publique</a>
     {% else %}
-      <p class="muted">Aucune clé publique nationale n'est publiée sur cette instance.
-      Définissez la variable d'environnement <code>PGP_PUBLIC_KEY</code> pour l'activer.</p>
+      <p class="muted">Aucune clé publique nationale n'est publiée sur cette instance.</p>
     {% endif %}
     <p class="small muted mt-2">eVDP ne détient aucune clé privée. Les blocs chiffrés
-    sont stockés tels quels et déchiffrés hors ligne par l'équipe destinataire.</p>
+    sont stockés tels quels ; l'équipe destinataire les déchiffre dans son propre
+    navigateur, sa clé privée ne quittant jamais son poste.</p>
   </div>
 </div>
 

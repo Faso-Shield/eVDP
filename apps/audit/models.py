@@ -26,6 +26,7 @@ class AuditAction(models.TextChoices):
         "MFA_RESET_REQUESTED",
         "Réinitialisation de la double authentification demandée",
     )
+    PGP_KEY_PUBLISHED = "PGP_KEY_PUBLISHED", "Clé PGP nationale publiée"
     API_KEY_CREATED = "API_KEY_CREATED", "Clé d'API créée"
     API_KEY_REVOKED = "API_KEY_REVOKED", "Clé d'API révoquée"
     MFA_BACKUP_CODES_GENERATED = (

@@ -1,6 +1,6 @@
 {% extends "base_dashboard.html" %}
 {% load evdp_tags humanize static %}
-{% block head %}{% include "partials/select_enhance.html" %}{% endblock %}
+{% block head %}{% include "partials/select_enhance.html" %}{% if pgp_material %}{% include "partials/pgp_assets.html" %}{% endif %}{% endblock %}
 {% block title %}{{ case.case_id }}{% endblock %}
 
 {% block dashboard_content %}
@@ -66,7 +66,33 @@
 </div>
 {% endif %}
 
-{% if case.report.is_pgp_encrypted and view.report_body %}
+{% if pgp_material %}
+<div class="notice notice-secure pgp-box" id="pgp-decrypt" hidden>
+  <strong>Contenu chiffré PGP.</strong> Déchiffrez-le dans votre navigateur avec
+  votre clé privée : elle n'est envoyée nulle part, et la page l'oublie à sa
+  fermeture ou sur « Oublier la clé ».
+  <div class="form-grid mt-1">
+    <div class="form-field">
+      <label for="pgp-private-file">Fichier de clé privée (.asc)</label>
+      <input type="file" id="pgp-private-file" accept=".asc,.key,.txt">
+    </div>
+    <div class="form-field">
+      <label for="pgp-passphrase">Phrase secrète</label>
+      <input type="password" id="pgp-passphrase" autocomplete="off">
+    </div>
+  </div>
+  <details>
+    <summary class="small">ou coller le bloc de clé privée</summary>
+    <textarea id="pgp-private-text" rows="4" autocomplete="off" spellcheck="false"></textarea>
+  </details>
+  <div class="btn-row mt-1">
+    {% if report.pgp_payload %}<button class="btn btn-sm btn-accent" type="button" id="pgp-decrypt-block">Déchiffrer le bloc du rapport</button>{% endif %}
+    <button class="btn btn-sm btn-outline" type="button" id="pgp-forget">Oublier la clé</button>
+  </div>
+  <p class="small" id="pgp-decrypt-status" aria-live="polite" hidden></p>
+  <pre id="pgp-plain-output" hidden></pre>
+</div>
+{% elif case.report.is_pgp_encrypted and view.report_body %}
 <div class="notice notice-secure">
   <strong>Rapport chiffré PGP.</strong> Le contenu sensible est stocké sous forme
   de bloc chiffré. eVDP ne détient aucune clé privée : le déchiffrement s'effectue
@@ -88,7 +114,7 @@
           {% if report.recommendations %}<h3>Recommandations</h3>{{ report.recommendations|markdown }}{% endif %}
           {% if report.pgp_payload %}
             <h3>Bloc PGP chiffré</h3>
-            <pre>{{ report.pgp_payload }}</pre>
+            <pre id="pgp-armored">{{ report.pgp_payload }}</pre>
           {% endif %}
         {% else %}
           <p class="muted">Contenu réservé au responsable de l'étape en cours{% if view.kind != "auditor" %} (voir « Prochaine étape »){% endif %} : seules les métadonnées sont consultables.</p>
@@ -199,6 +225,11 @@
                     <span class="muted small">Métadonnées</span>
                   {% elif attachment.is_downloadable %}
                     <a class="btn btn-sm btn-outline" href="{% url 'attachments:download' attachment.id %}">Télécharger</a>
+                    {% if attachment.is_pgp_encrypted and pgp_material %}
+                      <button class="btn btn-sm btn-outline" type="button" hidden
+                              data-pgp-attachment="{% url 'attachments:download' attachment.id %}"
+                              data-filename="{{ attachment.original_filename }}">Déchiffrer</button>
+                    {% endif %}
                   {% else %}
                     <span class="badge sev-critical">Bloqué</span>
                   {% endif %}

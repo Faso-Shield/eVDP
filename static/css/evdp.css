@@ -804,3 +804,8 @@ table.table td { overflow-wrap: normal; }
   padding: .3rem 0; border-bottom: 1px solid var(--border); font-size: .88rem;
 }
 #description-counter.counter-ok { color: var(--evdp-accent); }
+
+/* Chiffrement et dechiffrement PGP dans le navigateur (static/js/pgp.js) */
+.pgp-box { margin: .8rem 0; padding: .8rem 1rem; border: 1px dashed var(--border); border-radius: var(--radius); }
+.pgp-box textarea { width: 100%; font-family: var(--font-mono, monospace); font-size: .85rem; }
+#pgp-plain-output { white-space: pre-wrap; max-height: 360px; overflow: auto; }

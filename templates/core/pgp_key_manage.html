@@ -1,0 +1,74 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Clé PGP nationale{% endblock %}
+{% block dashboard_content %}
+<h1>Clé PGP nationale</h1>
+<p class="muted">
+  Les signaleurs chiffrent leurs informations sensibles avec cette clé publique,
+  dans leur navigateur. La clé <strong>privée</strong> correspondante ne doit
+  jamais être déposée ici : l'équipe destinataire déchiffre dans son propre
+  navigateur, depuis la fiche du dossier.
+</p>
+
+<div class="split-layout">
+  <div class="card">
+    <div class="card-header"><h2>Clé publiée</h2></div>
+    <div class="card-body">
+      {% if active %}
+        <dl class="dl-inline">
+          <dt>Empreinte</dt><dd class="mono">{{ active.readable_fingerprint }}</dd>
+          <dt>Créée le</dt><dd>{{ active.key_created_at|date:"d/m/Y" }}</dd>
+          <dt>Expire le</dt>
+          <dd>{% if active.expires_at %}{{ active.expires_at|date:"d/m/Y" }}{% else %}Jamais{% endif %}</dd>
+          <dt>Publiée par</dt><dd>{{ active.published_by.display_name|default:"—" }}, le {{ active.created_at|date:"d/m/Y H:i" }}</dd>
+        </dl>
+        <a class="btn btn-sm btn-outline" href="{% url 'core:pgp_key' %}">Télécharger la clé publique</a>
+      {% elif env_fallback %}
+        <div class="alert alert-warning">Aucune clé déposée dans l'application : la clé
+        lue dans la variable d'environnement PGP_PUBLIC_KEY est publiée. Déposez-la
+        ici pour en suivre l'empreinte et l'expiration.</div>
+      {% else %}
+        <div class="alert alert-warning">Aucune clé nationale publiée : les signaleurs
+        ne peuvent pas chiffrer leurs informations sensibles.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Publier une nouvelle clé</h2></div>
+    <div class="card-body">
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <div class="form-field">
+          <label for="public_key">Bloc de clé publique armurée<abbr class="required" title="Champ obligatoire">*</abbr></label>
+          <textarea name="public_key" id="public_key" rows="10" class="mono" required
+                    placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----"></textarea>
+          <div class="help">Une clé expirée, illisible ou contenant une partie privée est
+          refusée. L'ancienne clé est retirée et conservée dans l'historique. Une alerte
+          prévient {{ expiry_warning_days }} jours avant l'expiration.</div>
+        </div>
+        <button class="btn btn-accent" type="submit">Publier</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% if history %}
+<div class="card">
+  <div class="card-header"><h2>Clés précédentes</h2></div>
+  <div class="card-body table-wrap">
+    <table class="table">
+      <thead><tr><th>Empreinte</th><th>Publiée le</th><th>Expirait le</th></tr></thead>
+      <tbody>
+      {% for key in history %}
+        <tr>
+          <td class="mono small">{{ key.readable_fingerprint }}</td>
+          <td class="small">{{ key.created_at|date:"d/m/Y" }}</td>
+          <td class="small">{{ key.expires_at|date:"d/m/Y"|default:"—" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

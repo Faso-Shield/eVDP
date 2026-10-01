@@ -55,6 +55,7 @@ class Capability(models.TextChoices):
     EXPORT_DATA = "EXPORT_DATA", "Exporter des données"
     IMPORT_CSAF = "IMPORT_CSAF", "Importer du CSAF"
     MANAGE_USERS = "MANAGE_USERS", "Gérer les utilisateurs"
+    MANAGE_PGP_KEYS = "MANAGE_PGP_KEYS", "Gérer la clé PGP nationale"
 
 
 C = Capability
@@ -71,6 +72,7 @@ ROLE_CAPABILITIES = {
     # acces au contenu des dossiers ni aucun bouton de workflow.
     Role.SUPER_ADMIN: {
         C.MANAGE_USERS,
+        C.MANAGE_PGP_KEYS,
         C.MANAGE_ALL_ORGANIZATIONS,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
@@ -92,6 +94,7 @@ ROLE_CAPABILITIES = {
         C.EXPORT_DATA,
         C.IMPORT_CSAF,
         C.MANAGE_USERS,
+        C.MANAGE_PGP_KEYS,
     },
     # Seul role a saisir le CVSS. VALIDATE_SEVERITY s'y ajoute pour un
     # analyste senior (User.is_senior_analyst), jamais par defaut.

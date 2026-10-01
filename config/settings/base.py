@@ -271,6 +271,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.accounts.tasks.purge_expired_tokens",
         "schedule": crontab(minute=0, hour=3),
     },
+    "evdp-expiration-cle-pgp": {
+        "task": "apps.accounts.tasks.warn_national_pgp_key_expiry",
+        "schedule": crontab(minute=0, hour=9),
+    },
     "evdp-inscriptions-non-activees": {
         "task": "apps.accounts.tasks.purge_pending_activations",
         "schedule": crontab(minute=15, hour=3),

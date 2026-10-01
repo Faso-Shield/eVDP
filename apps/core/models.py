@@ -72,3 +72,41 @@ class SiteSetting(TimeStampedModel):
     def get_value(cls, key, default=""):
         row = cls.objects.filter(key=key, is_published=True).first()
         return row.value if row else default
+
+
+class NationalPGPKey(BaseModel):
+    """Cle publique PGP nationale, deposee depuis l'application.
+
+    Une seule cle est active ; les precedentes sont conservees (rotation
+    tracee). La cle privee correspondante n'est jamais transmise a eVDP :
+    les messages chiffres avec cette cle se dechiffrent dans le navigateur de
+    l'equipe destinataire (static/js/pgp.js).
+    """
+
+    public_key = models.TextField(verbose_name="Clé publique armurée")
+    fingerprint = models.CharField(max_length=64, verbose_name="Empreinte")
+    key_created_at = models.DateTimeField(verbose_name="Créée le")
+    expires_at = models.DateTimeField(null=True, blank=True, verbose_name="Expire le")
+    is_active = models.BooleanField(default=True, verbose_name="Active")
+    published_by = models.ForeignKey(
+        "accounts.User",
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Publiée par",
+    )
+
+    class Meta:
+        db_table = "national_pgp_keys"
+        ordering = ["-created_at"]
+        verbose_name = "Clé PGP nationale"
+        verbose_name_plural = "Clés PGP nationales"
+
+    def __str__(self):
+        return self.fingerprint
+
+    @property
+    def readable_fingerprint(self):
+        return " ".join(
+            self.fingerprint[i : i + 4] for i in range(0, len(self.fingerprint), 4)
+        )

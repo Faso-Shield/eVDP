@@ -86,3 +86,36 @@ def remind_unverified_accounts():
         envoyees += 1
 
     return envoyees
+
+
+@shared_task(name="apps.accounts.tasks.warn_national_pgp_key_expiry")
+def warn_national_pgp_key_expiry():
+    """Previent les gestionnaires de la cle nationale avant son expiration."""
+    from django.urls import reverse
+
+    from apps.core.pgp import national_key_expiring
+    from apps.notifications.models import NotificationKind
+    from apps.notifications.services import notify_many
+
+    from .models import User
+    from .roles import ROLE_CAPABILITIES, Capability
+
+    key = national_key_expiring()
+    if key is None:
+        return 0
+    roles = [r for r, caps in ROLE_CAPABILITIES.items() if Capability.MANAGE_PGP_KEYS in caps]
+    expired = key.expires_at <= timezone.now()
+    title = "Clé PGP nationale expirée" if expired else "Clé PGP nationale bientôt expirée"
+    return len(
+        notify_many(
+            User.objects.filter(is_active=True, role__in=roles),
+            NotificationKind.ACCOUNT,
+            title=title,
+            body=(
+                f"La clé {key.readable_fingerprint} expire le "
+                f"{timezone.localtime(key.expires_at):%d/%m/%Y}. Publiez la nouvelle clé "
+                "avant cette date : les signaleurs chiffrent avec la clé publiée."
+            ),
+            url=reverse("core:pgp_key_manage"),
+        )
+    )

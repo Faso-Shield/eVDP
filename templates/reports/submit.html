@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load evdp_tags %}
 {% load static %}
-{% block head %}{% include "partials/select_enhance.html" %}<script src="{% static 'js/report-submit.js' %}" defer></script>{% endblock %}
+{% block head %}{% include "partials/select_enhance.html" %}<script src="{% static 'js/report-submit.js' %}" defer></script>{% if pgp_available %}{% include "partials/pgp_assets.html" %}{% endif %}{% endblock %}
 {% block title %}Signaler une vulnérabilité{% endblock %}
 
 {% block content %}
@@ -138,6 +138,24 @@
           <div class="checkbox-field">{{ form.wants_credit }}<label for="{{ form.wants_credit.id_for_label }}">{{ form.wants_credit.label }}</label></div>
           <p class="small muted" id="wants-credit-hint" hidden>Sans effet pour un signalement anonyme : le crédit public vous nommerait.</p>
           <div class="checkbox-field">{{ form.requests_cve }}<label for="{{ form.requests_cve.id_for_label }}">{{ form.requests_cve.label }}</label></div>
+          {% if pgp_available %}
+          <div class="pgp-box" id="pgp-encrypt" data-key-url="{% url 'core:pgp_key' %}" hidden>
+            <h3>Chiffrer dans mon navigateur</h3>
+            <p class="small muted">Écrivez ici ce qui doit rester illisible pour tout autre
+            que le CSIRT (identifiants, preuve d'exploitation, données exposées). Le texte est
+            chiffré avec la clé publique nationale sur votre poste ; seul le bloc chiffré est
+            envoyé.</p>
+            <textarea id="pgp-plaintext" rows="5" autocomplete="off" spellcheck="false"></textarea>
+            <div class="btn-row mt-1">
+              <button class="btn btn-sm btn-outline" type="button" id="pgp-encrypt-button">Chiffrer avec la clé nationale</button>
+            </div>
+            <div class="checkbox-field mt-1">
+              <input type="checkbox" id="pgp-encrypt-files">
+              <label for="pgp-encrypt-files">Chiffrer aussi les pièces jointes avant l'envoi (.gpg)</label>
+            </div>
+            <p class="small" id="pgp-encrypt-status" aria-live="polite" hidden></p>
+          </div>
+          {% endif %}
           {% include "partials/form_field.html" with field=form.pgp_payload %}
           <div class="checkbox-field">
             {{ form.accept_policy }}
@@ -176,7 +194,8 @@
     <div class="card">
       <div class="card-header"><h3>Signalement chiffré</h3></div>
       <div class="card-body small">
-        <p>Pour un contenu très sensible, chiffrez-le avec la clé publique nationale
+        <p>Pour un contenu très sensible, utilisez « Chiffrer dans mon navigateur »
+        (carte Confidentialité), ou chiffrez-le vous-même avec la clé publique nationale
         et collez le bloc PGP dans le champ prévu.</p>
         <a class="btn btn-sm btn-outline" href="{% url 'core:pgp_key' %}">Clé publique PGP</a>
       </div>

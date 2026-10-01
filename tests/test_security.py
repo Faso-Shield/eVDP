@@ -200,11 +200,11 @@ def test_malformed_public_key_is_refused():
         validate_public_key("pas une cle")
 
 
-def test_valid_public_key_shape_is_accepted():
-    blob = (
-        "-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQINBGX...\n-----END PGP PUBLIC KEY BLOCK-----"
-    )
-    assert validate_public_key(blob) == blob
+def test_valid_public_key_is_accepted():
+    """La forme ne suffit plus : la cle est lue (voir tests/test_pgp_keys.py)."""
+    from .pgp_fixtures import VALID_KEY
+
+    assert validate_public_key(VALID_KEY) == VALID_KEY.strip()
 
 
 # ------------------------------------------------------------- audit immuable

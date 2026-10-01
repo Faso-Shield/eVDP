@@ -372,6 +372,15 @@ def case_detail(request, case_id):
         # Le case original d'un doublon n'est jamais expose au declarant.
         "show_duplicate_origin": case.duplicate_of_id is not None and user.sees_all_cases,
     }
+    # Dechiffrement PGP propose a qui lit le contenu du rapport ou telecharge
+    # ses pieces : jamais a l'auditeur, limite aux metadonnees.
+    context["pgp_material"] = bool(
+        (view["report_body"] and case.report.pgp_payload)
+        or (
+            view["attachments_download"]
+            and any(a.is_pgp_encrypted and a.is_downloadable for a in context["attachments"])
+        )
+    )
     return render(request, "coordination/case_detail.html", context)
 
 
