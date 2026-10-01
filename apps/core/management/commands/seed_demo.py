@@ -546,7 +546,9 @@ class Command(BaseCommand):
             {
                 "title": "IDOR permettant de consulter les dossiers d'autres usagers",
                 "product": "Portail eServices",
-                "organization": organizations["CSIRT-BF"],
+                # Organisation dotee d'un compte DSI : le parcours va jusqu'au
+                # correctif confirme, qui ouvre la branche prime.
+                "organization": organizations["MINDEMO"],
                 "program": programs["bounty"],
                 "reporter": users["bugbounty@demo.bf"],
                 "vulnerability_type": VulnerabilityType.IDOR,
@@ -671,14 +673,8 @@ class Command(BaseCommand):
         self._act(case, "submit_qualification")
         self._act(case, "validate_qualification", comment="Qualification relue et validée.")
 
-    def _workflow(self, cases, users):
-        analyst = users["analyste@csirt.bf"]
-        if not cases or cases[0].status != CaseStatus.SUBMITTED:
-            return
-
-        # Case 1 : parcours CVD complet jusqu'a la verification du correctif.
-        case = cases[0]
-        self._qualify(case, analyst)
+    def _remediate(self, case):
+        """Etapes 5 a 8 : transmission, plan, correctif, contre-verification."""
         self._act(case, "notify_vendor")
         self._act(
             case,
@@ -698,9 +694,21 @@ class Command(BaseCommand):
             verification_report="Contre-vérification : l'injection n'est plus reproductible.",
         )
 
-        # Case 2 : parcours Bug Bounty, la branche prime s'ouvre a la validation.
+    def _workflow(self, cases, users):
+        analyst = users["analyste@csirt.bf"]
+        if not cases or cases[0].status != CaseStatus.SUBMITTED:
+            return
+
+        # Case 1 : parcours CVD complet jusqu'a la verification du correctif.
+        case = cases[0]
+        self._qualify(case, analyst)
+        self._remediate(case)
+
+        # Case 2 : parcours Bug Bounty. La branche prime s'ouvre une fois le
+        # correctif confirme : l'analyste ne propose qu'au terme de son travail.
         if len(cases) > 1:
             self._qualify(cases[1], analyst)
+            self._remediate(cases[1])
 
         # Case 3 : reste a la reception, avec une demande de complements.
         if len(cases) > 2:

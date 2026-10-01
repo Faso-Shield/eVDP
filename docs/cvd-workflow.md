@@ -153,16 +153,23 @@ marquer le dossier comme reçu.
 
 ## 3. Branche Bug Bounty et Wallet
 
-La prime se décide dès la validation, en parallèle de la remédiation. Le
-statut de prime (`Case.bounty_stage`) est **distinct** du statut du dossier.
+La prime se propose une fois le travail de l'analyste terminé : la branche
+s'ouvre quand il confirme le correctif (étape 8), ou quand le dossier part en
+advisory sans correctif (divulgation à échéance). La proposition repose ainsi
+sur une sévérité et un impact établis. Le statut de prime (`Case.bounty_stage`)
+est **distinct** du statut du dossier.
 
 | # | Statut prime | Rôle | Bouton | Pré-requis | Arrivée |
 |---|--------------|------|--------|------------|---------|
 | B1 | `BOUNTY_ELIGIBLE` | Analyste CSIRT | Proposer la prime (`propose_bounty`) | Montant issu de la matrice ; hors palier = justification écrite | `BOUNTY_PROPOSED` |
-| B2 | `BOUNTY_PROPOSED` | Coordinateur | Approuver et créditer le Wallet (`approve_bounty`) | Approbateur ≠ proposeur, commentaire | `BOUNTY_CREDITED` |
+| B2 | `BOUNTY_PROPOSED` | Coordinateur | Approuver et créditer le Wallet (`approve_bounty`) | Approbateur ≠ proposeur, commentaire ; montant prérempli et modifiable (hors palier = justification) | `BOUNTY_CREDITED` |
 
 - Un programme non éligible (VDP, déclarant non identifié) passe directement en
-  `NOT_ELIGIBLE` à l'étape 4. Une prime refusée ramène aussi à `NOT_ELIGIBLE`.
+  `NOT_ELIGIBLE` à l'ouverture de la branche. Une prime refusée ramène aussi à
+  `NOT_ELIGIBLE`.
+- Le coordinateur décide sans attendre l'analyste : il approuve le montant
+  proposé ou le réajuste dans le même geste. « Renvoyer au proposeur » reste
+  possible pour un désaccord de fond.
 - Le **Wallet** est un grand livre d'écritures (`bounty.WalletEntry` : crédit,
   ajustement, versement hors plateforme). Le solde est **calculé**
   (`bounty.services.wallet_balance`), jamais stocké ni modifiable ; une écriture

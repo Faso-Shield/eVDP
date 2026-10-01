@@ -306,8 +306,9 @@ def submitted_bounty_case(db, bounty_researcher, organization, bounty_program, s
 
 @pytest.fixture
 def bounty_case(submitted_bounty_case):
-    """Dossier Bug Bounty valide : la branche prime est ouverte (BOUNTY_ELIGIBLE)."""
-    return advance(submitted_bounty_case, CaseStatus.VALIDATED)
+    """Dossier Bug Bounty au correctif confirme : la branche prime est ouverte
+    (BOUNTY_ELIGIBLE), l'analyste ayant termine son travail."""
+    return advance(submitted_bounty_case, CaseStatus.FIX_VERIFIED)
 
 
 # ------------------------------------------------------------ workflow v2

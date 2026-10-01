@@ -237,15 +237,21 @@ def test_each_step_notifies_and_emails_its_owner(case_alpha, second_owners, targ
         assert owner.email in emails
 
 
-def test_bounty_step_notifies_the_analyst(submitted_bounty_case):
+def test_bounty_step_falls_to_the_analyst_once_the_fix_is_confirmed(submitted_bounty_case):
+    """L'analyste qui confirme le correctif enchaine sur la prime : le bouton
+    lui revient (l'avis « Action requise » ne va jamais a l'auteur de l'action
+    qui l'ouvre)."""
+    from apps.coordination.workflow import bounty_action, step_owners
+
     analyst = workflow_actor("analyst")
-    advance(submitted_bounty_case, CaseStatus.VALIDATION_PENDING)
-    Notification.objects.all().delete()
+    advance(submitted_bounty_case, CaseStatus.FIX_AVAILABLE)
+    assert bounty_action(submitted_bounty_case) is None
 
-    advance(submitted_bounty_case, CaseStatus.VALIDATED)
+    advance(submitted_bounty_case, CaseStatus.FIX_VERIFIED)
 
-    notification = _action_required(analyst).filter(case=submitted_bounty_case)
-    assert notification.filter(title__contains="Proposer la prime").exists()
+    action = bounty_action(submitted_bounty_case)
+    assert action is not None and action.key == "propose_bounty"
+    assert analyst in step_owners(submitted_bounty_case, action, ignore_claim=True)
 
 
 # ---------------------------------------------------------- declarant anonyme

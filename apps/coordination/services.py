@@ -463,7 +463,6 @@ def _on_declare_admissible(case, actor, data, now, request):
 
 
 def _on_validate(case, actor, data, now, request):
-    from apps.programs.models import ProgramType
 
     updates = []
     if not case.validated_at:
@@ -474,16 +473,6 @@ def _on_validate(case, actor, data, now, request):
                 now + timedelta(days=case.program.disclosure_delay_days)
             ).date()
             updates.append("disclosure_date")
-    # Branche prime : ouverte des la validation pour un programme eligible,
-    # afin de ne pas faire attendre le chercheur la fin de la remediation.
-    if not case.bounty_stage:
-        eligible = (
-            case.program_id is not None
-            and case.program.program_type == ProgramType.BUG_BOUNTY
-            and case.reporter_id is not None
-        )
-        case.bounty_stage = BountyStage.ELIGIBLE if eligible else BountyStage.NOT_ELIGIBLE
-        updates.append("bounty_stage")
     return updates
 
 
@@ -505,9 +494,29 @@ def _on_declare_fix(case, actor, data, now, request):
     return ["fix_description", "fix_version", "fix_deployed_on"]
 
 
+def _open_bounty_branch(case):
+    """Ouvre la branche prime d'un dossier Bug Bounty, une seule fois.
+
+    L'analyste ne propose la prime qu'au terme de son travail : correctif
+    confirme (etape 8), ou dossier parti en advisory sans correctif. La
+    proposition repose ainsi sur une severite et un impact etablis.
+    """
+    from apps.programs.models import ProgramType
+
+    if case.bounty_stage:
+        return []
+    eligible = (
+        case.program_id is not None
+        and case.program.program_type == ProgramType.BUG_BOUNTY
+        and case.reporter_id is not None
+    )
+    case.bounty_stage = BountyStage.ELIGIBLE if eligible else BountyStage.NOT_ELIGIBLE
+    return ["bounty_stage"]
+
+
 def _on_confirm_fix(case, actor, data, now, request):
     case.verification_report = data["verification_report"].strip()
-    return ["verification_report"]
+    return ["verification_report", *_open_bounty_branch(case)]
 
 
 def _on_insufficient_fix(case, actor, data, now, request):
@@ -538,7 +547,7 @@ def _on_submit_advisory(case, actor, data, now, request):
     if advisory.status == AdvisoryStatus.DRAFT:
         advisory.status = AdvisoryStatus.IN_REVIEW
         advisory.save(update_fields=["status", "updated_at"])
-    return []
+    return _open_bounty_branch(case)
 
 
 def _on_publish(case, actor, data, now, request):
@@ -571,9 +580,9 @@ def _on_propose_bounty(case, actor, data, now, request):
 def _on_approve_bounty(case, actor, data, now, request):
     from apps.bounty.services import approve_bounty
 
-    approve_bounty(
-        case.bounty, actor, amount=data.get("amount"), note=data["comment"], request=request
-    )
+    justification = (data.get("justification") or "").strip()
+    note = data["comment"] + (f"\n\nMontant : {justification}" if justification else "")
+    approve_bounty(case.bounty, actor, amount=data.get("amount"), note=note, request=request)
     return []
 
 

@@ -455,6 +455,23 @@ def can_edit_case_advisory(case, user):
     return user.has_capability(needed)
 
 
+def _pre_amount(case, data, missing):
+    from apps.bounty.services import amount_outside_tier
+
+    if data is not None and data.get("amount") is not None:
+        if (
+            amount_outside_tier(case, data["amount"])
+            and not (data.get("justification") or "").strip()
+        ):
+            missing.append("Montant hors palier : justification écrite obligatoire")
+    return missing
+
+
+def _pre_approve_bounty(case, data):
+    """Le coordinateur peut reajuster le montant propose en approuvant."""
+    return _pre_amount(case, data, [])
+
+
 def _pre_propose_bounty(case, data):
     from apps.bounty.services import amount_outside_tier
 
@@ -720,6 +737,10 @@ ACTIONS = [
         track="bounty",
         comment_required=True,
         four_eyes="propose_bounty",
+        # Montant prerempli avec la proposition, modifiable : reajuster ne
+        # demande plus de renvoyer la prime a l'analyste.
+        prerequisites=_pre_approve_bounty,
+        fields=("amount", "justification"),
     ),
     # -- Sorties d'exception (actions secondaires) ------------------------------
     WorkflowAction(

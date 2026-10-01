@@ -19,7 +19,7 @@ from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import log_action
 from apps.bounty.services import wallet_balance
 from apps.coordination.constants import Confidentiality, SLAKind, SLAState
-from apps.coordination.models import SLAEvent
+from apps.coordination.models import Case, SLAEvent
 from apps.coordination.selectors import sla_color
 from apps.coordination.services import (
     escalate_case,
@@ -791,16 +791,38 @@ def test_deadline_disclosure_after_90_days(case_alpha, analyst, coordinator):
 
 
 # -------------------------------------------------------------- branche prime
-def test_vdp_case_is_not_eligible_at_validation(case_alpha):
-    advance(case_alpha, CaseStatus.VALIDATED)
+def test_vdp_case_is_not_eligible_once_the_fix_is_confirmed(case_alpha):
+    advance(case_alpha, CaseStatus.FIX_VERIFIED)
     assert case_alpha.bounty_stage == BountyStage.NOT_ELIGIBLE
 
 
-def test_bounty_case_is_eligible_at_validation(submitted_bounty_case):
-    assert submitted_bounty_case.bounty_stage == BountyStage.NONE
-    advance(submitted_bounty_case, CaseStatus.VALIDATION_PENDING)
+def test_bounty_branch_opens_once_the_analyst_confirmed_the_fix(submitted_bounty_case):
+    """L'analyste ne propose la prime qu'au terme de son travail (etape 8)."""
     assert submitted_bounty_case.bounty_stage == BountyStage.NONE
     advance(submitted_bounty_case, CaseStatus.VALIDATED)
+    assert submitted_bounty_case.bounty_stage == BountyStage.NONE
+    advance(submitted_bounty_case, CaseStatus.FIX_AVAILABLE)
+    assert submitted_bounty_case.bounty_stage == BountyStage.NONE
+    advance(submitted_bounty_case, CaseStatus.FIX_VERIFIED)
+    assert submitted_bounty_case.bounty_stage == BountyStage.ELIGIBLE
+
+
+def test_bounty_branch_also_opens_when_the_advisory_leaves_without_fix(
+    submitted_bounty_case, analyst
+):
+    """Advisory soumis sans correctif (divulgation a echeance) : le chercheur
+    garde son droit a la prime."""
+    from .conftest import _prepare_step
+
+    advance(submitted_bounty_case, CaseStatus.REMEDIATION_IN_PROGRESS)
+    # Divulgation a echeance decidee par le coordinateur (escalade).
+    Case.objects.filter(pk=submitted_bounty_case.pk).update(
+        deadline_disclosure_at=timezone.now()
+    )
+    submitted_bounty_case.refresh_from_db()
+    _prepare_step(submitted_bounty_case, CaseStatus.FIX_VERIFIED)
+    act(submitted_bounty_case, "submit_advisory", analyst)
+    submitted_bounty_case.refresh_from_db()
     assert submitted_bounty_case.bounty_stage == BountyStage.ELIGIBLE
 
 
@@ -834,10 +856,32 @@ def test_bounty_can_be_returned_to_proposer(bounty_case, analyst, coordinator):
 
 def test_bounty_stage_is_independent_of_case_status(bounty_case, analyst):
     act(bounty_case, "propose_bounty", analyst)
-    assert bounty_case.status == CaseStatus.VALIDATED
-
-    advance(bounty_case, CaseStatus.REMEDIATION_IN_PROGRESS)
+    assert bounty_case.status == CaseStatus.FIX_VERIFIED
     assert bounty_case.bounty_stage == BountyStage.PROPOSED
+
+
+def test_coordinator_adjusts_the_amount_without_returning_the_bounty(
+    bounty_case, analyst, coordinator
+):
+    """Reajuster ne demande plus de renvoyer la prime a l'analyste."""
+    from decimal import Decimal
+
+    act(bounty_case, "propose_bounty", analyst)
+    proposed = bounty_case.bounty.proposed_amount
+    act(
+        bounty_case,
+        "approve_bounty",
+        coordinator,
+        data={
+            "comment": "Impact revu a la hausse.",
+            "amount": proposed + Decimal("50000"),
+            "justification": "Exploitation plus large que prevu.",
+        },
+    )
+    bounty_case.refresh_from_db()
+    assert bounty_case.bounty_stage == BountyStage.CREDITED
+    assert bounty_case.bounty.approved_amount == proposed + Decimal("50000")
+    assert bounty_case.bounty.proposed_amount == proposed
 
 
 def test_bounty_cannot_be_proposed_before_validation(submitted_bounty_case, analyst):

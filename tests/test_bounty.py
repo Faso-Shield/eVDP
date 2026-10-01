@@ -38,7 +38,8 @@ MEDIUM_VECTOR = "CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:U/C:L/I:L/A:N"
 
 @pytest.fixture
 def bounty_case(submitted_bounty_case):
-    """Dossier Bug Bounty valide (branche prime ouverte), severite moyenne.
+    """Dossier Bug Bounty au correctif confirme (branche prime ouverte),
+    severite moyenne.
 
     Surcharge locale de la fixture de conftest : la qualification est faite
     avec un vecteur moyen, pour que les montants des tests restent dans le
@@ -47,7 +48,20 @@ def bounty_case(submitted_bounty_case):
     case = submitted_bounty_case
     case.cvss_vector = MEDIUM_VECTOR
     case.save(update_fields=["cvss_vector", "updated_at"])
-    return advance(case, CaseStatus.VALIDATED)
+    return advance(case, CaseStatus.FIX_VERIFIED)
+
+
+@pytest.fixture
+def legacy_bounty_case(submitted_bounty_case):
+    """Dossier ouvert a la prime des sa validation, sous l'ancienne regle :
+    il en existe en base. Le reglement doit toujours attendre le correctif."""
+    case = submitted_bounty_case
+    case.cvss_vector = MEDIUM_VECTOR
+    case.save(update_fields=["cvss_vector", "updated_at"])
+    advance(case, CaseStatus.VALIDATED)
+    Case.objects.filter(pk=case.pk).update(bounty_stage=BountyStage.ELIGIBLE)
+    case.refresh_from_db()
+    return case
 
 
 @pytest.fixture
@@ -110,7 +124,7 @@ def test_bounty_refused_before_validation(submitted_bounty_case, analyst):
 
 def test_bounty_refused_on_vdp_program(case_alpha, analyst):
     """Un VDP n'ouvre pas droit a recompense : la branche passe en NOT_ELIGIBLE."""
-    case = advance(case_alpha, CaseStatus.VALIDATED)
+    case = advance(case_alpha, CaseStatus.FIX_VERIFIED)
     assert case.bounty_stage == BountyStage.NOT_ELIGIBLE
     with pytest.raises(ValidationError, match="branche prime"):
         propose_bounty(case, analyst, amount=Decimal("100000"))
@@ -649,12 +663,12 @@ def test_confirm_settlement_requires_a_proof(bounty_case, analyst, coordinator):
         confirm_settlement(payment, coordinator, proof_file=None)
 
 
-def test_confirm_settlement_requires_a_verified_fix(bounty_case, analyst, coordinator):
+def test_confirm_settlement_requires_a_verified_fix(legacy_bounty_case, analyst, coordinator):
     """L'argent ne doit jamais sortir avant que tout le processus de
     remediation soit lui-meme termine - pas seulement la decision de
     recompense. Un dossier encore SUBMITTED, meme avec un versement
     enregistre, ne peut pas etre confirme regle."""
-    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    bounty = propose_bounty(legacy_bounty_case, analyst, amount=Decimal("200000"))
     approve_bounty(bounty, coordinator)
     payment = record_payment(bounty, coordinator)  # dossier toujours SUBMITTED
 
@@ -677,11 +691,13 @@ def test_confirm_settlement_succeeds_once_the_fix_is_verified(
     assert payment.status == PaymentStatus.SETTLED
 
 
-def test_mark_payment_failed_also_requires_a_verified_fix(bounty_case, analyst, coordinator):
+def test_mark_payment_failed_also_requires_a_verified_fix(
+    legacy_bounty_case, analyst, coordinator
+):
     """Ni la confirmation ni l'echec ne doivent pouvoir statuer sur un
     versement tant que le processus de remediation n'est pas termine : le
     versement reste simplement "Enregistre" jusque-la, dans les deux sens."""
-    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    bounty = propose_bounty(legacy_bounty_case, analyst, amount=Decimal("200000"))
     approve_bounty(bounty, coordinator)
     payment = record_payment(bounty, coordinator)  # dossier toujours SUBMITTED
 
@@ -705,9 +721,9 @@ def test_mark_payment_failed_succeeds_once_the_fix_is_verified(
 
 
 def test_settlement_eligible_flag_reflects_the_case_status(
-    client_for, bounty_case, analyst, coordinator
+    client_for, legacy_bounty_case, analyst, coordinator
 ):
-    bounty = propose_bounty(bounty_case, analyst, amount=Decimal("200000"))
+    bounty = propose_bounty(legacy_bounty_case, analyst, amount=Decimal("200000"))
     approve_bounty(bounty, coordinator)
     record_payment(bounty, coordinator)
 
@@ -716,7 +732,7 @@ def test_settlement_eligible_flag_reflects_the_case_status(
     assert response.context["settlement_eligible"] is False
     assert "pas encore vérifié" in response.content.decode()
 
-    _verify_the_fix(bounty_case, coordinator)
+    _verify_the_fix(legacy_bounty_case, coordinator)
     response = client.get(reverse("bounty:detail", args=[bounty.pk]))
     assert response.context["settlement_eligible"] is True
 
