@@ -1110,3 +1110,22 @@ def test_overdue_cases_say_who_is_late(auditor, case_alpha):
     event.save(update_fields=["kind", "state"])
     (case,) = [c for c in overdue_cases(auditor) if c.pk == case_alpha.pk]
     assert case.overdue_external and not case.overdue_internal
+
+
+def test_insufficient_fix_is_limited_to_three_returns(case_alpha, analyst, coordinator):
+    """Trois renvois a l'organisation : le coordinateur est saisi, puis le
+    quatrieme est refuse."""
+    from apps.coordination.workflow import TransitionNotAllowed
+
+    for attempt in range(1, 4):
+        advance(case_alpha, CaseStatus.FIX_AVAILABLE)
+        act(case_alpha, "insufficient_fix", analyst, data={"comment": f"Essai {attempt}"})
+        case_alpha.refresh_from_db()
+        assert case_alpha.status == CaseStatus.REMEDIATION_IN_PROGRESS
+        assert bool(case_alpha.escalated_at) is (attempt == 3)
+
+    advance(case_alpha, CaseStatus.FIX_AVAILABLE)
+    with pytest.raises(TransitionNotAllowed):
+        act(case_alpha, "insufficient_fix", analyst, data={"comment": "Encore"})
+    case_alpha.refresh_from_db()
+    assert case_alpha.status == CaseStatus.FIX_AVAILABLE

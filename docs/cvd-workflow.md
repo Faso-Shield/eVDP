@@ -186,7 +186,7 @@ statut de prime (`Case.bounty_stage`) est **distinct** du statut du dossier.
 | Proposer le rejet (`propose_rejection`) | Triage, Analyste | 1 à 3 | `REJECTION_PENDING` | Coordinateur : « Confirmer le rejet » (`confirm_rejection`) → `REJECTED`, ou renvoi (`return_rejection`) à l'étape d'origine |
 | Marquer comme doublon (`propose_duplicate`) | Triage, Analyste | 1 à 3 | `REJECTION_PENDING` (motif doublon) | Coordinateur confirme → `DUPLICATE`, rattaché à l'original sans fuite |
 | Renvoyer à l'auteur (`return_to_author`, `return_bounty`) | Coordinateur | 4, 10, B2 | Retour à l'étape précédente | — |
-| Correctif insuffisant (`insufficient_fix`) | Analyste | 8 | Retour en `REMEDIATION_IN_PROGRESS` | — |
+| Correctif insuffisant (`insufficient_fix`) | Analyste | 8 | Retour en `REMEDIATION_IN_PROGRESS` ; trois renvois au plus, le troisième escalade le dossier au coordinateur | — |
 | Proposer une clôture sans advisory (`propose_closure`) | Analyste | 9 | `ADVISORY_REVIEW` sans brouillon | Le Coordinateur décide : rédiger et publier, ou clôturer sans publication |
 | Clôturer sans publication (`close_without_advisory`) | Coordinateur | 10 | `CLOSED` sans advisory publié (branche prime terminée, commentaire, quatre yeux) | Le déclarant voit « Clôturé », jamais « Publié » |
 | Escalader | Automatique (SLA 6 ou 7 dépassé) | 6, 7 | Alerte rouge ; le Coordinateur devient responsable du dossier | Le Coordinateur peut décider une divulgation à échéance (`decide_deadline_disclosure`) après 90 j : l'advisory peut alors être soumis sans correctif |

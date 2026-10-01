@@ -41,6 +41,7 @@ from .models import (
 from .visibility import readable_channels, writable_channels
 from .workflow import (
     ADMISSIBILITY_CHECKLIST,
+    MAX_INSUFFICIENT_FIX,
     ORG_VISIBLE_STATES,
     PRIMARY,
     TERMINAL_STATES,
@@ -54,6 +55,7 @@ from .workflow import (
     current_actions,
     current_owner_ids,
     get_action,
+    insufficient_fix_count,
     must_claim,
     public_status_bucket,
     public_status_of,
@@ -516,6 +518,16 @@ def _on_insufficient_fix(case, actor, data, now, request):
         confidentiality=Confidentiality.ORGANIZATION,
         is_system=True,
     )
+    # L'historique n'enregistre ce renvoi qu'apres le gestionnaire.
+    if insufficient_fix_count(case) + 1 >= MAX_INSUFFICIENT_FIX:
+        escalate_case(
+            case,
+            actor,
+            f"{MAX_INSUFFICIENT_FIX} correctifs jugés insuffisants",
+            request=request,
+            save=False,
+        )
+        return ["escalated_at"]
     return []
 
 

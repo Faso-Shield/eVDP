@@ -470,6 +470,28 @@ def _pre_propose_bounty(case, data):
     return missing
 
 
+#: Renvois « Correctif insuffisant » de l'analyste vers l'organisation. Au
+#: troisieme, le dossier est escalade au coordinateur ; au-dela, l'analyste
+#: confirme le correctif ou le coordinateur arbitre.
+MAX_INSUFFICIENT_FIX = 3
+
+
+def insufficient_fix_count(case):
+    """Renvois deja faits : passages de « correctif disponible » a « remediation »."""
+    return case.status_history.filter(
+        from_status=CaseStatus.FIX_AVAILABLE, to_status=CaseStatus.REMEDIATION_IN_PROGRESS
+    ).count()
+
+
+def _pre_insufficient_fix(case, data):
+    if insufficient_fix_count(case) >= MAX_INSUFFICIENT_FIX:
+        return [
+            f"{MAX_INSUFFICIENT_FIX} renvois à l'organisation déjà faits : confirmez le "
+            "correctif ou laissez le coordinateur arbitrer"
+        ]
+    return []
+
+
 def reporter_can_reply(case):
     """Le declarant peut-il repondre sur la plateforme ?
 
@@ -821,6 +843,7 @@ ACTIONS = [
         kind=SECONDARY,
         comment_required=True,
         owner_only=True,
+        prerequisites=_pre_insufficient_fix,
     ),
     WorkflowAction(
         "escalate",
