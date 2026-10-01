@@ -522,6 +522,8 @@ EVDP = {
         # chiffres se devine en 10^6 essais ; la limite les rend hors de
         # portee sans bloquer le titulaire legitime qui se trompe.
         "mfa": env("EVDP_RL_MFA", default="10/5m"),
+        # « Appareil perdu » : quelques demandes par compte et par jour.
+        "mfa_reset_request": env("EVDP_RL_MFA_RESET_REQUEST", default="3/1d"),
         # Jeton de suivi long et aleatoire (haute entropie) : la limite sert
         # surtout a ralentir le crawl/scraping, pas a empecher un brute-force
         # qui serait de toute facon impraticable vu l'espace de recherche.

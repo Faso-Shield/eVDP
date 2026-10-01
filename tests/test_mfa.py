@@ -347,3 +347,19 @@ def test_second_factor_never_redirects_off_site(
     code = code_pour(analyste_enrole.mfa_secret)
     reponse = client.post(f"/mfa/?next={next_url}", {"code": code})
     assert reponse["Location"] == expected
+
+
+def test_lost_device_request_alerts_account_managers(client_for, analyste_enrole, coordinator):
+    """Bloque sans appareil ni code de secours : la demande part aux
+    gestionnaires de comptes, sans rien reinitialiser d'office."""
+    from apps.notifications.models import Notification
+
+    client = client_for(analyste_enrole, mfa=False)
+    response = client.post("/mfa/appareil-perdu/")
+    assert response["Location"] == "/mfa/"
+    note = Notification.objects.get(recipient=coordinator)
+    assert analyste_enrole.email in note.title
+    assert str(analyste_enrole.pk) in note.url
+    analyste_enrole.refresh_from_db()
+    assert analyste_enrole.mfa_enabled, "seul un gestionnaire reinitialise"
+    assert AuditLog.objects.filter(action=AuditAction.MFA_RESET_REQUESTED).exists()

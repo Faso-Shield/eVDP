@@ -16,8 +16,20 @@
     </form>
   </div>
 </div>
-<p class="text-center small muted">
-  Appareil perdu et plus de code de secours ? Contactez un administrateur. ·
-  <a href="{% url 'accounts:logout' %}">Se déconnecter</a>
-</p>
+<div class="card" style="max-width:440px;margin:0 auto 2rem">
+  <div class="card-body small">
+    <strong>Appareil perdu et plus de code de secours ?</strong>
+    <p class="muted">Les gestionnaires de comptes seront prévenus. Ils vérifieront
+    votre identité par un autre canal, puis réinitialiseront votre second facteur ;
+    vous en enregistrerez un nouveau à la connexion suivante.</p>
+    <form method="post" action="{% url 'accounts:mfa_lost_device' %}">
+      {% csrf_token %}
+      <button class="btn btn-sm btn-outline" type="submit">J'ai perdu mon appareil</button>
+    </form>
+  </div>
+</div>
+<form method="post" action="{% url 'accounts:logout' %}" class="text-center small">
+  {% csrf_token %}
+  <button class="btn btn-sm btn-outline" type="submit">Se déconnecter</button>
+</form>
 {% endblock %}

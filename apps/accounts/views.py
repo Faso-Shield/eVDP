@@ -30,7 +30,7 @@ from apps.audit.services import log_action
 from apps.core.middleware import get_client_ip
 from apps.core.ratelimit import rate_limited, reset
 from apps.notifications.models import NotificationKind
-from apps.notifications.services import notify
+from apps.notifications.services import notify, notify_many
 from apps.researchers.services import get_or_create_profile
 
 from . import mfa
@@ -368,6 +368,45 @@ def api_key_revoke(request, key_id):
     )
     messages.success(request, f"Clé « {api_key.label} » révoquée.")
     return redirect("accounts:profile")
+
+
+@login_required
+@require_POST
+@rate_limited("mfa_reset_request", key_func=_mfa_par_compte)
+def mfa_lost_device(request):
+    """« J'ai perdu mon appareil » : previent les gestionnaires de comptes.
+
+    Le compte a prouve son mot de passe mais pas son second facteur : il ne
+    peut pas reinitialiser lui-meme (le mot de passe seul suffirait alors a
+    contourner le second facteur). Un gestionnaire de comptes verifie
+    l'identite de la personne hors ligne, puis reinitialise depuis la fiche
+    du compte.
+    """
+    from apps.accounts.roles import ROLE_CAPABILITIES, Capability
+
+    user = request.user
+    if not user.mfa_required or not user.mfa_enabled:
+        return redirect("accounts:mfa_challenge")
+    roles = [role for role, caps in ROLE_CAPABILITIES.items() if Capability.MANAGE_USERS in caps]
+    managers = User.objects.filter(is_active=True, role__in=roles).exclude(pk=user.pk)
+    notify_many(
+        managers,
+        NotificationKind.ACCOUNT,
+        title=f"Appareil perdu : {user.email}",
+        body=(
+            f"{user.display_name or user.email} ({user.get_role_display()}) a perdu son "
+            "authentificateur. Vérifiez son identité par un autre canal avant de "
+            "réinitialiser son second facteur."
+        ),
+        url=reverse("accounts:user_manage_detail", args=[user.pk]),
+    )
+    log_action(AuditAction.MFA_RESET_REQUESTED, actor=user, obj=user, request=request)
+    messages.success(
+        request,
+        "Demande transmise aux gestionnaires de comptes. Ils vous contacteront pour "
+        "vérifier votre identité, puis réinitialiseront votre second facteur.",
+    )
+    return redirect("accounts:mfa_challenge")
 
 
 #: Codes de secours tout juste generes, en attente de leur unique affichage.

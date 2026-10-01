@@ -11,6 +11,7 @@ urlpatterns = [
     path("mfa/", views.mfa_challenge, name="mfa_challenge"),
     path("mfa/enrolement/", views.mfa_setup, name="mfa_setup"),
     path("mfa/codes-de-secours/", views.mfa_backup_codes, name="mfa_backup_codes"),
+    path("mfa/appareil-perdu/", views.mfa_lost_device, name="mfa_lost_device"),
     path(
         "mfa/codes-de-secours/regenerer/",
         views.mfa_regenerate_backup_codes,
