@@ -335,3 +335,13 @@ def test_anonymous_report_cannot_ask_for_public_credit(organization):
     )
     assert not form.is_valid()
     assert "wants_credit" in form.errors
+
+
+def test_track_link_is_reachable_without_an_account(client, researcher_a):
+    """Le declarant sans compte n'a que son code : le lien de suivi doit etre
+    visible des l'accueil, pas seulement apres l'envoi."""
+    url = reverse("reports:track_lookup")
+    for page in (reverse("core:home"), reverse("reports:submit")):
+        html = client.get(page).content.decode()
+        assert f'href="{url}"' in html
+        assert "Suivre mon signalement" in html

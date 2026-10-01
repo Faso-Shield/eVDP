@@ -27,6 +27,8 @@
     </label>
     <nav class="nav-links" id="nav-principale" aria-label="Navigation principale">
       {% if can_report %}<a href="{% url 'reports:submit' %}">Signaler</a>{% endif %}
+      {# Un declarant sans compte n'a que son code de suivi : le lien doit rester a portee. #}
+      {% if not user.is_authenticated %}<a href="{% url 'reports:track_lookup' %}">Suivre mon signalement</a>{% endif %}
       <a href="{% url 'programs:list' %}">Programmes</a>
       <a href="{% url 'disclosures:advisory_list' %}">Advisories</a>
       <a href="{% url 'researchers:list' %}">Chercheurs</a>
@@ -73,6 +75,7 @@
         <h4>Signalement</h4>
         <ul>
           {% if can_report %}<li><a href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a></li>{% endif %}
+          <li><a href="{% url 'reports:track_lookup' %}">Suivre mon signalement</a></li>
           <li><a href="{% url 'core:disclosure_policy' %}">Politique de divulgation</a></li>
           <li><a href="{% url 'core:pgp_key' %}">Clé PGP nationale</a></li>
           <li><a href="/.well-known/security.txt">security.txt</a></li>
