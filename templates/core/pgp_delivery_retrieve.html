@@ -1,0 +1,50 @@
+{% extends "base_dashboard.html" %}
+{% block head %}{% if delivery.is_open %}{% include "partials/pgp_assets.html" %}{% endif %}{% endblock %}
+{% block title %}Récupérer la clé PGP nationale{% endblock %}
+{% block dashboard_content %}
+<h1>Récupérer la clé PGP nationale</h1>
+
+<div class="card">
+  <div class="card-body">
+    <dl class="dl-inline">
+      <dt>Remise par</dt><dd>{{ delivery.created_by|default:"—" }}, le {{ delivery.created_at|date:"d/m/Y H:i" }}</dd>
+      <dt>Empreinte</dt><dd class="mono">{{ delivery.readable_fingerprint }}</dd>
+      <dt>Statut</dt><dd id="pgp-retrieve-state">{{ delivery.status_label }}</dd>
+    </dl>
+
+    {% if delivery.is_open %}
+    <p class="muted">
+      Saisissez le code de remise que {{ delivery.created_by|default:"le gestionnaire" }} vous a
+      communiqué. La clé est déchiffrée dans votre navigateur puis enregistrée sur votre
+      poste ; elle est alors effacée du serveur. Valable jusqu'au
+      {{ delivery.expires_at|date:"d/m/Y H:i" }}, {{ max_fetches }} essais au plus.
+    </p>
+    <form id="pgp-retrieve" hidden
+          data-fetch-url="{% url 'core:pgp_delivery_fetch' delivery.pk %}"
+          data-confirm-url="{% url 'core:pgp_delivery_confirm' delivery.pk %}">
+      {% csrf_token %}
+      <div class="form-field">
+        <label for="pgp-retrieve-code">Code de remise</label>
+        <input type="text" id="pgp-retrieve-code" class="mono" autocomplete="off" spellcheck="false"
+               placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX">
+      </div>
+      <div class="btn-row mt-1">
+        <button class="btn btn-accent" type="submit">Récupérer ma clé</button>
+      </div>
+      <p class="small" id="pgp-retrieve-status" aria-live="polite" hidden></p>
+    </form>
+    {% elif delivery.status == "retrieved" %}
+      <div class="alert alert-success">Clé récupérée le {{ delivery.retrieved_at|date:"d/m/Y H:i" }}.
+      Elle a été effacée du serveur.</div>
+    {% else %}
+      <div class="alert alert-warning">Cette remise n'est plus disponible. Demandez-en une
+      nouvelle au gestionnaire de la clé nationale.</div>
+    {% endif %}
+
+    <p class="small muted mt-1">
+      La clé reste protégée par sa phrase secrète, que le gestionnaire vous communique
+      lui aussi. Pour déchiffrer un rapport, chargez ce fichier depuis la fiche du dossier.
+    </p>
+  </div>
+</div>
+{% endblock %}

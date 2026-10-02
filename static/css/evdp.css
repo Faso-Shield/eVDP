@@ -809,3 +809,4 @@ table.table td { overflow-wrap: normal; }
 .pgp-box { margin: .8rem 0; padding: .8rem 1rem; border: 1px dashed var(--border); border-radius: var(--radius); }
 .pgp-box textarea { width: 100%; font-family: var(--font-mono, monospace); font-size: .85rem; }
 #pgp-plain-output { white-space: pre-wrap; max-height: 360px; overflow: auto; }
+.pgp-delivery-code { font-size: 1.35rem; letter-spacing: .08em; overflow-wrap: anywhere; margin: .4rem 0; }

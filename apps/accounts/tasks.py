@@ -20,6 +20,18 @@ def purge_expired_tokens():
     return count
 
 
+@shared_task(name="apps.accounts.tasks.purge_pgp_key_deliveries")
+def purge_pgp_key_deliveries():
+    """Efface la cle privee chiffree des remises expirees sans etre recuperees."""
+    from apps.core.models import PGPKeyDelivery
+
+    return (
+        PGPKeyDelivery.objects.filter(expires_at__lte=timezone.now())
+        .exclude(payload="")
+        .update(payload="", updated_at=timezone.now())
+    )
+
+
 #: Inscription jamais confirmee : supprimee apres ce delai, ce qui libere
 #: l'adresse pour une nouvelle inscription.
 PENDING_ACTIVATION_DAYS = 7

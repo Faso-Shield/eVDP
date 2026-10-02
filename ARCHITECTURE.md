@@ -138,10 +138,14 @@ limitation s'ouvre et l'incident est journalisé en `WARNING` sur le logger
 ne coupe pas le canal national de signalement. La supervision doit alerter sur
 `cache_unavailable` / `throttle_backend_unavailable`. Voir `docs/security.md`.
 
-### DA-9 — Aucune clé privée côté serveur
+### DA-9 — Aucune clé privée en clair côté serveur
 
 Seules des clés publiques armurées sont stockées. `apps/core/pgp.py` refuse
-tout bloc contenant une clé privée (PGP, RSA, OpenSSH). La vérification
+tout bloc contenant une clé privée (PGP, RSA, OpenSSH). La paire nationale est
+générée dans le navigateur du gestionnaire ; sa remise à un membre de l'équipe
+nationale transite par eVDP chiffrée par un code de remise aléatoire qu'eVDP ne
+reçoit jamais (message OpenPGP par mot de passe, seul format accepté), puis
+est effacée à la récupération, à l'annulation ou après 24 heures. La vérification
 cryptographique est déléguée à un backend optionnel (`python-gnupg`), derrière
 une interface stable permettant une bascule vers un HSM sans changement
 d'appelant.

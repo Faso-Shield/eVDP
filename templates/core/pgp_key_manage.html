@@ -1,12 +1,13 @@
 {% extends "base_dashboard.html" %}
+{% block head %}{% include "partials/pgp_assets.html" %}{% endblock %}
 {% block title %}Clé PGP nationale{% endblock %}
 {% block dashboard_content %}
 <h1>Clé PGP nationale</h1>
 <p class="muted">
   Les signaleurs chiffrent leurs informations sensibles avec cette clé publique,
-  dans leur navigateur. La clé <strong>privée</strong> correspondante ne doit
-  jamais être déposée ici : l'équipe destinataire déchiffre dans son propre
-  navigateur, depuis la fiche du dossier.
+  dans leur navigateur. La paire se génère ici, sur votre poste : seule la clé
+  <strong>publique</strong> part au serveur. La clé privée ne transite par eVDP que
+  chiffrée par un code de remise qu'eVDP ne connaît pas.
 </p>
 
 <div class="split-layout">
@@ -24,8 +25,8 @@
         <a class="btn btn-sm btn-outline" href="{% url 'core:pgp_key' %}">Télécharger la clé publique</a>
       {% elif env_fallback %}
         <div class="alert alert-warning">Aucune clé déposée dans l'application : la clé
-        lue dans la variable d'environnement PGP_PUBLIC_KEY est publiée. Déposez-la
-        ici pour en suivre l'empreinte et l'expiration.</div>
+        lue dans la variable d'environnement PGP_PUBLIC_KEY est publiée. Générez ou
+        déposez-la ici pour en suivre l'empreinte et l'expiration.</div>
       {% else %}
         <div class="alert alert-warning">Aucune clé nationale publiée : les signaleurs
         ne peuvent pas chiffrer leurs informations sensibles.</div>
@@ -34,23 +35,167 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><h2>Publier une nouvelle clé</h2></div>
+    <div class="card-header"><h2>{% if active %}Générer une nouvelle paire{% else %}Générer la paire de clés{% endif %}</h2></div>
     <div class="card-body">
-      <form method="post" novalidate>
-        {% csrf_token %}
-        <div class="form-field">
-          <label for="public_key">Bloc de clé publique armurée<abbr class="required" title="Champ obligatoire">*</abbr></label>
-          <textarea name="public_key" id="public_key" rows="10" class="mono" required
-                    placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----"></textarea>
-          <div class="help">Une clé expirée, illisible ou contenant une partie privée est
-          refusée. L'ancienne clé est retirée et conservée dans l'historique. Une alerte
-          prévient {{ expiry_warning_days }} jours avant l'expiration.</div>
+      <div id="pgp-generate" hidden>
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="pgp-gen-name">Nom</label>
+            <input type="text" id="pgp-gen-name" value="{{ default_identity.name }}" autocomplete="off">
+          </div>
+          <div class="form-field">
+            <label for="pgp-gen-email">Adresse</label>
+            <input type="email" id="pgp-gen-email" value="{{ default_identity.email }}" autocomplete="off">
+          </div>
+          <div class="form-field">
+            <label for="pgp-gen-validity">Validité</label>
+            <select id="pgp-gen-validity">
+              <option value="1">1 an</option>
+              <option value="2" selected>2 ans</option>
+              <option value="3">3 ans</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="pgp-gen-passphrase">Phrase secrète (12 caractères au moins)</label>
+            <input type="password" id="pgp-gen-passphrase" autocomplete="new-password">
+          </div>
+          <div class="form-field">
+            <label for="pgp-gen-confirm">Confirmer la phrase secrète</label>
+            <input type="password" id="pgp-gen-confirm" autocomplete="new-password">
+          </div>
         </div>
-        <button class="btn btn-accent" type="submit">Publier</button>
-      </form>
+        <div class="help">La phrase secrète protège la clé privée : elle sera demandée
+        à chaque déchiffrement. Elle ne quitte pas votre navigateur.</div>
+        <div class="btn-row mt-1">
+          <button class="btn btn-accent" type="button" id="pgp-gen-button">Générer dans mon navigateur</button>
+        </div>
+        <p class="small" id="pgp-gen-status" aria-live="polite" hidden></p>
+
+        <div id="pgp-generated" class="pgp-box" hidden>
+          <dl class="dl-inline">
+            <dt>Empreinte</dt><dd class="mono" id="pgp-gen-fingerprint"></dd>
+            <dt>Expire le</dt><dd id="pgp-gen-expires"></dd>
+          </dl>
+          <div class="btn-row">
+            <button class="btn btn-sm btn-outline" type="button" id="pgp-gen-download-private">Télécharger la clé privée</button>
+            <button class="btn btn-sm btn-outline" type="button" id="pgp-gen-download-revocation">Télécharger le certificat de révocation</button>
+          </div>
+          <form method="post" class="mt-1" id="pgp-gen-publish-form">
+            {% csrf_token %}
+            <textarea name="public_key" id="pgp-gen-public" hidden></textarea>
+            <div class="checkbox-field">
+              <input type="checkbox" id="pgp-gen-saved" disabled>
+              <label for="pgp-gen-saved">J'ai enregistré la clé privée et le certificat de révocation en lieu sûr.</label>
+            </div>
+            <div class="btn-row mt-1">
+              <button class="btn btn-accent" type="submit" id="pgp-gen-publish" disabled>Publier la clé publique</button>
+            </div>
+          </form>
+          <div class="help">Sans la clé privée, plus rien de ce qui est chiffré pour cette
+          clé ne pourra être lu. Publier remplace la clé actuelle ; elle reste dans
+          l'historique.</div>
+        </div>
+      </div>
+
+      <details class="mt-1">
+        <summary class="small">Publier une clé générée ailleurs (GnuPG)</summary>
+        <form method="post" novalidate class="mt-1">
+          {% csrf_token %}
+          <div class="form-field">
+            <label for="public_key">Bloc de clé publique armurée<abbr class="required" title="Champ obligatoire">*</abbr></label>
+            <textarea name="public_key" id="public_key" rows="8" class="mono" required
+                      placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----"></textarea>
+            <div class="help">Une clé expirée, illisible ou contenant une partie privée est
+            refusée. Une alerte prévient {{ expiry_warning_days }} jours avant l'expiration.</div>
+          </div>
+          <button class="btn btn-outline" type="submit">Publier</button>
+        </form>
+      </details>
     </div>
   </div>
 </div>
+
+{% if active %}
+<div class="card">
+  <div class="card-header"><h2>Remettre la clé privée</h2></div>
+  <div class="card-body">
+    <p class="muted small">
+      La clé privée est chiffrée dans votre navigateur par un code de remise à usage
+      unique, que vous transmettez au destinataire par un autre canal (téléphone, en
+      personne). Il la récupère depuis son compte dans les {{ delivery_ttl_hours }} heures ;
+      elle est ensuite effacée du serveur. Communiquez-lui aussi la phrase secrète de la clé.
+    </p>
+    {% if recipients %}
+    <form method="post" action="{% url 'core:pgp_delivery_create' %}" id="pgp-deliver"
+          data-fingerprint="{{ active.fingerprint }}" hidden>
+      {% csrf_token %}
+      <input type="hidden" name="payload" id="pgp-deliver-payload">
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="pgp-deliver-recipient">Destinataire</label>
+          <select name="recipient" id="pgp-deliver-recipient" required>
+            <option value="">Choisir…</option>
+            {% for user in recipients %}
+              <option value="{{ user.pk }}">{{ user }} — {{ user.get_role_display }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="pgp-deliver-file">Clé privée (.asc)</label>
+          <input type="file" id="pgp-deliver-file" accept=".asc,.key,.txt">
+          <div class="help" id="pgp-deliver-generated-hint" hidden>Vide : la clé générée sur cette page est utilisée.</div>
+        </div>
+      </div>
+      <div class="btn-row mt-1">
+        <button class="btn btn-accent" type="submit" id="pgp-deliver-button">Préparer la remise</button>
+      </div>
+      <p class="small" id="pgp-deliver-status" aria-live="polite" hidden></p>
+    </form>
+    <div class="notice notice-secure" id="pgp-delivery-result" hidden>
+      <strong>Code de remise pour <span id="pgp-delivery-recipient"></span></strong>
+      <p class="mono pgp-delivery-code" id="pgp-delivery-code"></p>
+      <p class="small">Notez-le et transmettez-le par un autre canal que l'email : il ne
+      sera plus affiché et eVDP ne le connaît pas. Valable jusqu'au <span id="pgp-delivery-expires"></span>.</p>
+      <button class="btn btn-sm btn-outline" type="button" id="pgp-delivery-copy">Copier le code</button>
+    </div>
+    {% else %}
+      <div class="alert alert-warning">Aucun compte de l'équipe nationale (triage, analyse,
+      coordination) ne peut recevoir la clé.</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if deliveries %}
+<div class="card">
+  <div class="card-header"><h2>Remises</h2></div>
+  <div class="card-body table-wrap">
+    <table class="table">
+      <thead><tr><th>Destinataire</th><th>Préparée par</th><th>Le</th><th>Expire</th><th>Empreinte</th><th>Statut</th><th></th></tr></thead>
+      <tbody>
+      {% for delivery in deliveries %}
+        <tr>
+          <td>{{ delivery.recipient }}</td>
+          <td>{{ delivery.created_by|default:"—" }}</td>
+          <td class="small">{{ delivery.created_at|date:"d/m/Y H:i" }}</td>
+          <td class="small">{{ delivery.expires_at|date:"d/m/Y H:i" }}</td>
+          <td class="mono small">{{ delivery.fingerprint|slice:"-16:" }}</td>
+          <td><span class="status {% if delivery.status == 'pending' %}status-progress{% elif delivery.status == 'retrieved' %}status-done{% else %}status-closed{% endif %}">{{ delivery.status_label }}{% if delivery.status == "retrieved" %} le {{ delivery.retrieved_at|date:"d/m H:i" }}{% endif %}</span></td>
+          <td>
+            {% if delivery.is_open %}
+            <form method="post" action="{% url 'core:pgp_delivery_revoke' delivery.pk %}">
+              {% csrf_token %}
+              <button class="btn btn-sm btn-outline" type="submit">Annuler</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 {% if history %}
 <div class="card">

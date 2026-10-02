@@ -105,3 +105,29 @@ RVkJ+N4SSsfssHP0agZlj79Wh2+12gsQHnE=
 =Snd/
 -----END PGP MESSAGE-----
 """
+
+# Remise de cle : message chiffre par le code DELIVERY_CODE (OpenPGP.js,
+# `passwords`). Il contient un faux bloc de cle privee, pas une vraie cle.
+DELIVERY_CODE = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+DELIVERY_PAYLOAD = """\
+-----BEGIN PGP MESSAGE-----
+
+wy4ECQMIgwXpt56ndN7gkFx8445dCe3IS8MPiJByznPLrgLuELlShIIUmb6C
+TXBc0oQBaF1NvPME8NCt6T4GXRYswLDE589Y0zngWlbTfYeWWIaXx0JJ4s7C
+yajQ2+6visXCOFmKcdYY4bB0xnMyT8cg6Ua8TsgQf7ZonYV2QgCuS7K0uDt0
+yj2J/wOP1lJkF52bfHLGxmZmVd33/oPQsvOjqh+cj34F9ld08HCNaV/IMXU6
+Uxo=
+=y0j4
+-----END PGP MESSAGE-----
+"""
+
+# Meme faux bloc dans un message NON chiffre (paquet litteral) : refuse.
+LITERAL_MESSAGE = """\
+-----BEGIN PGP MESSAGE-----
+
+y1l1AGq+7R4tLS0tLUJFR0lOIFBHUCBQUklWQVRFIEtFWSBCTE9DSy0tLS0t
+DQpmaWN0aXZlDQotLS0tLUVORCBQR1AgUFJJVkFURSBLRVkgQkxPQ0stLS0t
+LQ==
+-----END PGP MESSAGE-----
+"""

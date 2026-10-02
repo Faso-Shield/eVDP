@@ -172,7 +172,9 @@ les plus sensibles de la plateforme.
 
 ## 6. PGP
 
-- **Aucune clé privée n'est stockée**, jamais. Tout bloc contenant `PRIVATE KEY` (PGP, RSA, OpenSSH) est refusé à la validation.
+- **Aucune clé privée n'est stockée en clair**, jamais. Tout bloc contenant `PRIVATE KEY` (PGP, RSA, OpenSSH) est refusé à la validation.
+- La paire nationale se génère dans le navigateur du gestionnaire (`MANAGE_PGP_KEYS`) ; seule la clé publique est envoyée pour publication.
+- Remise de la clé privée à un membre de l'équipe nationale (triage, analyse, coordination ; jamais l'auditeur ni une organisation) : elle est chiffrée dans le navigateur par un code de remise de 120 bits, transmis par un autre canal. Le serveur n'accepte qu'un message OpenPGP chiffré par mot de passe, le rend au seul destinataire (5 essais), puis l'efface à la récupération, à l'annulation ou après 24 heures. Chaque étape est auditée.
 - Seules des clés publiques armurées sont acceptées, avec contrôle de forme et de taille.
 - Un rapport peut être transmis sous forme de bloc `PGP MESSAGE` chiffré, stocké tel quel et déchiffré **hors ligne** par l'équipe destinataire.
 - La vérification de signature est déléguée à un backend optionnel (`python-gnupg`) derrière une interface stable, permettant une bascule vers un **HSM** sans modifier les appelants.

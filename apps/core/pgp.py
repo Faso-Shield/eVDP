@@ -1,8 +1,9 @@
 """Support PGP.
 
 Contraintes de securite :
-  - la plateforme ne stocke JAMAIS de cle privee ;
-  - seules des cles publiques armurees sont conservees ;
+  - la plateforme ne stocke JAMAIS de cle privee en clair ;
+  - seules des cles publiques armurees sont conservees, et, le temps d'une
+    remise, la cle privee nationale chiffree par un code que eVDP ignore ;
   - eVDP ne dechiffre JAMAIS cote serveur : chiffrement et dechiffrement se
     font dans le navigateur (static/js/pgp.js, OpenPGP.js), la cle privee de
     l'analyste ne quitte pas son poste.
@@ -98,11 +99,11 @@ class KeyInfo:
         )
 
 
-def _dearmor(blob):
+def _dearmor(blob, header=PUBLIC_KEY_HEADER, footer=PUBLIC_KEY_FOOTER):
     lines = [line.strip() for line in blob.strip().splitlines()]
     try:
-        start = lines.index(PUBLIC_KEY_HEADER) + 1
-        end = lines.index(PUBLIC_KEY_FOOTER)
+        start = lines.index(header) + 1
+        end = lines.index(footer)
     except ValueError as exc:
         raise PGPError("Bloc de clé publique PGP invalide.") from exc
     body = lines[start:end]
@@ -116,35 +117,49 @@ def _dearmor(blob):
         raise PGPError("Bloc de clé publique PGP illisible (base64 invalide).") from exc
 
 
+def _new_format_length(data, pos):
+    """(longueur, position suivante, partielle ?) d'un en-tete au nouveau format."""
+    first = data[pos]
+    if first < 192:
+        return first, pos + 1, False
+    if first < 224:
+        return ((first - 192) << 8) + data[pos + 1] + 192, pos + 2, False
+    if first == 255:
+        return int.from_bytes(data[pos + 1 : pos + 5], "big"), pos + 5, False
+    # Longueur partielle (RFC 9580 4.2.1.4) : donnees chiffrees ou litterales
+    # ecrites en flux, comme le fait OpenPGP.js.
+    return 1 << (first & 0x1F), pos + 1, True
+
+
 def _packets(data):
     """(tag, corps) de chaque paquet, formats ancien et nouveau."""
     pos = 0
-    while pos < len(data):
-        header = data[pos]
-        pos += 1
-        if not header & 0x80:
-            raise PGPError("Bloc de clé publique PGP illisible (paquet invalide).")
-        if header & 0x40:
-            tag = header & 0x3F
-            first = data[pos]
-            if first < 192:
-                length, pos = first, pos + 1
-            elif first < 224:
-                length, pos = ((first - 192) << 8) + data[pos + 1] + 192, pos + 2
-            elif first == 255:
-                length, pos = int.from_bytes(data[pos + 1 : pos + 5], "big"), pos + 5
+    try:
+        while pos < len(data):
+            header = data[pos]
+            pos += 1
+            if not header & 0x80:
+                raise PGPError("Bloc de clé publique PGP illisible (paquet invalide).")
+            body = b""
+            if header & 0x40:
+                tag = header & 0x3F
+                length, pos, partial = _new_format_length(data, pos)
+                while partial:
+                    body += data[pos : pos + length]
+                    pos += length
+                    length, pos, partial = _new_format_length(data, pos)
             else:
-                raise PGPError("Bloc de clé publique PGP non pris en charge.")
-        else:
-            tag = (header >> 2) & 0x0F
-            size = {0: 1, 1: 2, 2: 4}.get(header & 0x03)
-            if size is None:
-                raise PGPError("Bloc de clé publique PGP non pris en charge.")
-            length, pos = int.from_bytes(data[pos : pos + size], "big"), pos + size
-        if pos + length > len(data):
-            raise PGPError("Bloc de clé publique PGP tronqué.")
-        yield tag, data[pos : pos + length]
-        pos += length
+                tag = (header >> 2) & 0x0F
+                size = {0: 1, 1: 2, 2: 4}.get(header & 0x03)
+                if size is None:
+                    raise PGPError("Bloc de clé publique PGP non pris en charge.")
+                length, pos = int.from_bytes(data[pos : pos + size], "big"), pos + size
+            if pos + length > len(data):
+                raise PGPError("Bloc de clé publique PGP tronqué.")
+            yield tag, body + data[pos : pos + length]
+            pos += length
+    except IndexError as exc:
+        raise PGPError("Bloc de clé publique PGP tronqué.") from exc
 
 
 def _subpackets(area):
@@ -332,3 +347,82 @@ def national_key_expiring():
     if key.expires_at - timezone.now() <= timedelta(days=EXPIRY_WARNING_DAYS):
         return key
     return None
+
+
+# ---------------------------------------------------------------------------
+# Remise de la cle privee nationale a un destinataire
+# ---------------------------------------------------------------------------
+#: La cle privee est chiffree dans le navigateur du gestionnaire par un code
+#: de remise (chiffrement symetrique OpenPGP), transmis au destinataire par un
+#: autre canal. eVDP ne recoit et ne conserve que ce bloc chiffre, jamais le
+#: code : il ne peut pas lire la cle qu'il achemine.
+DELIVERY_TTL_HOURS = 24
+#: Recuperations permises avant effacement : quelques erreurs de saisie du
+#: code, pas davantage.
+DELIVERY_MAX_FETCHES = 5
+DELIVERY_MAX_SIZE = 64 * 1024
+
+_TAG_PKESK, _TAG_SKESK, _TAG_SEIPD, _TAG_AEAD = 1, 3, 18, 20
+
+
+def validate_key_delivery(blob):
+    """Exige un message OpenPGP chiffre par mot de passe, et rien d'autre.
+
+    Un bloc « PGP MESSAGE » peut contenir des donnees en clair (paquet
+    litteral) : la forme de l'armure ne suffit pas. Seuls des paquets de cle
+    de session par mot de passe suivis de donnees chiffrees sont admis.
+    """
+    blob = (blob or "").strip()
+    if not blob:
+        raise PGPError("Aucune remise chiffrée reçue.")
+    if len(blob) > DELIVERY_MAX_SIZE:
+        raise PGPError("Remise trop volumineuse.")
+    if contains_private_key(blob) or not is_encrypted_blob(blob):
+        raise PGPError("La remise doit être un message PGP chiffré par le code de remise.")
+    try:
+        tags = [tag for tag, _ in _packets(_dearmor(blob, MESSAGE_HEADER, MESSAGE_FOOTER))]
+    except PGPError as exc:
+        raise PGPError("Remise chiffrée illisible.") from exc
+    sessions = [tag for tag in tags if tag == _TAG_SKESK]
+    data = [tag for tag in tags if tag in (_TAG_SEIPD, _TAG_AEAD)]
+    if not sessions or len(data) != 1 or len(sessions) + len(data) != len(tags):
+        raise PGPError("La remise doit être un message PGP chiffré par le code de remise.")
+    return blob
+
+
+def delivery_recipients():
+    """Comptes a qui la cle privee nationale peut etre remise.
+
+    Ceux qui lisent le contenu des dossiers au niveau national, donc les blocs
+    chiffres avec la cle nationale ; jamais un compte d'organisation ni
+    l'auditeur.
+    """
+    from apps.accounts.models import User
+    from apps.accounts.roles import ROLE_CAPABILITIES, Capability, Role
+
+    # L'auditeur voit tous les dossiers, mais leurs seules metadonnees.
+    roles = [
+        r
+        for r, caps in ROLE_CAPABILITIES.items()
+        if Capability.VIEW_ALL_CASES in caps and r != Role.AUDITOR
+    ]
+    return User.objects.filter(is_active=True, role__in=roles).order_by("email")
+
+
+def create_key_delivery(blob, recipient, actor):
+    """Enregistre une remise chiffree pour un destinataire autorise."""
+    from .models import PGPKeyDelivery
+
+    key = active_national_key()
+    if key is None:
+        raise PGPError("Publiez d'abord la clé publique nationale.")
+    if recipient is None or not delivery_recipients().filter(pk=recipient.pk).exists():
+        raise PGPError("Ce compte ne peut pas recevoir la clé privée nationale.")
+    return PGPKeyDelivery.objects.create(
+        national_key=key,
+        fingerprint=key.fingerprint,
+        recipient=recipient,
+        created_by=actor,
+        payload=validate_key_delivery(blob),
+        expires_at=timezone.now() + timedelta(hours=DELIVERY_TTL_HOURS),
+    )

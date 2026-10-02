@@ -192,7 +192,7 @@ appliqués sans exception.
 | **Moindre privilège** | 10 rôles, 23 capacités, isolation appliquée au niveau du queryset |
 | **Tout est auditable** | Journal append-only ; les refus sont journalisés durablement |
 | **Ne jamais exposer les données internes** | La vue publique est un objet distinct du dossier privé |
-| **Aucune clé privée côté serveur** | Seules les clés publiques PGP sont stockées ; tout bloc privé est refusé |
+| **Aucune clé privée en clair côté serveur** | Seules les clés publiques PGP sont stockées ; la clé nationale se génère dans le navigateur et sa remise ne transite que chiffrée par un code qu'eVDP ignore |
 
 Mesures principales : Argon2, CSP, HSTS, CSRF, cookies durcis, rate limiting
 applicatif **et** bordure, validation des uploads (extension + MIME +
