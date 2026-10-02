@@ -134,7 +134,9 @@ jobs:
             exit 1
           fi
           echo "Recherche de cles privees…"
-          if git grep -lE 'BEGIN (RSA |OPENSSH |PGP )?PRIVATE KEY' -- . ':!docs' ':!apps/core/pgp.py' ':!tests'; then
+          # openpgp.min.js (OpenPGP.js, servi tel que publie) contient les
+          # en-tetes d'armure qu'il sait lire et ecrire : aucune cle.
+          if git grep -lE 'BEGIN (RSA |OPENSSH |PGP )?PRIVATE KEY' -- . ':!docs' ':!apps/core/pgp.py' ':!tests' ':!static/js/vendor/openpgp.min.js'; then
             echo "::error::Une cle privee semble commitee."
             exit 1
           fi
