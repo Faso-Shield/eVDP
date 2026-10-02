@@ -288,6 +288,7 @@ class BountyPayment(BaseModel):
         self.failure_reason = reason
         self.save(update_fields=["status", "failure_reason", "updated_at"])
 
+
 class WalletEntryKind(models.TextChoices):
     CREDIT = "CREDIT", "Crédit (prime approuvée)"
     ADJUSTMENT = "ADJUSTMENT", "Ajustement"

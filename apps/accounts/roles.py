@@ -37,7 +37,10 @@ class Capability(models.TextChoices):
     REQUEST_INFORMATION = "REQUEST_INFORMATION", "Demander des compléments"
     PROPOSE_REJECTION = "PROPOSE_REJECTION", "Proposer un rejet ou un doublon"
     ARBITRATE_CASE = "ARBITRATE_CASE", "Arbitrer (rejet, doublon, renvoi, escalade)"
-    COORDINATE_VENDOR = "COORDINATE_VENDOR", "Transmettre à l'organisation et vérifier le correctif"
+    COORDINATE_VENDOR = (
+        "COORDINATE_VENDOR",
+        "Transmettre à l'organisation et vérifier le correctif",
+    )
     MANAGE_REMEDIATION = "MANAGE_REMEDIATION", "Soumettre le plan et déclarer le correctif"
     POST_INTERNAL_MESSAGE = "POST_INTERNAL_MESSAGE", "Publier un message interne"
     MANAGE_ORGANIZATION = "MANAGE_ORGANIZATION", "Gérer une organisation"

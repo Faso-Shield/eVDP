@@ -55,9 +55,9 @@ def test_expected_assets_are_present():
         "img/apple-touch-icon.png",
         "img/logo-evdp-tile.png",
     ]:
-        assert any((root / reference).exists() for root in roots), (
-            f"Ressource manquante : {reference}"
-        )
+        assert any(
+            (root / reference).exists() for root in roots
+        ), f"Ressource manquante : {reference}"
 
 
 # ---------------------------------------------------------------------------

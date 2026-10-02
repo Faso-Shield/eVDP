@@ -24,7 +24,10 @@ METRIC_ORDER_40 = ["AV", "AC", "AT", "PR", "UI", "VC", "VI", "VA", "SC", "SI", "
 
 _IMPACT = {"H": "Élevée", "L": "Faible", "N": "Aucune"}
 METRIC_LABELS_40 = {
-    "AV": ("Vecteur d'attaque", {"N": "Réseau", "A": "Adjacent", "L": "Local", "P": "Physique"}),
+    "AV": (
+        "Vecteur d'attaque",
+        {"N": "Réseau", "A": "Adjacent", "L": "Local", "P": "Physique"},
+    ),
     "AC": ("Complexité d'attaque", {"L": "Faible", "H": "Élevée"}),
     "AT": ("Prérequis d'attaque", {"N": "Aucun", "P": "Présents"}),
     "PR": ("Privilèges requis", {"N": "Aucun", "L": "Faibles", "H": "Élevés"}),
@@ -103,9 +106,7 @@ def parse_vector(vector):
         return parse_vector_v4(vector)
     parts = raw.split("/")
     if not parts or parts[0] not in (PREFIX_31, PREFIX_30):
-        raise CVSSError(
-            "Le vecteur doit commencer par CVSS:3.1/, CVSS:3.0/ ou CVSS:4.0/."
-        )
+        raise CVSSError("Le vecteur doit commencer par CVSS:3.1/, CVSS:3.0/ ou CVSS:4.0/.")
     metrics = {}
     for chunk in parts[1:]:
         if ":" not in chunk:

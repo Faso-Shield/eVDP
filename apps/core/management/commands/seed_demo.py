@@ -638,9 +638,7 @@ class Command(BaseCommand):
         """
         action = get_action(action_key)
         author_id = author_of(case, action)
-        actor = next(
-            user for user in owners_of(case, action) if user.pk != author_id
-        )
+        actor = next(user for user in owners_of(case, action) if user.pk != author_id)
         if action_key == "acknowledge":
             log_action(AuditAction.CASE_VIEWED, actor=actor, obj=case)
         # Toute action exige une prise en charge prealable.

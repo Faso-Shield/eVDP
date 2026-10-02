@@ -114,9 +114,11 @@ def advisory_proposal(case):
         "description": description,
         "impact": sanitize_for_advisory(report.impact),
         "solution": "\n\n".join(part for part in solution_parts if part),
-        "workaround": ""
-        if case.fix_description or fixed
-        else sanitize_for_advisory(report.recommendations),
+        "workaround": (
+            ""
+            if case.fix_description or fixed
+            else sanitize_for_advisory(report.recommendations)
+        ),
         "affected_versions": affected[:255],
         "fixed_versions": (fixed or "")[:255],
     }

@@ -172,9 +172,11 @@ def export_case_pdf(request, case_id):
         ["Sévérité", case.get_severity_display()],
         [
             "CVSS",
-            f"{case.cvss_score or '-'}"
-            if level(case, request.user, "cvss") == PARTIAL
-            else f"{case.cvss_score or '-'} ({case.cvss_vector or 'non renseigné'})",
+            (
+                f"{case.cvss_score or '-'}"
+                if level(case, request.user, "cvss") == PARTIAL
+                else f"{case.cvss_score or '-'} ({case.cvss_vector or 'non renseigné'})"
+            ),
         ],
         ["Organisation", case.organization.name if case.organization_id else "-"],
         ["CWE", case.cwe.code if case.cwe_id else "-"],

@@ -24,7 +24,9 @@ def dechiffrer(apps, schema_editor):
         names = encrypted_field_names(model)
         opts = model._meta
         columns = ", ".join(f"{quote(opts.get_field(n).column)} = %s" for n in names)
-        sql = f"UPDATE {quote(opts.db_table)} SET {columns} WHERE {quote(opts.pk.column)} = %s"
+        # Identifiants tires des metadonnees du modele et quotes ; les valeurs
+        # passent en parametres, jamais dans la chaine.
+        sql = f"UPDATE {quote(opts.db_table)} SET {columns} WHERE {quote(opts.pk.column)} = %s"  # noqa: S608  # nosec B608
         for row in model.objects.values("pk", *names).iterator():
             pk = opts.pk.get_db_prep_value(row["pk"], connection)
             schema_editor.execute(sql, [row[n] for n in names] + [pk])

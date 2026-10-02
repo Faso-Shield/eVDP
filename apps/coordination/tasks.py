@@ -104,9 +104,7 @@ def sweep_needs_information():
     confirme ou renvoie le dossier a son etape d'origine.
     """
     limit = timezone.now() - timedelta(days=NEEDS_INFORMATION_TIMEOUT_DAYS)
-    stale = Case.objects.filter(
-        status=CaseStatus.NEEDS_INFORMATION, sla_paused_at__lte=limit
-    )
+    stale = Case.objects.filter(status=CaseStatus.NEEDS_INFORMATION, sla_paused_at__lte=limit)
     proposed = 0
     for case in stale:
         try:

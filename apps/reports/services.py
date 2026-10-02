@@ -78,11 +78,15 @@ def _check_attachments(files, source):
     files = list(files or [])
     if source in ATTACHMENT_REQUIRED_SOURCES and not files:
         raise ValidationError(
-            {"attachments": "Au moins une pièce jointe est obligatoire pour soumettre un rapport."}
+            {
+                "attachments": "Au moins une pièce jointe est obligatoire pour soumettre un rapport."
+            }
         )
     if len(files) > MAX_SUBMISSION_FILES:
         raise ValidationError(
-            {"attachments": f"{MAX_SUBMISSION_FILES} pièces jointes au maximum à la soumission."}
+            {
+                "attachments": f"{MAX_SUBMISSION_FILES} pièces jointes au maximum à la soumission."
+            }
         )
     # Tous les fichiers sont valides avant d'ecrire quoi que ce soit : un
     # rapport n'est jamais cree avec une partie seulement de ses preuves.
@@ -91,8 +95,10 @@ def _check_attachments(files, source):
             validate_upload(uploaded)
         except ValidationError as exc:
             raise ValidationError(
-                {"attachments": f"Pièce jointe « {uploaded.name} » refusée : "
-                 + "; ".join(exc.messages)}
+                {
+                    "attachments": f"Pièce jointe « {uploaded.name} » refusée : "
+                    + "; ".join(exc.messages)
+                }
             ) from exc
         uploaded.seek(0)
     return files
