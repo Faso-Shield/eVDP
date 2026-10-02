@@ -52,6 +52,12 @@ class Capability(models.TextChoices):
     VIEW_AUDIT_LOG = "VIEW_AUDIT_LOG", "Consulter le journal d'audit"
     VIEW_NATIONAL_DASHBOARD = "VIEW_NATIONAL_DASHBOARD", "Tableau de bord national"
     VIEW_CSIRT_DASHBOARD = "VIEW_CSIRT_DASHBOARD", "Tableau de bord CSIRT"
+    # Carte des organisations et de leurs vulnerabilites : une liste de
+    # cibles si elle fuit. Capacites propres, qui ne suivent pas les
+    # tableaux de bord. VIEW_MAP ouvre la carte nationale ; VIEW_ORG_MAP la
+    # meme carte reduite aux organisations dont le compte est membre.
+    VIEW_MAP = "VIEW_MAP", "Consulter la cartographie nationale"
+    VIEW_ORG_MAP = "VIEW_ORG_MAP", "Consulter la cartographie de son organisation"
     EXPORT_DATA = "EXPORT_DATA", "Exporter des données"
     IMPORT_CSAF = "IMPORT_CSAF", "Importer du CSAF"
     MANAGE_USERS = "MANAGE_USERS", "Gérer les utilisateurs"
@@ -76,6 +82,9 @@ ROLE_CAPABILITIES = {
         C.MANAGE_ALL_ORGANIZATIONS,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
+        # La carte place les organisations ; ses signalements viennent de
+        # visible_cases, donc aucun dossier pour ce role.
+        C.VIEW_MAP,
     },
     Role.NATIONAL_COORDINATOR: {
         C.VIEW_ALL_CASES,
@@ -91,6 +100,7 @@ ROLE_CAPABILITIES = {
         C.VIEW_AUDIT_LOG,
         C.VIEW_NATIONAL_DASHBOARD,
         C.VIEW_CSIRT_DASHBOARD,
+        C.VIEW_MAP,
         C.EXPORT_DATA,
         C.IMPORT_CSAF,
         C.MANAGE_USERS,
@@ -112,6 +122,7 @@ ROLE_CAPABILITIES = {
         C.PROPOSE_BOUNTY,
         C.DRAFT_ADVISORY,
         C.VIEW_CSIRT_DASHBOARD,
+        C.VIEW_MAP,
         C.EXPORT_DATA,
         C.IMPORT_CSAF,
     },
@@ -122,18 +133,21 @@ ROLE_CAPABILITIES = {
         C.PROPOSE_REJECTION,
         C.POST_INTERNAL_MESSAGE,
         C.VIEW_CSIRT_DASHBOARD,
+        C.VIEW_MAP,
     },
     # La DSI traite la remediation ; la gestion de l'organisation (fiche,
     # membres) revient au responsable d'organisation.
     Role.DSI_ADMIN: {
         C.VIEW_ORG_CASES,
         C.MANAGE_REMEDIATION,
+        C.VIEW_ORG_MAP,
         C.MANAGE_PROGRAM,
         C.EXPORT_DATA,
     },
     Role.ORGANIZATION_MANAGER: {
         C.VIEW_ORG_CASES,
         C.MANAGE_REMEDIATION,
+        C.VIEW_ORG_MAP,
         C.MANAGE_ORGANIZATION,
         C.MANAGE_PROGRAM,
         C.EXPORT_DATA,
@@ -145,6 +159,7 @@ ROLE_CAPABILITIES = {
         C.VIEW_AUDIT_LOG,
         C.VIEW_NATIONAL_DASHBOARD,
         C.VIEW_CSIRT_DASHBOARD,
+        C.VIEW_MAP,
         C.EXPORT_DATA,
     },
     Role.PUBLIC_USER: {C.SUBMIT_REPORT},

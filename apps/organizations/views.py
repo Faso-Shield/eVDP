@@ -5,17 +5,33 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability, Role
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination import selectors
+from apps.dashboard.maps import can_view_map, is_national_scope
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
 
 from .forms import OrganizationForm, OrganizationMemberForm
 from .models import MembershipRole, Organization, OrganizationMember, OrganizationStatus
+
+
+def _map_url(user, organization):
+    """Lien vers l'organisation sur la carte, pour qui peut ouvrir la carte.
+
+    Meme garde que dashboard.views.map_view : un lien qui menerait a un refus
+    n'est pas propose. Un DSI n'a de lien que vers ses propres organisations :
+    sa carte ne montre qu'elles.
+    """
+    if not can_view_map(user):
+        return None
+    if not is_national_scope(user) and organization.id not in set(user.organization_ids()):
+        return None
+    return f"{reverse('dashboard:map')}?org={organization.id}"
 
 
 def organization_list(request):
@@ -121,6 +137,7 @@ def organization_manage(request, slug):
                 :15
             ],
             "member_form": OrganizationMemberForm(),
+            "map_url": _map_url(request.user, organization),
         },
     )
 

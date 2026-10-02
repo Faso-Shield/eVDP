@@ -1,7 +1,10 @@
 """Formulaires des organisations."""
 
+from decimal import Decimal
+
 from django import forms
 
+from . import geo
 from .models import (
     INCOMPATIBLE_MEMBER_MESSAGE,
     MembershipRole,
@@ -12,6 +15,20 @@ from .models import (
 
 
 class OrganizationForm(forms.ModelForm):
+    # Une seule case pour la position : ce qu'on copie depuis Google Maps
+    # (« 12.377635, -1.487849 ») se colle tel quel. Le modele garde deux
+    # colonnes, que clean_coordinates renseigne.
+    coordinates = forms.CharField(
+        label="Coordonnées GPS",
+        required=False,
+        max_length=500,
+        widget=forms.TextInput(
+            attrs={"placeholder": "12.377635, -1.487849", "autocomplete": "off"}
+        ),
+        help_text="Collez les coordonnées copiées depuis Google Maps (clic droit sur le "
+        "lieu), ou un lien Google Maps. Vide : chef-lieu de la région.",
+    )
+
     class Meta:
         model = Organization
         fields = [
@@ -25,6 +42,7 @@ class OrganizationForm(forms.ModelForm):
             "website",
             "address",
             "region",
+            "coordinates",
             "status",
             "dsi_name",
             "dsi_email",
@@ -58,6 +76,26 @@ class OrganizationForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"rows": 4}),
             "pgp_public_key": forms.Textarea(attrs={"rows": 4}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.latitude is not None and self.instance.longitude is not None:
+            self.initial["coordinates"] = geo.format_coordinates(
+                self.instance.latitude, self.instance.longitude
+            )
+
+    def clean_coordinates(self):
+        text = (self.cleaned_data.get("coordinates") or "").strip()
+        if not text:
+            self.instance.latitude = self.instance.longitude = None
+            return ""
+        try:
+            lat, lon = geo.parse_coordinates(text)
+        except geo.CoordinatesError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        self.instance.latitude = Decimal(f"{lat:.6f}")
+        self.instance.longitude = Decimal(f"{lon:.6f}")
+        return geo.format_coordinates(lat, lon)
 
 
 class SecurityContactForm(forms.ModelForm):

@@ -4,7 +4,7 @@ from cryptography.fernet import Fernet
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F401,F403
-from .base import env
+from .base import _IMG_SRC, env
 
 DEBUG = False
 
@@ -44,7 +44,7 @@ CSP_DIRECTIVES = {
     "default-src": "'self'",
     "script-src": "'self'",
     "style-src": "'self' 'unsafe-inline'",
-    "img-src": "'self' data:",
+    "img-src": _IMG_SRC,
     "font-src": "'self' data:",
     "connect-src": "'self'",
     "frame-ancestors": "'none'",

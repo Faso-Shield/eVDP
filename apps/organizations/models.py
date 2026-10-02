@@ -8,6 +8,8 @@ from django.utils.text import slugify
 from apps.core.models import BaseModel
 from apps.core.pgp import PGPError, validate_public_key
 
+from .geo import in_burkina
+
 
 class OrganizationType(models.TextChoices):
     PUBLIC_ADMIN = "PUBLIC_ADMIN", "Administration publique"
@@ -62,6 +64,14 @@ class Organization(BaseModel):
     website = models.URLField(blank=True)
     address = models.CharField(max_length=255, blank=True)
     region = models.CharField(max_length=80, blank=True)
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        help_text="Laisser vide pour placer l'organisation au chef-lieu de sa région.",
+    )
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     status = models.CharField(
         max_length=16,
         choices=OrganizationStatus.choices,
@@ -100,6 +110,18 @@ class Organization(BaseModel):
                 self.pgp_public_key = validate_public_key(self.pgp_public_key)
             except PGPError as exc:
                 raise ValidationError({"pgp_public_key": str(exc)}) from exc
+        # Une coordonnee seule ne place rien sur la carte, et un point hors
+        # du territoire trahit presque toujours une inversion lat/lon.
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValidationError(
+                "Renseigner la latitude et la longitude, ou aucune des deux."
+            )
+        if self.latitude is not None and not in_burkina(self.latitude, self.longitude):
+            raise ValidationError(
+                {
+                    "latitude": "Position hors du Burkina Faso (latitude et longitude inversées ?)."
+                }
+            )
 
     def save(self, *args, **kwargs):
         if not self.slug:

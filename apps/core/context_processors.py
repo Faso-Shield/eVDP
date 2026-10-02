@@ -33,4 +33,5 @@ def evdp_context(request):
         "my_claims_count": len(claims),
         "my_idle_claims_count": sum(1 for entry in claims if entry["idle"]),
         "sidebar_sections": sidebar_sections(user, claims_count=len(claims)),
+        "MAP": {"tiles": settings.MAP_TILE_URL, "attribution": settings.MAP_ATTRIBUTION},
     }

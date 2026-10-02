@@ -4,6 +4,7 @@ import json
 
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Sum
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
 
 from apps.accounts.permissions import require_capability
@@ -19,6 +20,8 @@ from apps.organizations.models import Organization
 from apps.programs.models import Program
 from apps.researchers.models import ResearcherProfile
 from apps.researchers.services import get_or_create_profile
+
+from . import maps
 
 
 def _max_value(points):
@@ -204,6 +207,42 @@ def national_dashboard(request):
             # (identifiant, titre et organisation designent une cible).
             "overdue_by_severity": selectors.overdue_by_severity(user),
         },
+    )
+
+
+@login_required
+@require_capability(Capability.VIEW_MAP, Capability.VIEW_ORG_MAP)
+def map_view(request):
+    """Carte du Burkina Faso : organisations et signalements afferents.
+
+    La page ne porte aucune donnee : elle charge `map_data`, qui applique
+    les filtres sans recharger la page (et reste compatible avec la CSP de
+    production, qui interdit les scripts en ligne).
+    """
+    return render(
+        request,
+        "dashboard/map.html",
+        {
+            "options": maps.filter_options(),
+            "national": maps.is_national_scope(request.user),
+        },
+    )
+
+
+@login_required
+@require_capability(Capability.VIEW_MAP, Capability.VIEW_ORG_MAP)
+def map_data(request):
+    params = request.GET
+    return JsonResponse(
+        maps.build_map_data(
+            request.user,
+            query=params.get("q", "")[:100],
+            sector=params.get("sector", ""),
+            region=params.get("region", ""),
+            severity=params.get("severity", ""),
+            scope="all" if params.get("scope") == "all" else "open",
+            reported_only=params.get("reported") == "1",
+        )
     )
 
 
