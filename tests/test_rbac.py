@@ -3,8 +3,12 @@
 import pytest
 from django.urls import reverse
 
+from apps.accounts.models import User
 from apps.accounts.roles import Capability, Role
 from apps.coordination.models import Case
+from apps.coordination.workflow import CaseStatus
+
+from .conftest import advance
 
 pytestmark = pytest.mark.django_db
 
@@ -41,7 +45,11 @@ def test_organization_cannot_access_other_organization_case(client_for, dsi_beta
 
 
 def test_organization_accesses_own_case(client_for, dsi_alpha, case_alpha):
+    """Visible par l'organisation a partir de l'etape 5 seulement."""
     client = client_for(dsi_alpha)
+    url = reverse("coordination:case_detail", args=[case_alpha.case_id])
+    assert client.get(url).status_code == 404
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     response = client.get(reverse("coordination:case_detail", args=[case_alpha.case_id]))
     assert response.status_code == 200
 
@@ -63,9 +71,15 @@ def test_dsi_cannot_publish_advisory(dsi_alpha):
 
 
 # ---------------------------------------------------------------- roles CSIRT
-def test_national_roles_see_all_cases(coordinator, case_alpha, case_beta):
-    visible = set(Case.objects.visible_to(coordinator).values_list("case_id", flat=True))
+def test_auditor_keeps_the_national_view(auditor, coordinator, case_alpha, case_beta):
+    """Seul l'auditeur (aucune etape) garde la vue nationale, en metadonnees.
+
+    Le coordinateur, comme les autres comptes metiers, ne voit que les
+    dossiers de ses etapes : aucun a la reception.
+    """
+    visible = set(Case.objects.visible_to(auditor).values_list("case_id", flat=True))
     assert visible == {case_alpha.case_id, case_beta.case_id}
+    assert not Case.objects.visible_to(coordinator).exists()
 
 
 def test_analyst_cannot_approve_bounty(analyst):
@@ -85,14 +99,15 @@ def test_triager_cannot_manage_organizations(triager):
 def test_auditor_is_read_only(auditor):
     assert auditor.is_read_only is True
     assert auditor.has_capability(Capability.VIEW_ALL_CASES)
-    assert not auditor.has_capability(Capability.CHANGE_CASE_STATUS)
+    assert not auditor.has_capability(Capability.SET_SEVERITY)
+    assert not auditor.has_capability(Capability.ARBITRATE_CASE)
 
 
 def test_auditor_cannot_post_message(client_for, auditor, case_alpha):
     client = client_for(auditor)
     response = client.post(
         reverse("coordination:post_message", args=[case_alpha.case_id]),
-        {"body": "Tentative", "confidentiality": "PARTICIPANTS"},
+        {"body": "Tentative", "confidentiality": "RESEARCHER"},
     )
     assert response.status_code == 403
     assert case_alpha.messages.count() == 0
@@ -110,7 +125,30 @@ def test_auditor_can_read_audit_log(client_for, auditor):
         (Role.SECURITY_RESEARCHER, Capability.SUBMIT_REPORT, True),
         (Role.SECURITY_RESEARCHER, Capability.VIEW_ALL_CASES, False),
         (Role.SECURITY_RESEARCHER, Capability.TRIAGE_CASE, False),
-        (Role.CSIRT_ANALYST, Capability.TRIAGE_CASE, True),
+        (Role.CSIRT_ANALYST, Capability.TRIAGE_CASE, False),
+        (Role.CSIRT_ANALYST, Capability.SET_SEVERITY, True),
+        (Role.CSIRT_ANALYST, Capability.COORDINATE_VENDOR, True),
+        (Role.CSIRT_ANALYST, Capability.DRAFT_ADVISORY, True),
+        (Role.CSIRT_ANALYST, Capability.PROPOSE_BOUNTY, True),
+        (Role.CSIRT_ANALYST, Capability.VALIDATE_SEVERITY, False),
+        (Role.TRIAGER, Capability.TRIAGE_CASE, True),
+        (Role.TRIAGER, Capability.REQUEST_INFORMATION, True),
+        (Role.TRIAGER, Capability.PROPOSE_REJECTION, True),
+        (Role.TRIAGER, Capability.SET_SEVERITY, False),
+        (Role.NATIONAL_COORDINATOR, Capability.VALIDATE_SEVERITY, True),
+        (Role.NATIONAL_COORDINATOR, Capability.ARBITRATE_CASE, True),
+        (Role.NATIONAL_COORDINATOR, Capability.APPROVE_BOUNTY, True),
+        (Role.NATIONAL_COORDINATOR, Capability.SET_SEVERITY, False),
+        (Role.NATIONAL_COORDINATOR, Capability.DRAFT_ADVISORY, False),
+        (Role.NATIONAL_COORDINATOR, Capability.PROPOSE_BOUNTY, False),
+        (Role.DSI_ADMIN, Capability.MANAGE_REMEDIATION, True),
+        (Role.DSI_ADMIN, Capability.PROPOSE_BOUNTY, False),
+        (Role.ORGANIZATION_MANAGER, Capability.MANAGE_REMEDIATION, True),
+        (Role.ORGANIZATION_MANAGER, Capability.PROPOSE_BOUNTY, False),
+        (Role.SUPER_ADMIN, Capability.MANAGE_USERS, True),
+        (Role.SUPER_ADMIN, Capability.MANAGE_PROGRAM, True),
+        (Role.SUPER_ADMIN, Capability.VIEW_ALL_CASES, False),
+        (Role.SUPER_ADMIN, Capability.PUBLISH_ADVISORY, False),
         (Role.CSIRT_ANALYST, Capability.MANAGE_USERS, False),
         (Role.NATIONAL_COORDINATOR, Capability.PUBLISH_ADVISORY, True),
         (Role.DSI_ADMIN, Capability.VIEW_ALL_CASES, False),
@@ -171,10 +209,51 @@ def test_the_refusal_is_audited(client_for, researcher_a):
     ).exists()
 
 
+# ------------------------------------------------------------ workflow v2
+def test_senior_analyst_gains_validation_only(db):
+    from .conftest import make_user
+
+    senior = make_user("senior@matrix.bf", Role.CSIRT_ANALYST, is_senior_analyst=True)
+    assert senior.has_capability(Capability.VALIDATE_SEVERITY)
+    assert not senior.has_capability(Capability.APPROVE_BOUNTY)
+
+
+def test_senior_flag_ignored_for_other_roles(db):
+    from .conftest import make_user
+
+    user = make_user("triage-senior@matrix.bf", Role.TRIAGER, is_senior_analyst=True)
+    assert not user.has_capability(Capability.VALIDATE_SEVERITY)
+
+
+def test_superuser_has_only_administration_capabilities(db, case_alpha):
+    superuser = User.objects.create_superuser(email="root@matrix.bf", password="Xx-123456789!")
+    assert superuser.has_capability(Capability.MANAGE_USERS)
+    assert not superuser.has_capability(Capability.VIEW_ALL_CASES)
+    assert not superuser.has_capability(Capability.PUBLISH_ADVISORY)
+    assert not Case.objects.visible_to(superuser).exists()
+    assert not case_alpha.is_visible_to(superuser)
+
+
+def test_participant_organization_does_not_see_case_before_step_5(dsi_alpha, case_alpha):
+    """Etre participant ne deroge pas a la regle de l'etape 5."""
+    from apps.coordination.services import add_participant
+
+    add_participant(case_alpha, dsi_alpha)
+    assert not case_alpha.is_visible_to(dsi_alpha)
+    assert not Case.objects.visible_to(dsi_alpha).exists()
+
+
+def test_organization_sees_case_from_step_5(dsi_alpha, case_alpha):
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
+    assert case_alpha.is_visible_to(dsi_alpha)
+    assert set(Case.objects.visible_to(dsi_alpha)) == {case_alpha}
+
+
 # ------------------------------------------ reference de paiement en clair
-# Reservee au super-administrateur (voir apps.coordination.views.case_detail),
-# meme portee que l'acces deja possible via l'administration Django - jamais
-# au coordinateur ni a l'analyste, toujours journalisee.
+# Workflow v2 : reservee a qui execute le versement (RECORD_PAYMENT, le
+# Coordinateur), sur la fiche de la prime, toujours journalisee. Jamais au
+# super admin, qui n'a acces ni aux dossiers ni au Wallet, et jamais sur la
+# fiche du dossier.
 @pytest.fixture
 def super_admin(db):
     from apps.accounts.models import User
@@ -184,7 +263,7 @@ def super_admin(db):
     )
 
 
-def _give_researcher_a_a_wallet(researcher):
+def _give_a_wallet(researcher):
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     from apps.researchers.models import PayoutMethod, PayoutMethodType
@@ -216,48 +295,103 @@ def _give_researcher_a_a_wallet(researcher):
     )
 
 
-def test_super_admin_sees_the_payout_reference_in_clear(
-    client_for, super_admin, researcher_a, case_alpha
+def _bounty_for(case, analyst):
+    from decimal import Decimal
+
+    from apps.bounty.services import propose_bounty
+
+    return propose_bounty(case, analyst, amount=Decimal("1500000"))
+
+
+def test_coordinator_sees_the_payout_reference_on_the_bounty(
+    client_for, coordinator, analyst, bounty_researcher, bounty_case
 ):
     from apps.audit.models import AuditAction, AuditLog
 
-    _give_researcher_a_a_wallet(researcher_a)
+    _give_a_wallet(bounty_researcher)
+    bounty = _bounty_for(bounty_case, analyst)
 
-    client = client_for(super_admin)
-    content = client.get(
-        reverse("coordination:case_detail", args=[case_alpha.case_id])
-    ).content.decode()
-
+    content = (
+        client_for(coordinator)
+        .get(reverse("bounty:detail", args=[bounty.pk]))
+        .content.decode()
+    )
     assert "BF1234567890123456" in content
-    assert "Awa Traore" in content  # nom legal du declarant, pas seulement le moyen
+    assert "Awa Traore" in content  # nom legal, pas seulement le moyen
     assert AuditLog.objects.filter(
-        action=AuditAction.PAYOUT_REFERENCE_VIEWED, actor=super_admin
+        action=AuditAction.PAYOUT_REFERENCE_VIEWED, actor=coordinator
     ).exists()
 
 
-def test_coordinator_never_sees_the_payout_reference(client_for, coordinator, researcher_a):
-    """Meme role habilite a enregistrer un versement : jamais l'identifiant en clair."""
-    from apps.reports.services import submit_report
-    from tests.conftest import build_report
+def test_analyst_never_sees_the_payout_reference(
+    client_for, analyst, bounty_researcher, bounty_case
+):
+    """L'analyste propose la prime mais n'execute pas le versement."""
+    _give_a_wallet(bounty_researcher)
+    bounty = _bounty_for(bounty_case, analyst)
 
-    _give_researcher_a_a_wallet(researcher_a)
-    case = submit_report(
-        build_report(researcher_a, title="Cas visible du coordinateur"),
-        reporter=researcher_a,
+    content = (
+        client_for(analyst).get(reverse("bounty:detail", args=[bounty.pk])).content.decode()
     )
-    # Le coordinateur voit tous les cases (is_national) : la carte de
-    # paiement doit rester absente independamment de la visibilite du case.
-    client = client_for(coordinator)
-    content = client.get(
-        reverse("coordination:case_detail", args=[case.case_id])
-    ).content.decode()
-
     assert "BF1234567890123456" not in content
 
 
-def test_no_payout_card_without_a_wallet(client_for, super_admin, researcher_a, case_alpha):
+def test_case_page_never_shows_the_payout_reference(
+    client_for, coordinator, bounty_researcher, bounty_case
+):
+    _give_a_wallet(bounty_researcher)
+    content = (
+        client_for(coordinator)
+        .get(reverse("coordination:case_detail", args=[bounty_case.case_id]))
+        .content.decode()
+    )
+    assert "BF1234567890123456" not in content
+
+
+def test_super_admin_never_reaches_the_payout_reference(
+    client_for, super_admin, analyst, bounty_researcher, bounty_case
+):
+    _give_a_wallet(bounty_researcher)
+    bounty = _bounty_for(bounty_case, analyst)
     client = client_for(super_admin)
-    content = client.get(
-        reverse("coordination:case_detail", args=[case_alpha.case_id])
-    ).content.decode()
-    assert "Référence de paiement" not in content
+
+    assert (
+        client.get(reverse("coordination:case_detail", args=[bounty_case.case_id])).status_code
+        == 404
+    )
+    assert client.get(reverse("bounty:detail", args=[bounty.pk])).status_code == 404
+
+
+# --------------------------------------------- tableaux de bord par role
+def test_business_accounts_are_sent_to_their_own_dashboard(client_for, coordinator, dsi_alpha):
+    """Hors organisation, /dashboard/organization/ listait tout le perimetre
+    du compte (tous les dossiers pour un role national)."""
+    response = client_for(coordinator).get(reverse("dashboard:organization"))
+    assert response.status_code == 302
+    assert response["Location"] == reverse("dashboard:national")
+    response = client_for(dsi_alpha).get(reverse("dashboard:researcher"))
+    assert response["Location"] == reverse("dashboard:organization")
+
+
+def test_researcher_keeps_its_space_and_cannot_search_globally(client_for, researcher_a):
+    client = client_for(researcher_a)
+    assert client.get(reverse("dashboard:researcher")).status_code == 200
+    assert client.get(reverse("dashboard:organization"))["Location"] == reverse(
+        "dashboard:researcher"
+    )
+    assert client.get(reverse("dashboard:search"), {"q": "x"}).status_code == 403
+
+
+def test_national_dashboard_counts_overdue_cases_without_naming_them(
+    client_for, auditor, case_alpha
+):
+    from apps.coordination.constants import SLAState
+    from apps.vulnerabilities.constants import Severity
+
+    Case.objects.filter(pk=case_alpha.pk).update(severity=Severity.HIGH)
+    assert case_alpha.sla_events.update(state=SLAState.BREACHED)
+    html = client_for(auditor).get(reverse("dashboard:national")).content.decode()
+    assert "Risques : dossiers en dépassement" in html
+    assert case_alpha.case_id not in html
+    assert case_alpha.title not in html
+    assert '<strong class="mono">1</strong>' in html

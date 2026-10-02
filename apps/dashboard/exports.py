@@ -38,11 +38,11 @@ COLUMNS = [
     ("case_id", "Identifiant"),
     ("title", "Titre"),
     ("status", "Statut"),
-    ("severity", "Severite"),
+    ("severity", "Sévérité"),
     ("cvss_score", "CVSS"),
     ("organization", "Organisation"),
     ("workflow", "Workflow"),
-    ("created_at", "Cree le"),
+    ("created_at", "Créé le"),
     ("disclosure_date", "Divulgation"),
 ]
 
@@ -129,6 +129,17 @@ def export_case_pdf(request, case_id):
     )
     if not case.is_visible_to(request.user):
         raise Http404("Dossier introuvable.")
+    from apps.coordination.visibility import (
+        PARTIAL,
+        can_download_attachment,
+        level,
+        reporter_label,
+    )
+
+    # La fiche reprend le contenu du rapport : reservee aux roles qui le lisent
+    # (l'auditeur n'en consulte que les metadonnees).
+    if not can_download_attachment(case, request.user):
+        raise Http404("Dossier introuvable.")
 
     buffer = BytesIO()
     document = SimpleDocTemplate(
@@ -149,7 +160,7 @@ def export_case_pdf(request, case_id):
     story = [
         Paragraph(f"eVDP - Dossier {case.case_id}", styles["Title"]),
         Paragraph(
-            "Document interne - Diffusion restreinte aux personnes habilitees.",
+            "Document interne - Diffusion restreinte aux personnes habilitées.",
             styles["Italic"],
         ),
         Spacer(1, 8),
@@ -158,14 +169,21 @@ def export_case_pdf(request, case_id):
     summary = [
         ["Titre", case.title],
         ["Statut", case.get_status_display()],
-        ["Severite", case.get_severity_display()],
-        ["CVSS", f"{case.cvss_score or '-'} ({case.cvss_vector or 'non renseigne'})"],
+        ["Sévérité", case.get_severity_display()],
+        [
+            "CVSS",
+            (
+                f"{case.cvss_score or '-'}"
+                if level(case, request.user, "cvss") == PARTIAL
+                else f"{case.cvss_score or '-'} ({case.cvss_vector or 'non renseigné'})"
+            ),
+        ],
         ["Organisation", case.organization.name if case.organization_id else "-"],
         ["CWE", case.cwe.code if case.cwe_id else "-"],
         ["CVE", case.cve.cve_id if case.cve_id else "-"],
         ["Analyste", str(case.assignee) if case.assignee_id else "-"],
-        ["Declarant", case.report.reporter_display],
-        ["Cree le", timezone.localtime(case.created_at).strftime("%d/%m/%Y %H:%M")],
+        ["Déclarant", reporter_label(case, request.user) or "Identité protégée"],
+        ["Créé le", timezone.localtime(case.created_at).strftime("%d/%m/%Y %H:%M")],
         [
             "Divulgation",
             case.disclosure_date.strftime("%d/%m/%Y") if case.disclosure_date else "-",
@@ -186,7 +204,7 @@ def export_case_pdf(request, case_id):
 
     sections = [
         ("Description", case.report.description),
-        ("Etapes de reproduction", case.report.steps_to_reproduce),
+        ("Étapes de reproduction", case.report.steps_to_reproduce),
         ("Impact", case.report.impact),
         ("Recommandations", case.report.recommendations),
     ]
@@ -198,7 +216,7 @@ def export_case_pdf(request, case_id):
         story.append(Spacer(1, 8))
 
     story.append(Paragraph("Chronologie", heading))
-    timeline_rows = [["Date", "Evenement"]] + [
+    timeline_rows = [["Date", "Événement"]] + [
         [
             timezone.localtime(event.occurred_at).strftime("%d/%m/%Y %H:%M"),
             event.label,
@@ -259,12 +277,12 @@ def export_case_pdf(request, case_id):
 COMPTES_COLUMNS = [
     "Email",
     "Nom complet",
-    "Role",
-    "Compte cree le",
-    "Derniere connexion",
-    "Derniere relance",
+    "Rôle",
+    "Compte créé le",
+    "Dernière connexion",
+    "Dernière relance",
     "Fin du sursis",
-    "Signalements deposes",
+    "Signalements déposés",
 ]
 
 

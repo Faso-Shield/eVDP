@@ -1,0 +1,16 @@
+{% extends "errors/_error.html" %}
+{% block title %}Formulaire expiré{% endblock %}
+{% block code %}403{% endblock %}
+{% block heading %}Ce formulaire a expiré{% endblock %}
+{% block message %}
+  <p>
+    Par sécurité, chaque formulaire porte un jeton valable pour votre session.
+    Celui-ci n'est plus valide : la page était probablement ouverte depuis
+    longtemps, ou votre session a été renouvelée entre-temps.
+  </p>
+  <p class="error-note">
+    Revenez à la page précédente, rechargez-la, puis renvoyez le formulaire.
+    Rien n'a été enregistré.
+  </p>
+{% endblock %}
+{% block illustration %}{% include "errors/_shield.svg.html" %}{% endblock %}

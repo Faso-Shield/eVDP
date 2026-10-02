@@ -5,10 +5,15 @@ au service correspondant (apps.bounty.services), qui garantit en un seul geste
 la verification de capacite, la separation proposant/approbateur, l'audit, la
 notification du chercheur et la mise a jour du profil. Une action appliquee a
 plusieurs lignes traite chaque recompense independamment et rapporte les refus.
+
+Workflow v2 : le Wallet ne regarde pas l'administration technique ; ces vues
+sont fermees (CaseContentAdminMixin), la prime se traite depuis le dossier.
 """
 
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
+
+from apps.core.admin import CaseContentAdminMixin
 
 from .models import Bounty, BountyPayment, BountyReview
 from .services import approve_bounty, record_payment, reject_bounty
@@ -43,34 +48,34 @@ def _apply(modeladmin, request, queryset, service, success_label, **kwargs):
             applied += 1
     if applied:
         modeladmin.message_user(
-            request, f"{applied} recompense(s) : {success_label}.", messages.SUCCESS
+            request, f"{applied} récompense(s) : {success_label}.", messages.SUCCESS
         )
 
 
-@admin.action(description="Approuver la recompense (montant propose)")
+@admin.action(description="Approuver la récompense (montant proposé)")
 def action_approve(modeladmin, request, queryset):
-    _apply(modeladmin, request, queryset, approve_bounty, "approuvee(s)")
+    _apply(modeladmin, request, queryset, approve_bounty, "approuvée(s)")
 
 
-@admin.action(description="Rejeter la recompense")
+@admin.action(description="Rejeter la récompense")
 def action_reject(modeladmin, request, queryset):
     _apply(
         modeladmin,
         request,
         queryset,
         reject_bounty,
-        "rejetee(s)",
+        "rejetée(s)",
         note="Rejet depuis l'administration.",
     )
 
 
 @admin.action(description="Enregistrer le versement (trace comptable)")
 def action_record_payment(modeladmin, request, queryset):
-    _apply(modeladmin, request, queryset, record_payment, "versement enregistre")
+    _apply(modeladmin, request, queryset, record_payment, "versement enregistré")
 
 
 @admin.register(Bounty)
-class BountyAdmin(admin.ModelAdmin):
+class BountyAdmin(CaseContentAdminMixin, admin.ModelAdmin):
     list_display = (
         "case",
         "researcher",
@@ -107,7 +112,7 @@ class BountyAdmin(admin.ModelAdmin):
 
 
 @admin.register(BountyPayment)
-class BountyPaymentAdmin(admin.ModelAdmin):
+class BountyPaymentAdmin(CaseContentAdminMixin, admin.ModelAdmin):
     list_display = (
         "bounty",
         "amount",

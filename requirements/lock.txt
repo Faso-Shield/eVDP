@@ -22,6 +22,8 @@ click-repl==0.3.0
 colorama==0.4.6
 coverage==7.16.0
 cron-descriptor==1.4.5
+cryptography==50.0.2
+cvss==3.4
 cyclonedx-python-lib==11.12.0
 defusedxml==0.7.1
 Django==5.2.17
@@ -32,6 +34,7 @@ django-storages==1.14.6
 django-timezone-field==7.2.2
 djangorestframework==3.18.0
 drf-spectacular==0.30.0
+drf-spectacular-sidecar==2026.9.1
 et_xmlfile==2.0.0
 filelock==3.32.5
 gunicorn==26.2.0
@@ -92,7 +95,7 @@ typing_extensions==4.16.0
 tzdata==2026.3
 tzlocal==5.4.4
 uritemplate==4.2.0
-urllib3==2.7.0
+urllib3==2.8.0
 vine==5.1.0
 wcwidth==0.8.3
 webencodings==0.6.1

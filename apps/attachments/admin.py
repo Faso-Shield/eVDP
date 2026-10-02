@@ -1,10 +1,12 @@
 from django.contrib import admin
 
+from apps.core.admin import CaseContentAdminMixin
+
 from .models import Attachment
 
 
 @admin.register(Attachment)
-class AttachmentAdmin(admin.ModelAdmin):
+class AttachmentAdmin(CaseContentAdminMixin, admin.ModelAdmin):
     list_display = (
         "original_filename",
         "case",
@@ -26,6 +28,6 @@ class AttachmentAdmin(admin.ModelAdmin):
         "updated_at",
     )
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request, obj=None):
         # Toute piece jointe doit passer par le service de validation.
         return False

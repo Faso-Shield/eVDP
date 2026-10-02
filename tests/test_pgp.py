@@ -1,6 +1,11 @@
 """Tests de la cle PGP nationale (apps.core.pgp)."""
 
+import pytest
+
 from apps.core.pgp import national_fingerprint, national_public_key
+
+# La cle active est lue en base avant le repli sur l'environnement.
+pytestmark = pytest.mark.django_db
 
 
 def test_national_public_key_unescapes_newlines(settings):

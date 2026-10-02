@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% load evdp_tags %}
+{% load static %}
+{% block head %}{% include "partials/select_enhance.html" %}<script src="{% static 'js/report-submit.js' %}" defer></script>{% if pgp_available %}{% include "partials/pgp_assets.html" %}{% endif %}{% endblock %}
 {% block title %}Signaler une vulnérabilité{% endblock %}
 
 {% block content %}
@@ -46,20 +48,22 @@
 
 {% if not user.is_authenticated and not refus_participation %}
 <div class="notice">
-  Vous n'êtes pas connecté. Vous pouvez signaler sans compte, mais un compte
-  vous permet de suivre le traitement et d'échanger avec le CSIRT.
+  Vous n'êtes pas connecté. Vous pouvez signaler sans compte : un code de suivi
+  vous sera remis pour <a href="{% url 'reports:track_lookup' %}">suivre votre signalement</a>.
+  Un compte vous permet en plus d'échanger avec le CSIRT.
   <a href="{% url 'accounts:register' %}">Créer un compte</a> ·
   <a href="{% url 'accounts:login' %}">Se connecter</a>
 </div>
 {% endif %}
 
-<div class="grid" style="grid-template-columns: 2fr 1fr">
+<div class="split-layout">
   <div>
-    <form method="post" enctype="multipart/form-data" novalidate>
+    <form method="post" enctype="multipart/form-data" novalidate id="report-form"
+          data-program-rules="{{ program_rules }}" data-max-attachments="{{ max_attachments }}">
       {% csrf_token %}
       <p class="form-legend">
         Les champs suivis d'une <abbr class="required" title="Champ obligatoire">*</abbr>
-        sont obligatoires. Les autres accelerent le triage sans etre exiges.
+        sont obligatoires. Les autres accélèrent le triage sans être exigés.
       </p>
       {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
 
@@ -73,29 +77,14 @@
             {% include "partials/form_field.html" with field=form.affected_organization_name %}
             {% include "partials/form_field.html" with field=form.product %}
           </div>
+          <div class="notice" id="program-rule-notice" role="status" hidden></div>
           <div class="help">
             <abbr class="required" title="Champ obligatoire">*</abbr>
             Renseignez au moins l'un de ces trois champs : le programme, l'organisation
-            affectee, ou son nom si elle n'est pas dans la liste. Sans cela, le
-            signalement ne peut pas etre oriente.
+            affectée, ou son nom si elle n'est pas dans la liste. Sans cela, le
+            signalement ne peut pas être orienté.
           </div>
           {% include "partials/form_field.html" with field=form.target_url %}
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h2>Qualification technique</h2></div>
-        <div class="card-body">
-          <div class="form-grid">
-            {% include "partials/form_field.html" with field=form.vulnerability_type %}
-            {% include "partials/form_field.html" with field=form.cwe %}
-            {% include "partials/form_field.html" with field=form.reported_severity %}
-            {% include "partials/form_field.html" with field=form.cvss_vector %}
-            {% include "partials/form_field.html" with field=form.affected_version %}
-            {% include "partials/form_field.html" with field=form.fixed_version %}
-            {% include "partials/form_field.html" with field=form.environment %}
-            {% include "partials/form_field.html" with field=form.external_reference %}
-          </div>
         </div>
       </div>
 
@@ -106,6 +95,10 @@
         </div>
         <div class="card-body">
           {% include "partials/form_field.html" with field=form.description %}
+          <div class="flex-between small">
+            <span class="muted" id="description-counter" aria-live="polite"></span>
+            <button class="btn btn-sm btn-outline" type="button" id="insert-template" hidden>Insérer un modèle</button>
+          </div>
           {% include "partials/form_field.html" with field=form.steps_to_reproduce %}
           {% include "partials/form_field.html" with field=form.impact %}
           {% include "partials/form_field.html" with field=form.proof_of_concept %}
@@ -117,11 +110,17 @@
         <div class="card-header"><h2>Pièces jointes</h2></div>
         <div class="card-body">
           <div class="form-field">
-            <label for="attachments">Fichiers (5 maximum)</label>
-            <input type="file" name="attachments" id="attachments" multiple>
+            <label for="attachments">Fichiers ({{ max_attachments }} maximum)<abbr class="required" title="Champ obligatoire">*</abbr></label>
+            <input type="file" name="attachments" id="attachments" multiple required>
+            <div class="dropzone" id="dropzone" role="button" tabindex="0" hidden>
+              Glissez vos fichiers ici, ou cliquez pour les choisir.
+            </div>
+            <ul class="file-list" id="file-list"></ul>
+            <p class="small sla-text-breached" id="file-limit-warning" hidden></p>
             <div class="help">
               Captures, traces, PoC. Les exécutables et scripts sont refusés.
-              Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier.
+              Taille maximale : {{ EVDP.MAX_ATTACHMENT_SIZE|filesizeformat }} par fichier,
+              {{ EVDP.MAX_VIDEO_ATTACHMENT_SIZE|filesizeformat }} pour une vidéo (mp4, webm).
               Chaque fichier est stocké sous un nom aléatoire, hashé en SHA-256 et
               accessible uniquement aux personnes habilitées sur le dossier.
             </div>
@@ -137,7 +136,26 @@
           {% endif %}
           <div class="checkbox-field">{{ form.is_anonymous }}<label for="{{ form.is_anonymous.id_for_label }}">{{ form.is_anonymous.label }}</label></div>
           <div class="checkbox-field">{{ form.wants_credit }}<label for="{{ form.wants_credit.id_for_label }}">{{ form.wants_credit.label }}</label></div>
+          <p class="small muted" id="wants-credit-hint" hidden>Sans effet pour un signalement anonyme : le crédit public vous nommerait.</p>
           <div class="checkbox-field">{{ form.requests_cve }}<label for="{{ form.requests_cve.id_for_label }}">{{ form.requests_cve.label }}</label></div>
+          {% if pgp_available %}
+          <div class="pgp-box" id="pgp-encrypt" data-key-url="{% url 'core:pgp_key' %}" hidden>
+            <h3>Chiffrer dans mon navigateur</h3>
+            <p class="small muted">Écrivez ici ce qui doit rester illisible pour tout autre
+            que le CSIRT (identifiants, preuve d'exploitation, données exposées). Le texte est
+            chiffré avec la clé publique nationale sur votre poste ; seul le bloc chiffré est
+            envoyé.</p>
+            <textarea id="pgp-plaintext" rows="5" autocomplete="off" spellcheck="false"></textarea>
+            <div class="btn-row mt-1">
+              <button class="btn btn-sm btn-outline" type="button" id="pgp-encrypt-button">Chiffrer avec la clé nationale</button>
+            </div>
+            <div class="checkbox-field mt-1">
+              <input type="checkbox" id="pgp-encrypt-files">
+              <label for="pgp-encrypt-files">Chiffrer aussi les pièces jointes avant l'envoi (.gpg)</label>
+            </div>
+            <p class="small" id="pgp-encrypt-status" aria-live="polite" hidden></p>
+          </div>
+          {% endif %}
           {% include "partials/form_field.html" with field=form.pgp_payload %}
           <div class="checkbox-field">
             {{ form.accept_policy }}
@@ -176,7 +194,8 @@
     <div class="card">
       <div class="card-header"><h3>Signalement chiffré</h3></div>
       <div class="card-body small">
-        <p>Pour un contenu très sensible, chiffrez-le avec la clé publique nationale
+        <p>Pour un contenu très sensible, utilisez « Chiffrer dans mon navigateur »
+        (carte Confidentialité), ou chiffrez-le vous-même avec la clé publique nationale
         et collez le bloc PGP dans le champ prévu.</p>
         <a class="btn btn-sm btn-outline" href="{% url 'core:pgp_key' %}">Clé publique PGP</a>
       </div>

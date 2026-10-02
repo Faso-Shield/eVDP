@@ -15,6 +15,8 @@ from apps.coordination.services import (
 )
 from apps.coordination.workflow import CaseStatus
 
+from .conftest import evidence
+
 pytestmark = pytest.mark.django_db
 
 
@@ -29,6 +31,8 @@ def form_payload(**overrides):
         "steps_to_reproduce": "1. Ouvrir la page\n2. Injecter le payload",
         "impact": "Vol de session utilisateur.",
         "accept_policy": "on",
+        # Workflow v2 : une piece jointe est exigee a toute soumission web.
+        "attachments": [evidence()],
     }
     payload.update(overrides)
     return payload
@@ -70,11 +74,44 @@ def test_regenerating_token_invalidates_the_previous_one(case_alpha):
 
 # --------------------------------------------------------------- statut public
 def test_public_status_hides_internal_detail(case_alpha):
-    case_alpha.status = CaseStatus.TRIAGE
+    case_alpha.status = CaseStatus.VALIDATION_PENDING
     case_alpha.save(update_fields=["status"])
     status = public_status_for(case_alpha)
     assert status["key"] == "ANALYSIS"
     assert status["case_id"] == case_alpha.case_id
+
+
+@pytest.mark.parametrize(
+    "internal,key,label",
+    [
+        (CaseStatus.SUBMITTED, "RECEIVED", "Reçu"),
+        (CaseStatus.ACKNOWLEDGED, "RECEIVED", "Reçu"),
+        (CaseStatus.IN_ANALYSIS, "ANALYSIS", "En analyse"),
+        (CaseStatus.NEEDS_INFORMATION, "ANALYSIS", "En analyse"),
+        # Un rejet seulement propose ne doit rien reveler au declarant.
+        (CaseStatus.REJECTION_PENDING, "ANALYSIS", "En analyse"),
+        (CaseStatus.VALIDATED, "VALIDATED", "Validé"),
+        (CaseStatus.VENDOR_NOTIFIED, "IN_PROGRESS", "En correction"),
+        (CaseStatus.ADVISORY_REVIEW, "IN_PROGRESS", "En correction"),
+        (CaseStatus.CLOSED, "RESOLVED", "Publié"),
+        (CaseStatus.DUPLICATE, "DISMISSED", "Clôturé sans suite"),
+    ],
+)
+def test_public_status_has_five_steps(case_alpha, internal, key, label):
+    case_alpha.status = internal
+    case_alpha.is_published = internal == CaseStatus.CLOSED
+    case_alpha.save(update_fields=["status", "is_published"])
+    status = public_status_for(case_alpha)
+    assert (status["key"], status["label"]) == (key, label)
+
+
+def test_closed_without_advisory_is_not_announced_as_published(case_alpha):
+    """Dossier clos sans publication : « Clôturé », jamais « Publié »."""
+    case_alpha.status = CaseStatus.CLOSED
+    case_alpha.is_published = False
+    case_alpha.save(update_fields=["status", "is_published"])
+    status = public_status_for(case_alpha)
+    assert (status["key"], status["label"]) == ("RESOLVED", "Clôturé")
 
 
 def test_public_status_resolved_bucket(case_alpha):

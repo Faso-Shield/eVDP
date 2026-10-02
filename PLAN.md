@@ -25,7 +25,7 @@ projet.
 | Redis 7 | ✅ | Non exposé, AOF, limite mémoire, politique LRU |
 | Celery worker + beat | ✅ | Planificateur en base (`django_celery_beat`) |
 | Nginx | ✅ | Rate limiting bordure, en-têtes de sécurité, `/media/` interdit, bloc TLS documenté |
-| MinIO | ✅ | Bucket privé versionné, jamais exposé publiquement |
+| Stockage des pièces jointes | ✅ | Volume disque `evdp-media`, jamais exposé (MinIO retiré : images plus distribuées) |
 | Mailpit | ✅ | Capture des emails de développement |
 | Réseaux séparés | ✅ | `evdp-backend` (interne) / `evdp-frontend` |
 | Limites de ressources | ✅ | `deploy.resources.limits` sur chaque service |
@@ -35,7 +35,7 @@ projet.
 | Élément | État | Détail |
 |---------|------|--------|
 | Utilisateur personnalisé | ✅ | Email comme identifiant, UUID, Argon2 |
-| 10 rôles RBAC | ✅ | `accounts/roles.py`, matrice de 23 capacités |
+| 10 rôles RBAC | ✅ | `accounts/roles.py`, matrice de 27 capacités, une capacité par étape du workflow v2 ; super admin sans accès aux dossiers |
 | Inscription publique bornée | ✅ | Seuls les rôles chercheur sont acceptés |
 | Vérification d'email | ✅ | Jeton à usage unique et durée limitée |
 | Réinitialisation de mot de passe | ✅ | Vues Django + rate limiting |
@@ -55,8 +55,8 @@ projet.
 | Formulaire public | ✅ | 25 champs, Markdown, PGP, pièces jointes, anonymat |
 | Soumission anonyme | ✅ | Adresse de contact ou anonymat strict |
 | Création automatique du Case | ✅ | `EVDP-AAAA-NNNNNN`, séquence verrouillée |
-| Workflow CVD | ✅ | 24 états, transitions déclaratives, capacités requises |
-| Workflow Bug Bounty | ✅ | Table de transitions distincte |
+| Workflow CVD | ✅ | Workflow v2 : 11 étapes, un bouton par rôle, pré-requis bloquants, quatre yeux par utilisateur, 6 sorties d'exception (`docs/cvd-workflow.md`) |
+| Workflow Bug Bounty | ✅ | Branche prime B1/B2 sur un statut distinct, Wallet en grand livre (solde calculé) |
 | Kanban | ✅ | 7 colonnes |
 | Messagerie sécurisée | ✅ | 3 niveaux de confidentialité, hash d'intégrité SHA-256 |
 | Pièces jointes | ✅ | Nom opaque, SHA-256, extension + MIME + signature binaire |
@@ -132,7 +132,7 @@ projet.
 | Bandit / pip-audit | ✅ | Intégrés à la CI |
 | Trivy | ✅ | Scan de l'image dans la CI |
 | Documentation | ✅ | 9 documents + 5 diagrammes Mermaid |
-| Sauvegardes | ✅ | `backup_db.sh`, `restore_db.sh`, `backup_minio.sh` |
+| Sauvegardes | ✅ | `backup_db.sh`, `restore_db.sh`, `backup_media.sh` |
 | Données de démonstration | ✅ | `manage.py seed_demo` — idempotent |
 
 ---

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Clé d'API créée{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<div class="card" style="max-width:620px;margin:2rem auto">
+  <div class="card-header"><h1 style="font-size:1.4rem">Clé d'API « {{ label }} »</h1></div>
+  <div class="card-body">
+    <div class="alert alert-warning">
+      Copiez cette clé maintenant : elle ne sera <strong>plus jamais affichée</strong>.
+      Seule son empreinte est conservée par eVDP.
+    </div>
+    <p class="mono" style="word-break:break-all;font-size:1rem;padding:.6rem;border:1px solid var(--border);border-radius:var(--radius)">{{ key }}</p>
+    <p class="small muted">
+      Transmettez-la dans l'en-tête <code>X-eVDP-Api-Key</code>. Elle agit avec
+      les droits de votre compte : conservez-la comme un mot de passe, et
+      révoquez-la depuis votre profil dès qu'elle ne sert plus.
+    </p>
+    <a class="btn btn-block" href="{% url 'accounts:profile' %}">J'ai copié la clé</a>
+  </div>
+</div>
+{% endblock %}

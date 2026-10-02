@@ -68,10 +68,16 @@ def test_stored_xss_in_report_is_neutralised(client_for, case_alpha, researcher_
     assert "Description reelle" in content
 
 
-def test_stored_xss_in_message_is_neutralised(
-    client_for, case_alpha, coordinator, researcher_a
-):
-    post_message(case_alpha, coordinator, "<script>alert(1)</script>Message legitime")
+def test_stored_xss_in_message_is_neutralised(client_for, case_alpha, triager, researcher_a):
+    from .conftest import claim
+
+    claim(case_alpha, triager)
+    post_message(
+        case_alpha,
+        triager,
+        "<script>alert(1)</script>Message legitime",
+        confidentiality=Confidentiality.RESEARCHER,
+    )
     client = client_for(researcher_a)
     content = client.get(f"/cases/{case_alpha.case_id}/").content.decode()
     assert "<script>alert(1)</script>" not in content
@@ -85,7 +91,7 @@ def test_post_without_csrf_token_is_rejected(client_for, researcher_a, case_alph
     client.force_login(researcher_a)
     response = client.post(
         reverse("coordination:post_message", args=[case_alpha.case_id]),
-        {"body": "Message sans jeton", "confidentiality": "PARTICIPANTS"},
+        {"body": "Message sans jeton", "confidentiality": "RESEARCHER"},
     )
     assert response.status_code == 403
     assert case_alpha.messages.count() == 0
@@ -118,31 +124,41 @@ def test_nonexistent_case_returns_same_404(client_for, researcher_a):
 
 
 # --------------------------------------------------- confidentialite messages
-def test_internal_message_hidden_from_reporter(case_alpha, coordinator, researcher_a):
+def test_internal_message_hidden_from_reporter(case_alpha, triager, researcher_a):
+    # Etape 1 : l'agent de triage, responsable de l'etape, redige la note.
+    from .conftest import claim
+
+    claim(case_alpha, triager)
     post_message(
-        case_alpha, coordinator, "Analyse interne", confidentiality=Confidentiality.INTERNAL
+        case_alpha, triager, "Analyse interne", confidentiality=Confidentiality.INTERNAL
     )
     bodies = [m.body for m in visible_messages(case_alpha, researcher_a)]
     assert "Analyse interne" not in bodies
 
 
-def test_internal_message_hidden_from_organization(case_alpha, coordinator, dsi_alpha):
+def test_internal_message_hidden_from_organization(case_alpha, analyst, dsi_alpha):
+    from apps.coordination.workflow import CaseStatus
+
+    from .conftest import advance
+
     post_message(
-        case_alpha, coordinator, "Analyse interne", confidentiality=Confidentiality.INTERNAL
+        case_alpha,
+        None,
+        "Analyse interne",
+        confidentiality=Confidentiality.INTERNAL,
+        is_system=True,
     )
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
     bodies = [m.body for m in visible_messages(case_alpha, dsi_alpha)]
     assert "Analyse interne" not in bodies
 
 
-def test_restricted_message_hidden_from_analyst(case_alpha, coordinator, analyst):
-    post_message(
-        case_alpha,
-        coordinator,
-        "Note coordination nationale",
-        confidentiality=Confidentiality.RESTRICTED,
-    )
-    bodies = [m.body for m in visible_messages(case_alpha, analyst)]
-    assert "Note coordination nationale" not in bodies
+def test_coordinator_cannot_write_internal_notes(case_alpha, coordinator):
+    """Notes de triage et d'analyse : le coordinateur les lit sans les ecrire."""
+    from django.core.exceptions import PermissionDenied
+
+    with pytest.raises(PermissionDenied):
+        post_message(case_alpha, coordinator, "Note", confidentiality=Confidentiality.INTERNAL)
 
 
 def test_researcher_cannot_post_internal_message(case_alpha, researcher_a):
@@ -154,8 +170,13 @@ def test_researcher_cannot_post_internal_message(case_alpha, researcher_a):
         )
 
 
-def test_message_integrity_hash(case_alpha, coordinator):
-    message = post_message(case_alpha, coordinator, "Contenu original")
+def test_message_integrity_hash(case_alpha, triager):
+    from .conftest import claim
+
+    claim(case_alpha, triager)
+    message = post_message(
+        case_alpha, triager, "Contenu original", confidentiality=Confidentiality.RESEARCHER
+    )
     assert message.integrity_ok() is True
     message.body = "Contenu altere"
     assert message.integrity_ok() is False
@@ -163,7 +184,7 @@ def test_message_integrity_hash(case_alpha, coordinator):
 
 # ------------------------------------------------------------------------ PGP
 def test_private_key_block_is_refused():
-    with pytest.raises(PGPError, match="privee"):
+    with pytest.raises(PGPError, match="privée"):
         validate_public_key(
             "-----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n-----END PGP PRIVATE KEY BLOCK-----"
         )
@@ -179,13 +200,11 @@ def test_malformed_public_key_is_refused():
         validate_public_key("pas une cle")
 
 
-def test_valid_public_key_shape_is_accepted():
-    blob = (
-        "-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
-        "mQINBGX...\n"
-        "-----END PGP PUBLIC KEY BLOCK-----"
-    )
-    assert validate_public_key(blob) == blob
+def test_valid_public_key_is_accepted():
+    """La forme ne suffit plus : la cle est lue (voir tests/test_pgp_keys.py)."""
+    from .pgp_fixtures import VALID_KEY
+
+    assert validate_public_key(VALID_KEY) == VALID_KEY.strip()
 
 
 # ------------------------------------------------------------- audit immuable
@@ -254,3 +273,91 @@ def test_report_submission_is_rate_limited(client, settings, organization):
     for _ in range(2):
         client.post(url, payload)
     assert client.post(url, payload).status_code == 429
+
+
+def test_login_is_rate_limited_per_account_across_ip_addresses(client, researcher_a, settings):
+    """Changer d'IP a chaque essai ne contourne plus la limite."""
+    settings.EVDP = {
+        **settings.EVDP,
+        "RATE_LIMITS": {**settings.EVDP["RATE_LIMITS"], "login_account": "3/15m"},
+    }
+    url = reverse("accounts:login")
+    for i in range(3):
+        client.post(
+            url,
+            {"username": researcher_a.email.upper(), "password": "faux"},
+            REMOTE_ADDR=f"203.0.113.{i + 1}",
+        )
+    response = client.post(
+        url, {"username": researcher_a.email, "password": "faux"}, REMOTE_ADDR="203.0.113.99"
+    )
+    assert response.status_code == 429
+
+
+def test_successful_login_resets_the_counter(client, settings):
+    """reset() visait une fenetre inexistante pour une regle en minutes."""
+    from apps.core.ratelimit import hit, reset
+
+    settings.EVDP = {
+        **settings.EVDP,
+        "RATE_LIMITS": {**settings.EVDP["RATE_LIMITS"], "login": "2/5m"},
+    }
+    assert hit("login", "198.51.100.7", "2/5m")[0]
+    assert hit("login", "198.51.100.7", "2/5m")[0]
+    reset("login", "198.51.100.7")
+    assert hit("login", "198.51.100.7", "2/5m")[0]
+
+
+# ------------------------------------------------------ durcissements divers
+def test_export_links_follow_the_export_capability(client_for, triager, analyst):
+    """Le lien s'affichait a tout role national, menant a un 403 pour qui n'a
+    pas EXPORT_DATA."""
+    url = reverse("coordination:case_list")
+    assert "Export CSV" not in client_for(triager).get(url).content.decode()
+    assert "Export CSV" in client_for(analyst).get(url).content.decode()
+
+
+def test_api_search_and_bounties_are_throttled(client_for, analyst, monkeypatch):
+    """Sans throttle_scope, ScopedRateThrottle ne limitait pas ces vues."""
+    from django.core.cache import cache
+
+    from apps.api.throttling import ResilientScopedRateThrottle
+
+    cache.clear()
+    # DRF fige les debits a l'import de la classe : on les fixe sur elle.
+    monkeypatch.setattr(
+        ResilientScopedRateThrottle, "THROTTLE_RATES", {"authenticated": "2/day"}
+    )
+    client = client_for(analyst)
+    statuses = [client.get("/api/v1/search/", {"q": "x"}).status_code for _ in range(3)]
+    assert statuses == [200, 200, 429]
+    assert client.get("/api/v1/bounties/").status_code == 429
+
+
+def test_anonymous_report_never_asks_for_public_credit(organization):
+    from .conftest import build_report, submit
+
+    report = build_report(None, organization, is_anonymous=True, wants_credit=True)
+    report.reporter_email = "contact@exemple.bf"
+    case = submit(report)
+    case.report.refresh_from_db()
+    assert case.report.wants_credit is False
+
+
+def test_admin_cannot_delete_advisories_nor_edit_payout_details(rf, db):
+    from django.contrib.admin.sites import site
+
+    from apps.disclosures.models import Advisory
+    from apps.researchers.models import PayoutMethod, PayoutProfile
+
+    request = rf.get("/")
+    request.user = make_superuser()
+    assert not site._registry[Advisory].has_delete_permission(request)
+    for model, field in [(PayoutProfile, "legal_full_name"), (PayoutMethod, "account_number")]:
+        assert field in site._registry[model].get_readonly_fields(request)
+
+
+def make_superuser():
+    from .conftest import make_user
+
+    return make_user("root@test.bf", is_superuser=True, is_staff=True)

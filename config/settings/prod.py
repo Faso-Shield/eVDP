@@ -1,7 +1,10 @@
 """Reglages de production eVDP (durcis)."""
 
+from cryptography.fernet import Fernet
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F401,F403
-from .base import env
+from .base import _IMG_SRC, env
 
 DEBUG = False
 
@@ -10,11 +13,28 @@ SECRET_KEY = env("SECRET_KEY")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
+# Aucune cle derivee en production : elle doit etre generee et sauvegardee a
+# part (voir docs/deployment.md). Perdue, les donnees de versement le sont aussi.
+FIELD_ENCRYPTION_KEYS = env.list("FIELD_ENCRYPTION_KEY")
+for _key in FIELD_ENCRYPTION_KEYS:
+    try:
+        Fernet(_key)
+    except ValueError as _exc:
+        raise ImproperlyConfigured(
+            "FIELD_ENCRYPTION_KEY invalide : generez-la avec "
+            '`python -c "from cryptography.fernet import Fernet; '
+            'print(Fernet.generate_key().decode())"`.'
+        ) from _exc
+
 # TLS termine par Nginx : on fait confiance a l'en-tete transmis par le proxy.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+# Cookies "Secure" et upgrade-insecure-requests supposent le TLS actif, ce que
+# signale SECURE_SSL_REDIRECT. Sans TLS (instance en HTTP sur une IP locale),
+# le navigateur ne renvoie pas un cookie Secure : la connexion echouait, et
+# les feuilles de style etaient demandees en HTTPS inexistant.
+SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=SECURE_SSL_REDIRECT)
+CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=SECURE_SSL_REDIRECT)
 SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=31536000)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
@@ -24,15 +44,16 @@ CSP_DIRECTIVES = {
     "default-src": "'self'",
     "script-src": "'self'",
     "style-src": "'self' 'unsafe-inline'",
-    "img-src": "'self' data:",
+    "img-src": _IMG_SRC,
     "font-src": "'self' data:",
     "connect-src": "'self'",
     "frame-ancestors": "'none'",
     "base-uri": "'self'",
     "form-action": "'self'",
     "object-src": "'none'",
-    "upgrade-insecure-requests": "",
 }
+if SECURE_SSL_REDIRECT:
+    CSP_DIRECTIVES["upgrade-insecure-requests"] = ""
 
 STORAGES["staticfiles"] = {  # noqa: F405
     "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"

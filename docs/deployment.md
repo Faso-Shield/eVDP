@@ -31,7 +31,7 @@ sudo ufw allow 443/tcp
 sudo ufw enable
 ```
 
-Aucun autre port n'a besoin d'être ouvert : PostgreSQL, Redis et MinIO restent
+Aucun autre port n'a besoin d'être ouvert : PostgreSQL et Redis restent
 sur le réseau Docker interne.
 
 ### Utilisateur applicatif
@@ -58,6 +58,7 @@ chmod 600 .env
 ```dotenv
 DJANGO_SETTINGS_MODULE=config.settings.prod
 SECRET_KEY=<64 caractères générés aléatoirement>
+FIELD_ENCRYPTION_KEY=<clé Fernet, voir .env.example ; à sauvegarder hors de la base>
 DEBUG=False
 ALLOWED_HOSTS=vdp.exemple.bf
 CSRF_TRUSTED_ORIGINS=https://vdp.exemple.bf
@@ -66,8 +67,6 @@ SECURE_SSL_REDIRECT=True
 SECURE_HSTS_SECONDS=31536000
 
 POSTGRES_PASSWORD=<mot de passe fort>
-MINIO_ROOT_PASSWORD=<mot de passe fort>
-MINIO_SECRET_KEY=<identique>
 
 EMAIL_HOST=smtp.exemple.bf
 EMAIL_PORT=587
@@ -245,7 +244,7 @@ sudo crontab -u evdp -e
 
 ```cron
 0 2 * * * /home/evdp/evdp/scripts/backup_db.sh    >> /var/log/evdp-backup.log 2>&1
-0 3 * * * /home/evdp/evdp/scripts/backup_minio.sh >> /var/log/evdp-backup.log 2>&1
+0 3 * * * /home/evdp/evdp/scripts/backup_media.sh >> /var/log/evdp-backup.log 2>&1
 ```
 
 Les sauvegardes contiennent des **vulnérabilités non corrigées** : chiffrez-les
@@ -362,11 +361,13 @@ scrape_configs:
 ## 12. Checklist de mise en production
 
 - [ ] `SECRET_KEY` unique, généré aléatoirement, jamais commité
+- [ ] `FIELD_ENCRYPTION_KEY` générée et sauvegardée hors de la base
 - [ ] `DEBUG=False`
 - [ ] `ALLOWED_HOSTS` limité aux domaines réels
 - [ ] `CSRF_TRUSTED_ORIGINS` en `https://`
 - [ ] TLS actif, `SECURE_SSL_REDIRECT=True`, HSTS activé
-- [ ] Mots de passe PostgreSQL et MinIO forts et uniques
+- [ ] Mot de passe PostgreSQL fort et unique
+- [ ] Volume `evdp-media` sur un disque chiffré, sauvegardé (`backup_media.sh`)
 - [ ] Relais SMTP réel configuré, Mailpit retiré
 - [ ] ClamAV activé
 - [ ] `seed_demo` **non exécuté**

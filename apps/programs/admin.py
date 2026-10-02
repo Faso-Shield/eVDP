@@ -54,11 +54,11 @@ class ProgramAdmin(admin.ModelAdmin):
     autocomplete_fields = ["organization"]
     actions = ["activate", "pause"]
 
-    @admin.action(description="Activer les programmes selectionnes")
+    @admin.action(description="Activer les programmes sélectionnés")
     def activate(self, request, queryset):
         queryset.update(status="ACTIVE")
 
-    @admin.action(description="Suspendre les programmes selectionnes")
+    @admin.action(description="Suspendre les programmes sélectionnés")
     def pause(self, request, queryset):
         queryset.update(status="PAUSED")
 

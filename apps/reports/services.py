@@ -5,7 +5,7 @@ rapport, ouvre le Case correspondant, initialise la chronologie, les
 participants, les SLA et notifie les parties prenantes.
 """
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -24,12 +24,20 @@ from apps.coordination.workflow import CaseStatus
 from apps.core.middleware import get_client_ip
 from apps.core.utils import hash_text
 from apps.notifications.models import NotificationKind
-from apps.notifications.services import notify_external, notify_many
+from apps.notifications.services import notify_external
 from apps.programs.models import ProgramType
-from apps.vulnerabilities.constants import ReportSource, Severity
+from apps.vulnerabilities.constants import HIGH_URGENCY_SEVERITIES, ReportSource, Severity
 from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
 
 from .models import ReportStatus, VulnerabilityReport
+
+#: Canaux de soumission d'un declarant : une piece jointe y est exigee
+#: (workflow v2, etape 0). L'import CSAF et la saisie interne en sont exemptes :
+#: ils reprennent un avis deja publie, pas une preuve de declarant.
+ATTACHMENT_REQUIRED_SOURCES = (ReportSource.WEB, ReportSource.API)
+
+#: Nombre maximal de fichiers joints a la soumission.
+MAX_SUBMISSION_FILES = 5
 
 
 def _workflow_for(program):
@@ -48,12 +56,75 @@ def _severity_for(report):
     return report.reported_severity or Severity.MEDIUM, report.cvss_score
 
 
+def may_report(user):
+    """Qui peut declarer une vulnerabilite (web et API).
+
+    Un signaleur anonyme (sans compte), ou un compte chercheur : chercheur,
+    chercheur Bug Bounty ou utilisateur public (capacite SUBMIT_REPORT).
+    Jamais un compte metier : il traite les signalements, il ne les emet pas.
+    L'import CSAF, geste de l'analyste, n'est pas un signalement.
+    """
+    from apps.accounts.roles import Capability
+
+    if user is None or not user.is_authenticated:
+        return True
+    return user.has_capability(Capability.SUBMIT_REPORT)
+
+
+def _check_attachments(files, source):
+    """Controle serveur : au moins une piece jointe valide (web et API)."""
+    from apps.attachments.services import validate_upload
+
+    files = list(files or [])
+    if source in ATTACHMENT_REQUIRED_SOURCES and not files:
+        raise ValidationError(
+            {
+                "attachments": "Au moins une pièce jointe est obligatoire pour soumettre un rapport."
+            }
+        )
+    if len(files) > MAX_SUBMISSION_FILES:
+        raise ValidationError(
+            {
+                "attachments": f"{MAX_SUBMISSION_FILES} pièces jointes au maximum à la soumission."
+            }
+        )
+    # Tous les fichiers sont valides avant d'ecrire quoi que ce soit : un
+    # rapport n'est jamais cree avec une partie seulement de ses preuves.
+    for uploaded in files:
+        try:
+            validate_upload(uploaded)
+        except ValidationError as exc:
+            raise ValidationError(
+                {
+                    "attachments": f"Pièce jointe « {uploaded.name} » refusée : "
+                    + "; ".join(exc.messages)
+                }
+            ) from exc
+        uploaded.seek(0)
+    return files
+
+
 @transaction.atomic
-def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
+def submit_report(
+    report, request=None, source=ReportSource.WEB, reporter=None, attachments=None
+):
     """Enregistre un rapport soumis et cree le Case associe.
 
     Le rapport reste prive : aucune donnee n'est rendue publique ici.
+    `attachments` : fichiers televerses avec le rapport. Au moins un est exige
+    pour le formulaire web et l'API (controle serveur, pas seulement HTML).
     """
+    files = _check_attachments(attachments, source)
+    if (
+        source in ATTACHMENT_REQUIRED_SOURCES
+        and reporter is not None
+        and reporter.is_authenticated
+        and not may_report(reporter)
+    ):
+        raise PermissionDenied(
+            "Les comptes métiers ne déclarent pas de vulnérabilité : le signalement "
+            "est réservé aux chercheurs et aux signaleurs anonymes."
+        )
     if reporter is not None and reporter.is_authenticated:
         report.reporter = reporter
 
@@ -67,6 +138,9 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
         if motif:
             raise ValidationError({"program": motif})
 
+    if report.is_anonymous:
+        # Le credit public nommerait un declarant qui a choisi l'anonymat.
+        report.wants_credit = False
     report.source = source
     report.status = ReportStatus.SUBMITTED
     report.submitted_at = timezone.now()
@@ -105,7 +179,7 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
     add_timeline_event(
         case,
         TimelineEventType.REPORT_RECEIVED,
-        "Rapport recu",
+        "Rapport reçu",
         actor=report.reporter,
         occurred_at=report.submitted_at,
     )
@@ -114,6 +188,12 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
     ensure_default_participants(case)
     schedule_initial_sla(case)
     case.refresh_priority()
+
+    from apps.attachments.services import store_attachment
+
+    uploader = reporter if reporter is not None and reporter.is_authenticated else None
+    for uploaded in files:
+        store_attachment(uploaded, uploader, case=case, report=report, request=request)
 
     log_action(
         AuditAction.REPORT_SUBMITTED,
@@ -136,6 +216,33 @@ def submit_report(report, request=None, source=ReportSource.WEB, reporter=None):
     return case
 
 
+def _alert_on_high_urgency(case):
+    """Critique ou elevee : coordinateurs et analystes sont prevenus des
+    l'arrivee, pour anticiper la suite. Ils ne voient pas encore le dossier
+    (triage en cours) : l'avis mene a leur tableau de bord, pas au dossier.
+    """
+    from django.urls import reverse
+
+    from apps.accounts.models import User
+    from apps.accounts.roles import Role
+    from apps.notifications.models import NotificationKind
+    from apps.notifications.services import notify_many
+
+    if case.severity not in HIGH_URGENCY_SEVERITIES:
+        return []
+    recipients = User.objects.filter(
+        is_active=True, role__in=[Role.NATIONAL_COORDINATOR, Role.CSIRT_ANALYST]
+    )
+    return notify_many(
+        recipients,
+        NotificationKind.REPORT_RECEIVED,
+        case=case,
+        title=f"[{case.case_id}] Signalement {case.get_severity_display().lower()} en triage",
+        body="Sévérité déclarée par le signaleur, à confirmer au triage.",
+        url=reverse("dashboard:home"),
+    )
+
+
 def _notify_new_case(case, report):
     """Avise l'equipe de coordination et accuse reception au declarant.
 
@@ -146,14 +253,13 @@ def _notify_new_case(case, report):
     sur `case.tracking_token_raw` pour un affichage unique a l'ecran (voir
     apps.reports.views.submit).
     """
-    from apps.accounts.models import User
-    from apps.accounts.roles import Role
+    from apps.coordination.services import auto_claim, notify_step_owners
 
-    triage_team = User.objects.filter(
-        is_active=True,
-        role__in=[Role.CSIRT_ANALYST, Role.TRIAGER, Role.NATIONAL_COORDINATOR],
-    )
-    notify_many(triage_team, NotificationKind.REPORT_RECEIVED, case=case)
+    # Etape 1 : le dossier est confie a l'agent de triage le moins charge,
+    # seul avise dans la plateforme et par email.
+    auto_claim(case)
+    notify_step_owners(case)
+    _alert_on_high_urgency(case)
 
     if report.reporter_id:
         from apps.notifications.services import notify

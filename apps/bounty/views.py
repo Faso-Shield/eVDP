@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
+from django.db.models import Count, Sum
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -11,7 +12,11 @@ from django.views.decorators.http import require_POST
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability
 from apps.attachments.views import safe_filename
+from apps.audit.models import AuditAction
+from apps.audit.services import log_action
 from apps.coordination.models import Case
+from apps.coordination.services import perform_action
+from apps.coordination.workflow import TransitionNotAllowed
 
 from .forms import (
     BountyDecisionForm,
@@ -21,47 +26,89 @@ from .forms import (
     PaymentForm,
     SettlementForm,
 )
-from .models import Bounty, BountyPayment
+from .models import BountyPayment, BountyStatus
 from .services import (
     SETTLEMENT_ELIGIBLE_CASE_STATUSES,
-    approve_bounty,
     authorize_proof_download,
+    bounty_context,
     budget_status,
+    can_request_payout_details,
     confirm_settlement,
+    last_payout_request,
     mark_payment_failed,
-    propose_bounty,
+    payout_readiness,
     record_payment,
     reject_bounty,
+    request_payout_details,
     review_bounty,
     suggested_amount,
+    suggestion_for,
+    visible_bounties,
 )
 
 
 def _visible_bounties(user):
     """Isolation : chaque profil ne voit que les recompenses de son perimetre."""
-    queryset = Bounty.objects.select_related("case", "program", "researcher")
-    if user.is_national:
-        return queryset
-    case_ids = Case.objects.visible_to(user).values_list("id", flat=True)
-    return queryset.filter(case_id__in=case_ids)
+    return visible_bounties(user)
 
 
 def _get_bounty(request, bounty_id):
-    bounty = get_object_or_404(
-        Bounty.objects.select_related("case", "program", "researcher"), pk=bounty_id
-    )
-    if not bounty.case.is_visible_to(request.user):
-        raise Http404("Recompense introuvable.")
-    return bounty
+    """Prime du perimetre de l'utilisateur (visible_bounties), sinon 404.
+
+    Le perimetre des primes suffit : un versement a traiter reste accessible
+    a qui l'enregistre, meme une fois le dossier sorti de son etape.
+    """
+    return get_object_or_404(_visible_bounties(request.user), pk=bounty_id)
 
 
 def _get_payment(request, payment_id):
-    payment = get_object_or_404(
-        BountyPayment.objects.select_related("bounty__case"), pk=payment_id
+    return get_object_or_404(
+        BountyPayment.objects.select_related("bounty__case"),
+        pk=payment_id,
+        bounty__in=_visible_bounties(request.user),
     )
-    if not payment.bounty.case.is_visible_to(request.user):
-        raise Http404("Versement introuvable.")
-    return payment
+
+
+#: Etapes d'une recompense, dans l'ordre (libelle, statuts atteints).
+_TRACK = [
+    ("Proposée", ("PENDING", "UNDER_REVIEW")),
+    ("Approuvée et créditée", ("APPROVED",)),
+    ("Versement enregistré", ("PAYMENT_PENDING",)),
+    ("Réglée", ("PAID",)),
+]
+
+
+def _bounty_track(bounty):
+    """Frise d'avancement de la recompense (etapes faites, en cours, a venir)."""
+    order = [statuses for _label, statuses in _TRACK]
+    current = next((i for i, st in enumerate(order) if bounty.status in st), None)
+    return [
+        {
+            "label": label,
+            "done": current is not None and index < current,
+            "current": index == current,
+        }
+        for index, (label, _statuses) in enumerate(_TRACK)
+    ]
+
+
+@require_POST
+@login_required
+@require_not_read_only
+def request_payout(request, bounty_id):
+    """Relance le chercheur pour qu'il complete ses coordonnees de paiement."""
+    bounty = _get_bounty(request, bounty_id)
+    try:
+        request_payout_details(bounty, request.user, request=request)
+    except (PermissionDenied, ValidationError) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(
+            request,
+            "Le chercheur a été notifié (plateforme et email) de compléter ses "
+            "coordonnées de paiement.",
+        )
+    return redirect("bounty:detail", bounty_id=bounty.pk)
 
 
 def _instruit_les_recompenses(user):
@@ -77,19 +124,57 @@ def _instruit_les_recompenses(user):
     )
 
 
+#: Onglets de la liste : cle -> (libelle, statuts regroupes).
+BOUNTY_TABS = {
+    "pending": ("En attente", [BountyStatus.PENDING, BountyStatus.UNDER_REVIEW]),
+    "approved": ("Approuvées", [BountyStatus.APPROVED, BountyStatus.PAYMENT_PENDING]),
+    "paid": ("Payées", [BountyStatus.PAID]),
+    "closed": ("Rejetées ou annulées", [BountyStatus.REJECTED, BountyStatus.CANCELLED]),
+}
+
+
+def _bounty_indicators(bounties):
+    """Nombres par groupe et montant verse par devise, sur le perimetre visible."""
+    counts = {
+        row["status"]: row["total"]
+        for row in bounties.order_by().values("status").annotate(total=Count("id"))
+    }
+    paid = (
+        bounties.filter(status=BountyStatus.PAID)
+        .order_by()
+        .values("currency")
+        .annotate(total=Sum("approved_amount"))
+        .order_by("currency")
+    )
+    return {
+        "total": sum(counts.values()),
+        "groups": {
+            key: sum(counts.get(status, 0) for status in statuses)
+            for key, (_label, statuses) in BOUNTY_TABS.items()
+        },
+        "paid": [(row["currency"], row["total"] or 0) for row in paid],
+    }
+
+
 @login_required
 def bounty_list(request):
-    queryset = _visible_bounties(request.user).order_by("-created_at")
-    status = request.GET.get("status", "").upper()
-    if status:
-        queryset = queryset.filter(status=status)
+    visible = _visible_bounties(request.user)
+    queryset = visible.order_by("-created_at")
+    selected = request.GET.get("status", "")
+    if selected in BOUNTY_TABS:
+        queryset = queryset.filter(status__in=BOUNTY_TABS[selected][1])
+    elif selected.upper() in BountyStatus.values:
+        # Filtre par statut exact : liens deja diffuses.
+        queryset = queryset.filter(status=selected.upper())
     page = Paginator(queryset, 25).get_page(request.GET.get("page"))
     return render(
         request,
         "bounty/list.html",
         {
             "page_obj": page,
-            "selected_status": status,
+            "selected_status": selected,
+            "tabs": [(key, label) for key, (label, _statuses) in BOUNTY_TABS.items()],
+            "indicators": _bounty_indicators(visible),
             "peut_instruire": _instruit_les_recompenses(request.user),
         },
     )
@@ -112,7 +197,15 @@ def bounty_detail(request, bounty_id):
             and bounty.proposed_by_id != request.user.pk
         ),
         "can_pay": can_pay,
+        "track": _bounty_track(bounty),
     }
+    if peut_instruire or can_pay or bounty.researcher_id == request.user.pk:
+        # Etat du portefeuille : le beneficiaire voit ce qui lui manque, qui
+        # instruit ou paie voit s'il faut le relancer.
+        contexte["payout"] = payout_readiness(bounty.researcher)
+    if can_request_payout_details(request.user) and bounty.researcher_id:
+        contexte["can_request_payout"] = not contexte["payout"]["ready"]
+        contexte["last_payout_request"] = last_payout_request(bounty)
     # Les elements d'instruction ne sont pas seulement masques par le gabarit :
     # ils ne quittent pas la base pour un compte qui n'a pas a les lire. Le
     # budget du programme en fait partie - il ne regarde pas le beneficiaire.
@@ -127,6 +220,7 @@ def bounty_detail(request, bounty_id):
                 "payment_form": PaymentForm(initial={"amount": bounty.approved_amount}),
                 "within_policy": bounty.within_policy(),
                 "budget": budget_status(bounty),
+                "decision": bounty_context(bounty.case),
             }
         )
     # Le portefeuille du chercheur ne regarde que qui va effectivement payer :
@@ -143,6 +237,18 @@ def bounty_detail(request, bounty_id):
             if payout_profile
             else None
         )
+        # Reference de paiement en clair (nom legal et moyen principal) : elle
+        # sert a qui execute et rapproche le versement (RECORD_PAYMENT, le
+        # Coordinateur). Workflow v2 : jamais au super admin, qui n'a acces ni
+        # aux dossiers ni au Wallet. Chaque consultation est journalisee.
+        if contexte["payout_method"]:
+            log_action(
+                AuditAction.PAYOUT_REFERENCE_VIEWED,
+                actor=request.user,
+                obj=contexte["payout_method"],
+                request=request,
+                case=bounty.case.case_id,
+            )
         contexte["settlement_form"] = SettlementForm()
         contexte["failure_form"] = PaymentFailureForm()
         contexte["settlement_eligible"] = (
@@ -164,13 +270,19 @@ def propose(request, case_id):
         form = BountyProposalForm(request.POST)
         if form.is_valid():
             try:
-                bounty = propose_bounty(
+                perform_action(
                     case,
+                    "propose_bounty",
                     request.user,
-                    amount=form.cleaned_data["amount"],
-                    justification=form.cleaned_data.get("justification", ""),
+                    data={
+                        "amount": form.cleaned_data["amount"],
+                        "justification": form.cleaned_data.get("justification", ""),
+                    },
                     request=request,
                 )
+                bounty = case.bounty
+            except TransitionNotAllowed as exc:
+                messages.error(request, str(exc))
             except (PermissionDenied, ValidationError) as exc:
                 messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
             else:
@@ -182,14 +294,20 @@ def propose(request, case_id):
     return render(
         request,
         "bounty/propose.html",
-        {"case": case, "form": form, "suggested": default_amount, "currency": currency},
+        {
+            "case": case,
+            "form": form,
+            "suggested": default_amount,
+            "currency": currency,
+            "suggestion": suggestion_for(case),
+        },
     )
 
 
 @require_POST
 @login_required
 @require_not_read_only
-@require_capability(Capability.PROPOSE_BOUNTY)
+@require_capability(Capability.PROPOSE_BOUNTY, Capability.APPROVE_BOUNTY)
 def review(request, bounty_id):
     bounty = _get_bounty(request, bounty_id)
     form = BountyReviewForm(request.POST)
@@ -220,14 +338,19 @@ def approve(request, bounty_id):
     form = BountyDecisionForm(request.POST)
     if form.is_valid():
         try:
-            approve_bounty(
-                bounty,
+            perform_action(
+                bounty.case,
+                "approve_bounty",
                 request.user,
-                amount=form.cleaned_data.get("amount"),
-                note=form.cleaned_data.get("note", ""),
+                data={
+                    "amount": form.cleaned_data.get("amount"),
+                    "comment": form.cleaned_data.get("note", ""),
+                },
                 request=request,
             )
-            messages.success(request, "Récompense approuvée.")
+            messages.success(request, "Récompense approuvée et Wallet crédité.")
+        except TransitionNotAllowed as exc:
+            messages.error(request, str(exc))
         except (PermissionDenied, ValidationError) as exc:
             messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
@@ -275,13 +398,13 @@ def payment(request, bounty_id):
             if recorded.payout_warning:
                 messages.warning(
                     request,
-                    f"Versement enregistre, mais {recorded.payout_warning} "
-                    "cote portefeuille : verifiez aupres du chercheur avant "
-                    "d'executer le versement reel.",
+                    f"Versement enregistré, mais {recorded.payout_warning} "
+                    "côté portefeuille : vérifiez auprès du chercheur avant "
+                    "d'exécuter le versement réel.",
                 )
             messages.success(
                 request,
-                "Versement enregistre. Aucun flux financier réel n'est déclenché "
+                "Versement enregistré. Aucun flux financier réel n'est déclenché "
                 "par la plateforme.",
             )
         except (PermissionDenied, ValidationError) as exc:

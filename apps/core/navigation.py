@@ -46,7 +46,7 @@ def landing_route(user):
     return "dashboard:researcher"
 
 
-def sidebar_sections(user):
+def sidebar_sections(user, claims_count=0):
     """Sections du menu pour `user`, vides s'il n'est pas authentifie.
 
     Rend une liste de `(titre, liens)`. Le titre vaut None pour une entree
@@ -72,6 +72,10 @@ def sidebar_sections(user):
     ]:
         if ouverte and route != atterrissage:
             espace.append(_lien(libelle, route))
+    # Meme garde que la vue : dashboard.views.map_view (carte nationale, ou
+    # reduite aux organisations du compte pour un DSI).
+    if peut(C.VIEW_MAP) or peut(C.VIEW_ORG_MAP):
+        espace.append(_lien("Cartographie", "dashboard:map"))
     # Le portefeuille de versement est une page a part, pas un tableau de
     # bord : il est liste meme quand « Espace chercheur » est l'atterrissage.
     # La condition reprend la garde de la vue, require_roles(*RESEARCHER_ROLES).
@@ -86,6 +90,10 @@ def sidebar_sections(user):
             (
                 "Coordination",
                 [
+                    {
+                        "label": f"Mes prises en charge ({claims_count})",
+                        "url": reverse("coordination:my_claims"),
+                    },
                     _lien("Dossiers", "coordination:case_list"),
                     _lien("Kanban", "coordination:kanban"),
                     _lien("Recherche globale", "dashboard:search"),
@@ -106,6 +114,10 @@ def sidebar_sections(user):
     administration = []
     if peut(C.MANAGE_ORGANIZATION) or peut(C.MANAGE_ALL_ORGANIZATIONS):
         administration.append(_lien("Organisations", "organizations:manage_list"))
+    if peut(C.MANAGE_USERS):
+        administration.append(_lien("Comptes", "accounts:user_manage_list"))
+    if peut(C.MANAGE_PGP_KEYS):
+        administration.append(_lien("Clé PGP nationale", "core:pgp_key_manage"))
     if peut(C.VIEW_AUDIT_LOG):
         administration.append(_lien("Journal d'audit", "audit:list"))
     if user.is_staff:

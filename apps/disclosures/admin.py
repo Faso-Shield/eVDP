@@ -46,7 +46,7 @@ def _apply(modeladmin, request, queryset, service, success_label, **kwargs):
 
 @admin.action(description="Publier l'advisory")
 def action_publish(modeladmin, request, queryset):
-    _apply(modeladmin, request, queryset, publish_advisory, "publie(s)")
+    _apply(modeladmin, request, queryset, publish_advisory, "publié(s)")
 
 
 @admin.action(description="Retirer l'advisory")
@@ -56,7 +56,7 @@ def action_retract(modeladmin, request, queryset):
         request,
         queryset,
         retract_advisory,
-        "retire(s)",
+        "retiré(s)",
         reason="Retrait depuis l'administration.",
     )
 
@@ -86,3 +86,8 @@ class AdvisoryAdmin(admin.ModelAdmin):
     inlines = [AdvisoryTimelineInline, AdvisoryReferenceInline]
     date_hierarchy = "created_at"
     actions = [action_publish, action_retract]
+
+    def has_delete_permission(self, request, obj=None):
+        # Un advisory publie est une reference publique (CVE, CSAF) : on le
+        # retire avec un motif, on ne l'efface pas.
+        return False

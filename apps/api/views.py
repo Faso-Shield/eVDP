@@ -4,14 +4,18 @@ Toutes les listes partent d'un queryset filtre par le perimetre de
 l'utilisateur : aucune vue ne renvoie de donnee hors habilitation.
 """
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.views import SpectacularRedocView
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.accounts.permissions import HasCapability, ReadOnlyForAuditors
@@ -19,15 +23,20 @@ from apps.accounts.roles import Capability
 from apps.attachments.services import store_attachment
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
-from apps.bounty.models import Bounty
 from apps.coordination.constants import Confidentiality
 from apps.coordination.models import Case
 from apps.coordination.selectors import search_cases, visible_cases
-from apps.coordination.services import post_message, transition_case, visible_messages
-from apps.coordination.workflow import TransitionNotAllowed
+from apps.coordination.services import (
+    perform_action,
+    post_message,
+    transition_case,
+    visible_messages,
+)
+from apps.coordination.workflow import OutOfScope, TransitionNotAllowed
 from apps.disclosures.models import Advisory
 from apps.organizations.models import Organization, OrganizationStatus
 from apps.programs.models import Program
+from apps.programs.permissions import can_manage_program
 from apps.reports.services import submit_report
 from apps.researchers.models import IdentityMode, ResearcherProfile
 from apps.vulnerabilities.constants import ReportSource
@@ -46,6 +55,16 @@ from .serializers import (
     ReportSubmissionSerializer,
     ResearcherSerializer,
 )
+
+
+def _workflow_payload(raw):
+    """Donnees d'une action de workflow, validees comme dans l'interface web."""
+    from apps.coordination.forms import WorkflowActionForm
+
+    form = WorkflowActionForm(raw)
+    if not form.is_valid():
+        raise DRFValidationError(form.errors)
+    return form.workflow_data()
 
 
 class ReportViewSet(
@@ -85,16 +104,40 @@ class ReportViewSet(
     @extend_schema(
         request=ReportSubmissionSerializer,
         responses={201: CaseDetailSerializer},
-        description="Soumet un rapport de vulnerabilite et cree le Case associe.",
+        description="Soumet un rapport de vulnérabilité et crée le Case associé.",
     )
     def create(self, request, *args, **kwargs):
+        """Soumission : multipart, avec au moins un fichier `attachments`.
+
+        Rapport, case et pieces jointes sont crees dans une seule transaction :
+        une soumission refusee (piece jointe absente ou invalide) ne laisse
+        aucun rapport orphelin.
+        """
+        from apps.reports.services import may_report
+
+        if not may_report(request.user):
+            return Response(
+                {
+                    "detail": "Les comptes métiers ne déclarent pas de vulnérabilité : "
+                    "le signalement est réservé aux chercheurs et aux signaleurs anonymes."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = ReportSubmissionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        report = serializer.save(reporter=request.user)
-        case = submit_report(
-            report, request=request, source=ReportSource.API, reporter=request.user
+        with transaction.atomic():
+            report = serializer.save(reporter=request.user)
+            case = submit_report(
+                report,
+                request=request,
+                source=ReportSource.API,
+                reporter=request.user,
+                attachments=request.FILES.getlist("attachments"),
+            )
+        return Response(
+            CaseDetailSerializer(case, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
         )
-        return Response(CaseDetailSerializer(case).data, status=status.HTTP_201_CREATED)
 
     def get_object(self):
         case = get_object_or_404(
@@ -106,8 +149,12 @@ class ReportViewSet(
         return case
 
     def perform_update(self, serializer):
+        from apps.coordination.services import QUALIFICATION_EDITABLE_STATES
+
         if not self.request.user.has_capability(Capability.SET_SEVERITY):
             raise PermissionDenied("Capacité requise pour modifier ce dossier.")
+        if serializer.instance.status not in QUALIFICATION_EDITABLE_STATES:
+            raise DRFValidationError("La qualification n'est plus modifiable à cette étape.")
         case = serializer.save()
         log_action(
             AuditAction.CASE_UPDATED,
@@ -136,7 +183,7 @@ class ReportViewSet(
                 request.user,
                 serializer.validated_data["body"],
                 confidentiality=serializer.validated_data.get(
-                    "confidentiality", Confidentiality.PARTICIPANTS
+                    "confidentiality", Confidentiality.RESEARCHER
                 ),
                 request=request,
             )
@@ -165,8 +212,13 @@ class ReportViewSet(
     )
     def attachments(self, request, case_id=None):
         case = self.get_object()
+        from apps.coordination.visibility import has_content_access, visible_attachments
+
         if request.method == "GET":
-            return Response(AttachmentSerializer(case.attachments.all(), many=True).data)
+            attachments = visible_attachments(case, request.user)
+            return Response(AttachmentSerializer(attachments, many=True).data)
+        if not has_content_access(case, request.user):
+            raise NotFound("Ressource introuvable.")
         uploaded = request.FILES.get("file")
         if uploaded is None:
             return Response(
@@ -198,6 +250,7 @@ class ReportViewSet(
     )
     @action(detail=True, methods=["post"], url_path="transition")
     def transition(self, request, case_id=None):
+        """Compatibilite : applique l'action menant au statut demande."""
         case = self.get_object()
         target = request.data.get("target_status", "")
         try:
@@ -207,10 +260,69 @@ class ReportViewSet(
                 request.user,
                 comment=request.data.get("comment", ""),
                 request=request,
+                data=_workflow_payload(request.data),
             )
+        except OutOfScope as exc:
+            raise NotFound("Ressource introuvable.") from exc
         except TransitionNotAllowed as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(CaseDetailSerializer(case).data)
+            return Response(
+                {"detail": str(exc), "missing": exc.missing},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(CaseDetailSerializer(case, context={"request": request}).data)
+
+    @extend_schema(
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string"},
+                    "comment": {"type": "string"},
+                },
+            }
+        },
+        responses={
+            200: CaseDetailSerializer,
+            400: OpenApiResponse(description="Action refusée (pré-requis listés)"),
+        },
+        description=(
+            "Exécute une action du workflow v2 (bouton principal, prime ou "
+            "action secondaire). Mêmes contrôles que l'interface web."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="actions")
+    def workflow_action(self, request, case_id=None):
+        case = self.get_object()
+        try:
+            perform_action(
+                case,
+                request.data.get("action", ""),
+                request.user,
+                data=_workflow_payload(request.data),
+                request=request,
+            )
+        except OutOfScope as exc:
+            raise NotFound("Ressource introuvable.") from exc
+        except TransitionNotAllowed as exc:
+            return Response(
+                {"detail": str(exc), "missing": exc.missing},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(CaseDetailSerializer(case, context={"request": request}).data)
+
+
+class CanManageProgram(BasePermission):
+    """Controle l'objet vise, que HasCapability ne regarde pas.
+
+    La liste d'un compte d'organisation inclut les programmes publics des
+    autres organisations : sans ce controle, un DSI pouvait les modifier ou
+    les supprimer par l'API.
+    """
+
+    message = "Vous ne pouvez gérer que les programmes de votre organisation."
+
+    def has_object_permission(self, request, view, obj):
+        return can_manage_program(request.user, obj)
 
 
 class ProgramViewSet(viewsets.ModelViewSet):
@@ -222,7 +334,7 @@ class ProgramViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return [AllowAny()]
-        return [IsAuthenticated(), HasCapability(), ReadOnlyForAuditors()]
+        return [IsAuthenticated(), HasCapability(), ReadOnlyForAuditors(), CanManageProgram()]
 
     @property
     def required_capabilities(self):
@@ -323,25 +435,44 @@ class ResearcherViewSet(
 class BountyViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = BountySerializer
     permission_classes = [IsAuthenticated]
+    # Sans scope, ScopedRateThrottle ne limite rien.
+    throttle_scope = "authenticated"
     filterset_fields = ["status", "severity"]
 
     def get_queryset(self):
-        user = self.request.user
-        queryset = Bounty.objects.select_related("case")
+        from apps.bounty.services import visible_bounties
+
         # Generation du schema OpenAPI : aucun utilisateur authentifie.
-        if not user.is_authenticated:
-            return queryset.none()
-        if user.is_national:
-            return queryset
-        case_ids = Case.objects.visible_to(user).values_list("id", flat=True)
-        return queryset.filter(case_id__in=case_ids)
+        return visible_bounties(self.request.user)
 
 
 class SearchView(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
+    throttle_scope = "authenticated"
 
     @extend_schema(responses={200: CaseListSerializer(many=True)})
     def list(self, request):
         query = (request.query_params.get("q") or "").strip()
         cases = search_cases(request.user, query=query)[:50] if query else []
-        return Response(CaseListSerializer(cases, many=True).data)
+        return Response(
+            CaseListSerializer(cases, many=True, context={"request": request}).data
+        )
+
+
+class RedocView(SpectacularRedocView):
+    """Redoc sous la CSP du site, plus les workers « blob: ».
+
+    Redoc indexe sa recherche dans un worker cree depuis un blob, que
+    script-src 'self' interdit. L'exception vaut pour cette seule page : le
+    middleware de securite garde la CSP deja posee par la vue.
+    """
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        directives = dict(getattr(settings, "CSP_DIRECTIVES", {}) or {})
+        if directives:
+            directives["worker-src"] = "'self' blob:"
+            response["Content-Security-Policy"] = "; ".join(
+                f"{name} {value}".strip() for name, value in directives.items()
+            )
+        return response

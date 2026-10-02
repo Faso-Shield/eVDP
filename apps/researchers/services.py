@@ -188,7 +188,7 @@ def set_primary_payout_method(method, actor, request=None):
     if actor.pk != method.profile.user_id:
         raise PermissionDenied("Vous ne pouvez modifier que votre propre portefeuille.")
     if not method.is_active:
-        raise ValidationError("Un moyen retire ne peut pas devenir principal.")
+        raise ValidationError("Un moyen retiré ne peut pas devenir principal.")
     method.is_primary = True
     method.save(update_fields=["is_primary", "updated_at"])
     log_action(
@@ -248,7 +248,7 @@ def validate_id_document(uploaded_file):
     if extension not in ID_DOCUMENT_ALLOWED_EXTENSIONS:
         allowed = ", ".join(sorted(ID_DOCUMENT_ALLOWED_EXTENSIONS))
         raise ValidationError(
-            f"Format non accepte : .{extension or '?'}. Formats acceptes : {allowed}."
+            f"Format non accepté : .{extension or '?'}. Formats acceptés : {allowed}."
         )
 
     head = uploaded_file.read(8)
@@ -256,7 +256,7 @@ def validate_id_document(uploaded_file):
     for magic in _DANGEROUS_MAGIC:
         if head.startswith(magic):
             raise ValidationError(
-                "Le contenu du fichier ne correspond pas a un document valide."
+                "Le contenu du fichier ne correspond pas à un document valide."
             )
 
     guessed, _ = mimetypes.guess_type(name)

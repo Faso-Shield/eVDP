@@ -34,14 +34,16 @@ leurs justifications. Les diagrammes Mermaid sont dans `docs/diagrams/`.
                           └──────┬──────┘            └──────────────┘
                                  │
                           ┌──────▼──────┐        ┌──────────────┐
-                          │ evdp-minio  │        │ evdp-mailpit │
-                          │ pièces      │        │ emails (dev) │
-                          │ jointes     │        └──────────────┘
+                          │ evdp-media  │        │ evdp-mailpit │
+                          │ (volume)    │        │ emails (dev) │
+                          │ pièces j.   │        └──────────────┘
                           └─────────────┘
 ```
 
-Seul `evdp-nginx` publie un port. PostgreSQL, Redis et MinIO restent
-strictement sur le réseau interne `evdp-backend`.
+Seul `evdp-nginx` publie un port. PostgreSQL et Redis restent
+strictement sur le réseau interne `evdp-backend`. Les pièces jointes sont
+stockées sur disque, dans le volume `evdp-media` partagé par `evdp-web` et
+`evdp-worker` ; Nginx ne les sert jamais.
 
 ---
 
@@ -76,10 +78,12 @@ La distinction métier reste stricte : le workflow appliqué est déterminé par
 
 ### DA-3 — Machine à états déclarative
 
-`apps/coordination/workflow.py` déclare deux tables de transitions
-(`VDP_TRANSITIONS`, `BOUNTY_TRANSITIONS`) et une table de capacités requises
-(`TRANSITION_CAPABILITIES`). `check_transition()` est le seul point de
-décision.
+`apps/coordination/workflow.py` déclare la table des actions du workflow v2
+(`ACTIONS` : un bouton, une capacité, ses pré-requis et sa règle des quatre
+yeux), dont dérivent `VDP_TRANSITIONS` (statut du dossier) et
+`BOUNTY_TRANSITIONS` (statut de prime, champ distinct). `check_transition()`
+est le seul point de décision ; `apps/coordination/visibility.py` porte la
+matrice de visibilité des données. Voir `docs/cvd-workflow.md`.
 
 *Pourquoi :* une machine à états déclarative est testable exhaustivement et
 lisible par un auditeur non développeur. Aucune transition n'est possible sans
@@ -134,10 +138,14 @@ limitation s'ouvre et l'incident est journalisé en `WARNING` sur le logger
 ne coupe pas le canal national de signalement. La supervision doit alerter sur
 `cache_unavailable` / `throttle_backend_unavailable`. Voir `docs/security.md`.
 
-### DA-9 — Aucune clé privée côté serveur
+### DA-9 — Aucune clé privée en clair côté serveur
 
 Seules des clés publiques armurées sont stockées. `apps/core/pgp.py` refuse
-tout bloc contenant une clé privée (PGP, RSA, OpenSSH). La vérification
+tout bloc contenant une clé privée (PGP, RSA, OpenSSH). La paire nationale est
+générée dans le navigateur du gestionnaire ; sa remise à un membre de l'équipe
+nationale transite par eVDP chiffrée par un code de remise aléatoire qu'eVDP ne
+reçoit jamais (message OpenPGP par mot de passe, seul format accepté), puis
+est effacée à la récupération, à l'annulation ou après 24 heures. La vérification
 cryptographique est déléguée à un backend optionnel (`python-gnupg`), derrière
 une interface stable permettant une bascule vers un HSM sans changement
 d'appelant.
@@ -167,7 +175,7 @@ apps/
 ├── reports/         Rapport déclaré, formulaire public, service de soumission
 ├── coordination/    Case management, machine à états, messagerie, SLA,
 │                    chronologie, tâches Celery
-├── attachments/     Validation, stockage MinIO, téléchargement contrôlé,
+├── attachments/     Validation, stockage disque, téléchargement contrôlé,
 │                    analyse antivirus
 ├── bounty/          Récompenses, revues, versements
 ├── disclosures/     Advisories : rédaction, cycle de vie, publication
@@ -215,7 +223,7 @@ workflow + audit + notification + SLA.
 | `vulnerability_reports` | `reports.VulnerabilityReport` | Déclaration brute |
 | `cases` | `coordination.Case` | Dossier de traitement |
 | `case_status_history` | `CaseStatusHistory` | Historique des transitions |
-| `case_assignments` | `CaseAssignment` | Assignations |
+| `case_assignments` | `CaseAssignment` | Prises en charge (une active par rôle) |
 | `case_participants` | `CaseParticipant` | Liste blanche d'accès |
 | `case_messages` | `CaseMessage` | Messagerie, hash d'intégrité |
 | `case_timeline_events` | `CaseTimelineEvent` | Chronologie |
@@ -308,9 +316,10 @@ et `RewardTier` n'ont pas d'autre chemin d'écriture que leur `ModelForm`.
 ### Transition de statut
 
 ```
-coordination.services.transition_case()
+coordination.services.perform_action()   (transition_case() : compatibilité)
    ├── check_transition()  ← hors transaction, refus audité durablement
-   └── _apply_transition() ← atomique
+   │     transition existante, capacité, périmètre (404), pré-requis, quatre yeux
+   └── _apply_action()     ← atomique
         ├── met à jour statut et horodatages
         ├── écrit CaseStatusHistory + CaseTimelineEvent
         ├── ouvre/solde les échéances SLA

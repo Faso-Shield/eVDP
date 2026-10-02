@@ -280,3 +280,86 @@ def test_a_reporter_logging_in_goes_straight_to_the_dashboard(client, researcher
     )
     assert reponse.status_code == 200
     assert "/mfa/" not in reponse.redirect_chain[-1][0]
+
+
+# ------------------------------------------------------------ codes de secours
+def test_enrollment_shows_backup_codes_once(client_for, analyst):
+    client = client_for(analyst, mfa=False)
+    client.get("/mfa/enrolement/")
+    secret = client.session["mfa_setup_candidate"]
+    reponse = client.post("/mfa/enrolement/", {"code": code_pour(secret)})
+    assert reponse["Location"] == "/mfa/codes-de-secours/"
+
+    page = client.get("/mfa/codes-de-secours/")
+    assert page["Cache-Control"] == "no-store"
+    codes = page.context["codes"]
+    assert len(codes) == mfa.BACKUP_CODE_COUNT
+    assert codes[0] in page.content.decode()
+    # Stockes haches, jamais en clair, et plus jamais affiches.
+    assert not analyst.mfa_backup_codes.filter(code_hash=codes[0]).exists()
+    assert client.get("/mfa/codes-de-secours/")["Location"] == "/profile/"
+
+
+def test_a_backup_code_opens_the_session_only_once(client_for, analyste_enrole):
+    codes = mfa.generate_backup_codes(analyste_enrole)
+    client = client_for(analyste_enrole, mfa=False)
+    assert client.post("/mfa/", {"code": codes[0].lower()}).status_code == 302
+    assert client.session[MFA_SESSION_KEY] is True
+    assert AuditLog.objects.filter(
+        action=AuditAction.MFA_VERIFIED, metadata__method="code_de_secours"
+    ).exists()
+
+    autre = client_for(analyste_enrole, mfa=False)
+    assert autre.post("/mfa/", {"code": codes[0]}).status_code == 200
+    assert mfa.remaining_backup_codes(analyste_enrole) == mfa.BACKUP_CODE_COUNT - 1
+
+
+def test_regeneration_needs_the_password_and_revokes_old_codes(client_for, analyste_enrole):
+    anciens = mfa.generate_backup_codes(analyste_enrole)
+    client = client_for(analyste_enrole)
+    url = "/mfa/codes-de-secours/regenerer/"
+
+    client.post(url, {"password": "faux"})
+    assert mfa.consume_backup_code(analyste_enrole, anciens[0])
+
+    assert client.post(url, {"password": PASSWORD})["Location"] == "/mfa/codes-de-secours/"
+    assert not mfa.consume_backup_code(analyste_enrole, anciens[1])
+
+
+def test_reset_revokes_the_backup_codes(analyste_enrole):
+    codes = mfa.generate_backup_codes(analyste_enrole)
+    analyste_enrole.reset_mfa()
+    assert not mfa.consume_backup_code(analyste_enrole, codes[0])
+
+
+@pytest.mark.parametrize(
+    ("next_url", "expected"),
+    [
+        ("/cases/", "/cases/"),
+        ("https://site-piege.example/evdp", "/dashboard/"),
+        ("//site-piege.example", "/dashboard/"),
+    ],
+)
+def test_second_factor_never_redirects_off_site(
+    client_for, analyste_enrole, next_url, expected
+):
+    client = client_for(analyste_enrole, mfa=False)
+    code = code_pour(analyste_enrole.mfa_secret)
+    reponse = client.post(f"/mfa/?next={next_url}", {"code": code})
+    assert reponse["Location"] == expected
+
+
+def test_lost_device_request_alerts_account_managers(client_for, analyste_enrole, coordinator):
+    """Bloque sans appareil ni code de secours : la demande part aux
+    gestionnaires de comptes, sans rien reinitialiser d'office."""
+    from apps.notifications.models import Notification
+
+    client = client_for(analyste_enrole, mfa=False)
+    response = client.post("/mfa/appareil-perdu/")
+    assert response["Location"] == "/mfa/"
+    note = Notification.objects.get(recipient=coordinator)
+    assert analyste_enrole.email in note.title
+    assert str(analyste_enrole.pk) in note.url
+    analyste_enrole.refresh_from_db()
+    assert analyste_enrole.mfa_enabled, "seul un gestionnaire reinitialise"
+    assert AuditLog.objects.filter(action=AuditAction.MFA_RESET_REQUESTED).exists()

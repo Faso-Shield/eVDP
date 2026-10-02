@@ -119,8 +119,11 @@ jobs:
         run: bandit -r apps config -ll -f screen
 
       - name: pip-audit (vulnerabilites des dependances)
-        run: pip-audit -r requirements/base.txt --strict
-        continue-on-error: true
+        # Bloquant : une dependance vulnerable ne doit pas partir en image.
+        # lock.txt est ce que l'image installe reellement.
+        run: |
+          pip-audit -r requirements/base.txt --strict
+          pip-audit -r requirements/lock.txt --strict
 
       - name: Verifier l'absence de secret commite
         run: |
@@ -131,7 +134,9 @@ jobs:
             exit 1
           fi
           echo "Recherche de cles privees…"
-          if git grep -lE 'BEGIN (RSA |OPENSSH |PGP )?PRIVATE KEY' -- . ':!docs' ':!apps/core/pgp.py' ':!tests'; then
+          # openpgp.min.js (OpenPGP.js, servi tel que publie) contient les
+          # en-tetes d'armure qu'il sait lire et ecrire : aucune cle.
+          if git grep -lE 'BEGIN (RSA |OPENSSH |PGP )?PRIVATE KEY' -- . ':!docs' ':!apps/core/pgp.py' ':!tests' ':!static/js/vendor/openpgp.min.js'; then
             echo "::error::Une cle privee semble commitee."
             exit 1
           fi
@@ -199,12 +204,12 @@ jobs:
           ignore-unfixed: true
           exit-code: "0"
 
-      - name: Trivy (echec sur CRITICAL corrigeable)
+      - name: Trivy (echec sur CRITICAL ou HIGH corrigeable)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: evdp-app:ci
           format: table
-          severity: CRITICAL
+          severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
 
@@ -238,6 +243,7 @@ jobs:
           docker run --rm --network evdp-ci \
             -e DJANGO_SETTINGS_MODULE=config.settings.prod \
             -e SECRET_KEY=ci-secret-key \
+            -e FIELD_ENCRYPTION_KEY=Y2ktY2xlLWZlcm5ldC1ub24tdXRpbGlzZWUtZW4tcHI= \
             -e ALLOWED_HOSTS=localhost \
             -e POSTGRES_HOST=evdp-db -e POSTGRES_PASSWORD=ci \
             -e REDIS_URL=redis://localhost:6379/0 \
@@ -249,6 +255,7 @@ jobs:
           docker run --rm --network evdp-ci \
             -e DJANGO_SETTINGS_MODULE=config.settings.prod \
             -e SECRET_KEY=ci-secret-key \
+            -e FIELD_ENCRYPTION_KEY=Y2ktY2xlLWZlcm5ldC1ub24tdXRpbGlzZWUtZW4tcHI= \
             -e ALLOWED_HOSTS=localhost \
             -e POSTGRES_HOST=evdp-db -e POSTGRES_PASSWORD=ci \
             -e REDIS_URL=redis://localhost:6379/0 \

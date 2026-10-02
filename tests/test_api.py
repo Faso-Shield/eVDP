@@ -1,14 +1,21 @@
 """Tests de l'API REST v1."""
 
 import json
+import re
 
 import pytest
+from django.test import Client
+from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.models import ApiKey
 from apps.api.authentication import generate_key
 from apps.coordination.models import Case
 from apps.coordination.workflow import CaseStatus
 from apps.programs.models import Program
+from apps.reports.models import VulnerabilityReport
+
+from .conftest import advance, claim, evidence
 
 pytestmark = pytest.mark.django_db
 
@@ -23,17 +30,31 @@ REPORT_PAYLOAD = {
 }
 
 
+def post_report(client, payload=None, files="default", **extra):
+    """Soumission API en multipart : au moins une piece jointe est exigee."""
+    data = dict(payload if payload is not None else REPORT_PAYLOAD)
+    if files == "default":
+        files = [evidence()]
+    if files:
+        data["attachments"] = files
+    return client.post("/api/v1/reports/", data=data, **extra)
+
+
+def _mark_opened(case, user):
+    """Pre-requis de l'etape 1 : le dossier a ete ouvert au moins une fois."""
+    from apps.audit.models import AuditAction
+    from apps.audit.services import log_action
+
+    log_action(AuditAction.CASE_VIEWED, actor=user, obj=case)
+
+
 # ------------------------------------------------------------ acces anonyme
 def test_anonymous_cannot_list_reports(client):
     assert client.get("/api/v1/reports/").status_code in (401, 403)
 
 
 def test_anonymous_cannot_create_report(client):
-    response = client.post(
-        "/api/v1/reports/",
-        data=json.dumps(REPORT_PAYLOAD),
-        content_type="application/json",
-    )
+    response = post_report(client)
     assert response.status_code in (401, 403)
     assert Case.objects.count() == 0
 
@@ -50,25 +71,66 @@ def test_schema_is_served(client):
 # --------------------------------------------------------------- soumission
 def test_researcher_creates_report_and_case(client_for, researcher_a, organization):
     client = client_for(researcher_a)
-    response = client.post(
-        "/api/v1/reports/",
-        data=json.dumps(REPORT_PAYLOAD),
-        content_type="application/json",
-    )
+    response = post_report(client)
     assert response.status_code == 201
     body = response.json()
     assert body["case_id"].startswith("EVDP-")
     case = Case.objects.get(case_id=body["case_id"])
     assert case.reporter == researcher_a
     assert case.status == CaseStatus.SUBMITTED
+    # La piece jointe est enregistree et rattachee au dossier.
+    assert case.attachments.count() == 1
+
+
+def test_api_submission_without_attachment_is_refused(client_for, researcher_a):
+    """Workflow v2, etape 0 : au moins une piece jointe, controlee cote serveur."""
+    client = client_for(researcher_a)
+    response = post_report(client, files=None)
+    assert response.status_code == 400
+    assert "attachments" in response.json()
+    # Transaction : aucun rapport orphelin.
+    assert Case.objects.count() == 0
+    assert VulnerabilityReport.objects.count() == 0
+
+
+def test_api_json_submission_is_refused_without_attachment(client_for, researcher_a):
+    client = client_for(researcher_a)
+    response = client.post(
+        "/api/v1/reports/", data=json.dumps(REPORT_PAYLOAD), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert VulnerabilityReport.objects.count() == 0
+
+
+def test_api_invalid_attachment_refuses_the_whole_submission(client_for, researcher_a):
+    client = client_for(researcher_a)
+    response = post_report(
+        client, files=[evidence(), evidence("outil.exe", b"MZ\x90\x00binaire")]
+    )
+    assert response.status_code == 400
+    assert Case.objects.count() == 0
+    assert VulnerabilityReport.objects.count() == 0
+
+
+def test_api_accepts_several_attachments(client_for, researcher_a):
+    client = client_for(researcher_a)
+    response = post_report(client, files=[evidence("a.txt"), evidence("b.txt")])
+    assert response.status_code == 201
+    case = Case.objects.get(case_id=response.json()["case_id"])
+    assert case.attachments.count() == 2
+
+
+def test_api_refuses_more_than_five_attachments(client_for, researcher_a):
+    client = client_for(researcher_a)
+    response = post_report(client, files=[evidence(f"p{i}.txt") for i in range(6)])
+    assert response.status_code == 400
+    assert VulnerabilityReport.objects.count() == 0
 
 
 def test_short_description_is_rejected(client_for, researcher_a):
     client = client_for(researcher_a)
     payload = {**REPORT_PAYLOAD, "description": "trop court"}
-    response = client.post(
-        "/api/v1/reports/", data=json.dumps(payload), content_type="application/json"
-    )
+    response = post_report(client, payload)
     assert response.status_code == 400
     assert "description" in response.json()
 
@@ -76,19 +138,15 @@ def test_short_description_is_rejected(client_for, researcher_a):
 def test_invalid_cvss_vector_is_rejected(client_for, researcher_a):
     client = client_for(researcher_a)
     payload = {**REPORT_PAYLOAD, "cvss_vector": "CVSS:3.1/AV:Z"}
-    response = client.post(
-        "/api/v1/reports/", data=json.dumps(payload), content_type="application/json"
-    )
+    response = post_report(client, payload)
     assert response.status_code == 400
 
 
 def test_mass_assignment_of_status_is_ignored(client_for, researcher_a):
     """Un client ne doit pas pouvoir imposer un statut ou une severite retenue."""
     client = client_for(researcher_a)
-    payload = {**REPORT_PAYLOAD, "status": "PUBLISHED", "reporter": "autre"}
-    response = client.post(
-        "/api/v1/reports/", data=json.dumps(payload), content_type="application/json"
-    )
+    payload = {**REPORT_PAYLOAD, "status": "CLOSED", "reporter": "autre"}
+    response = post_report(client, payload)
     assert response.status_code == 201
     case = Case.objects.get(case_id=response.json()["case_id"])
     assert case.status == CaseStatus.SUBMITTED
@@ -115,15 +173,18 @@ def test_messages_endpoint_is_scoped(client_for, researcher_a, case_beta):
 
 
 def test_internal_messages_hidden_from_researcher(
-    client_for, case_alpha, coordinator, researcher_a
+    client_for, case_alpha, triager, researcher_a
 ):
     from apps.coordination.constants import Confidentiality
     from apps.coordination.services import post_message
 
+    # Etape 1 : l'agent de triage, responsable de l'etape, prend le dossier en
+    # charge puis ecrit.
+    claim(case_alpha, triager)
     post_message(
-        case_alpha, coordinator, "Note interne CSIRT", confidentiality=Confidentiality.INTERNAL
+        case_alpha, triager, "Note interne CSIRT", confidentiality=Confidentiality.INTERNAL
     )
-    post_message(case_alpha, coordinator, "Message au declarant")
+    post_message(case_alpha, triager, "Message au declarant")
 
     client = client_for(researcher_a)
     bodies = [
@@ -148,6 +209,7 @@ def test_researcher_cannot_patch_severity(client_for, researcher_a, case_alpha):
 
 
 def test_analyst_can_patch_severity(client_for, analyst, case_alpha):
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)  # etape 3 : l'analyste est responsable
     client = client_for(analyst)
     response = client.patch(
         f"/api/v1/reports/{case_alpha.case_id}/",
@@ -159,11 +221,30 @@ def test_analyst_can_patch_severity(client_for, analyst, case_alpha):
     assert case_alpha.severity == "HIGH"
 
 
-def test_transition_endpoint_enforces_state_machine(client_for, coordinator, case_alpha):
-    client = client_for(coordinator)
+def test_analyst_cannot_patch_qualification_once_submitted(client_for, analyst, case_alpha):
+    """La qualification soumise a validation ne change plus sans renvoi.
+
+    L'etape 4 revient au valideur : le dossier sort meme du perimetre de
+    l'analyste (404), qui ne peut donc plus la modifier.
+    """
+    advance(case_alpha, CaseStatus.VALIDATION_PENDING)
+    client = client_for(analyst)
+    response = client.patch(
+        f"/api/v1/reports/{case_alpha.case_id}/",
+        data=json.dumps({"severity": "LOW"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+    case_alpha.refresh_from_db()
+    assert case_alpha.severity != "LOW"
+
+
+def test_transition_endpoint_enforces_state_machine(client_for, triager, case_alpha):
+    """Meme pour le responsable de l'etape, une transition hors table est refusee."""
+    client = client_for(triager)
     response = client.post(
         f"/api/v1/reports/{case_alpha.case_id}/transition/",
-        data=json.dumps({"target_status": "PUBLISHED"}),
+        data=json.dumps({"target_status": "CLOSED"}),
         content_type="application/json",
     )
     assert response.status_code == 400
@@ -171,16 +252,116 @@ def test_transition_endpoint_enforces_state_machine(client_for, coordinator, cas
     assert case_alpha.status == CaseStatus.SUBMITTED
 
 
-def test_transition_endpoint_applies_valid_transition(client_for, coordinator, case_alpha):
-    client = client_for(coordinator)
+def test_transition_endpoint_applies_valid_transition(client_for, triager, case_alpha):
+    """Compatibilite : le statut vise designe le bouton de l'etape."""
+    _mark_opened(case_alpha, triager)
+    claim(case_alpha, triager)
+    client = client_for(triager)
     response = client.post(
         f"/api/v1/reports/{case_alpha.case_id}/transition/",
-        data=json.dumps({"target_status": "TRIAGE"}),
+        data=json.dumps({"target_status": "ACKNOWLEDGED"}),
         content_type="application/json",
     )
     assert response.status_code == 200
     case_alpha.refresh_from_db()
-    assert case_alpha.status == CaseStatus.TRIAGE
+    assert case_alpha.status == CaseStatus.ACKNOWLEDGED
+
+
+def test_transition_endpoint_refuses_wrong_owner(client_for, coordinator, case_alpha):
+    """Un bouton, un role : le coordinateur n'accuse pas reception.
+
+    Hors de son etape, le dossier n'est meme pas dans son perimetre (404).
+    """
+    _mark_opened(case_alpha, coordinator)
+    client = client_for(coordinator)
+    response = client.post(
+        f"/api/v1/reports/{case_alpha.case_id}/transition/",
+        data=json.dumps({"target_status": "ACKNOWLEDGED"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+    case_alpha.refresh_from_db()
+    assert case_alpha.status == CaseStatus.SUBMITTED
+
+
+# ------------------------------------------------------ actions de workflow v2
+def test_actions_endpoint_applies_the_step(client_for, triager, case_alpha):
+    _mark_opened(case_alpha, triager)
+    claim(case_alpha, triager)
+    client = client_for(triager)
+    response = client.post(
+        f"/api/v1/reports/{case_alpha.case_id}/actions/",
+        data=json.dumps({"action": "acknowledge"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    case_alpha.refresh_from_db()
+    assert case_alpha.status == CaseStatus.ACKNOWLEDGED
+
+
+def test_actions_endpoint_lists_missing_prerequisites(client_for, analyst, case_alpha):
+    advance(case_alpha, CaseStatus.IN_ANALYSIS)
+    Case.objects.filter(pk=case_alpha.pk).update(cvss_vector="")
+    client = client_for(analyst)
+    response = client.post(
+        f"/api/v1/reports/{case_alpha.case_id}/actions/",
+        data=json.dumps({"action": "submit_qualification"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert "Vecteur CVSS manquant" in response.json()["missing"]
+    case_alpha.refresh_from_db()
+    assert case_alpha.status == CaseStatus.IN_ANALYSIS
+
+
+def test_actions_endpoint_requires_comment_where_needed(client_for, coordinator, case_alpha):
+    advance(case_alpha, CaseStatus.VALIDATION_PENDING)
+    client = client_for(coordinator)
+    response = client.post(
+        f"/api/v1/reports/{case_alpha.case_id}/actions/",
+        data=json.dumps({"action": "validate_qualification"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert "Commentaire manquant" in response.json()["missing"]
+
+
+def test_actions_endpoint_is_scoped(client_for, researcher_a, case_beta):
+    client = client_for(researcher_a)
+    response = client.post(
+        f"/api/v1/reports/{case_beta.case_id}/actions/",
+        data=json.dumps({"action": "acknowledge"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+
+
+# ------------------------------------------------------ matrice de visibilite
+def test_reporter_sees_simplified_status_without_scores(client_for, researcher_a, case_alpha):
+    advance(case_alpha, CaseStatus.VALIDATION_PENDING)
+    client = client_for(researcher_a)
+    body = client.get(f"/api/v1/reports/{case_alpha.case_id}/").json()
+    assert body["status"] == "ANALYSIS"
+    assert body["status_label"] == "En analyse"
+    for hidden in ("severity", "cvss_score", "cvss_vector"):
+        assert hidden not in body
+    listed = client.get("/api/v1/reports/").json()["results"][0]
+    assert listed["status"] == "ANALYSIS"
+    assert "cvss_score" not in listed
+
+
+def test_dsi_sees_final_score_but_not_vector(client_for, dsi_alpha, case_alpha):
+    advance(case_alpha, CaseStatus.VENDOR_NOTIFIED)
+    client = client_for(dsi_alpha)
+    body = client.get(f"/api/v1/reports/{case_alpha.case_id}/").json()
+    assert body["cvss_score"] is not None
+    assert "cvss_vector" not in body
+
+
+def test_dsi_cannot_see_case_before_notification(client_for, dsi_alpha, case_alpha):
+    advance(case_alpha, CaseStatus.VALIDATED)
+    client = client_for(dsi_alpha)
+    assert client.get(f"/api/v1/reports/{case_alpha.case_id}/").status_code == 404
 
 
 def test_researcher_cannot_create_program(client_for, researcher_a, organization):
@@ -205,12 +386,7 @@ def test_api_key_authentication(client, researcher_a, organization):
     ApiKey.objects.create(
         user=researcher_a, label="Integration", prefix=prefix, key_hash=key_hash
     )
-    response = client.post(
-        "/api/v1/reports/",
-        data=json.dumps(REPORT_PAYLOAD),
-        content_type="application/json",
-        HTTP_X_EVDP_API_KEY=raw,
-    )
+    response = post_report(client, HTTP_X_EVDP_API_KEY=raw)
     assert response.status_code == 201
 
 
@@ -284,6 +460,7 @@ def test_import_csaf_service_refuses_without_capability(researcher_a):
 
 
 def test_csaf_import_creates_case(client_for, analyst):
+    """L'import CSAF reste exempte de piece jointe : il reprend un avis publie."""
     client = client_for(analyst)
     response = client.post(
         "/api/v1/import/csaf/",
@@ -295,6 +472,7 @@ def test_csaf_import_creates_case(client_for, analyst):
     case = Case.objects.get(case_id=response.json()["cases"][0])
     assert case.cve_id == "CVE-2026-1234"
     assert float(case.cvss_score) == 9.8
+    assert case.attachments.count() == 0
 
 
 def test_csaf_rejects_wrong_version(client_for, analyst):
@@ -328,11 +506,7 @@ def test_csaf_rejects_empty_vulnerabilities(client_for, analyst):
 def test_api_rejects_a_payload_passed_off_as_pgp(client_for, researcher_a):
     """Sans ce controle, le dossier annonce un chiffrement qui n'existe pas."""
     client = client_for(researcher_a)
-    response = client.post(
-        "/api/v1/reports/",
-        data=json.dumps({**REPORT_PAYLOAD, "pgp_payload": "ceci n'est pas du PGP"}),
-        content_type="application/json",
-    )
+    response = post_report(client, {**REPORT_PAYLOAD, "pgp_payload": "ceci n'est pas du PGP"})
     assert response.status_code == 400
     assert Case.objects.count() == 0
 
@@ -341,11 +515,7 @@ def test_api_accepts_a_real_pgp_block(client_for, researcher_a):
     """Le cas nominal reste ouvert : un vrai bloc chiffre passe."""
     bloc = "-----BEGIN PGP MESSAGE-----\n\nhQIMA1234\n-----END PGP MESSAGE-----"
     client = client_for(researcher_a)
-    response = client.post(
-        "/api/v1/reports/",
-        data=json.dumps({**REPORT_PAYLOAD, "pgp_payload": bloc}),
-        content_type="application/json",
-    )
+    response = post_report(client, {**REPORT_PAYLOAD, "pgp_payload": bloc})
     assert response.status_code == 201
     assert Case.objects.get().report.is_pgp_encrypted
 
@@ -393,3 +563,137 @@ def test_api_rejects_a_bug_bounty_open_to_anonymous_reports(
     )
     assert response.status_code == 201
     assert not Program.objects.get(name="Bug Bounty par API").accepts_anonymous_reports
+
+
+def test_api_refuses_to_edit_another_organizations_program(
+    client_for, manager_beta, vdp_program
+):
+    """Un programme public d'une autre organisation se lit, il ne se gere pas."""
+    client = client_for(manager_beta)
+    url = f"/api/v1/programs/{vdp_program.slug}/"
+    assert client.get(url).status_code == 200
+
+    response = client.patch(
+        url, data=json.dumps({"name": "Detourne"}), content_type="application/json"
+    )
+    # Refus sur un objet precis : presente comme un 404 (apps/api/exceptions.py).
+    assert response.status_code == 404
+    assert client.delete(url).status_code == 404
+
+    vdp_program.refresh_from_db()
+    assert vdp_program.name == "VDP Test"
+
+
+def test_api_refuses_to_create_a_program_for_another_organization(
+    client_for, manager_beta, organization
+):
+    client = client_for(manager_beta)
+    response = client.post(
+        "/api/v1/programs/",
+        data=json.dumps(
+            {
+                "name": "Programme usurpe",
+                "program_type": "VDP",
+                "organization": str(organization.pk),
+            }
+        ),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert "organization" in response.json()
+    assert not Program.objects.filter(name="Programme usurpe").exists()
+
+
+def test_api_lets_a_manager_edit_its_own_program(client_for, manager_alpha, vdp_program):
+    client = client_for(manager_alpha)
+    response = client.patch(
+        f"/api/v1/programs/{vdp_program.slug}/",
+        data=json.dumps({"name": "VDP renomme"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    vdp_program.refresh_from_db()
+    assert vdp_program.name == "VDP renomme"
+
+
+@pytest.mark.parametrize("url", ["/api/docs/", "/api/redoc/"])
+def test_api_docs_run_under_a_strict_csp(client, url):
+    """La CSP de production (script-src 'self') bloquait les scripts du CDN et
+    le script d'amorce inline de Swagger : la page restait blanche."""
+    html = client.get(url).content.decode()
+    scripts = re.findall(r"<script([^>]*)>", html)
+    assert scripts
+    for attrs in scripts:
+        src = re.search(r'src="([^"]+)"', attrs)
+        assert src, "script inline"
+        assert src.group(1).startswith("/"), src.group(1)
+
+
+def test_swagger_bootstrap_script_is_served_separately(client):
+    response = client.get("/api/docs/?script=")
+    assert response.status_code == 200
+    assert "javascript" in response["Content-Type"]
+    assert "SwaggerUIBundle" in response.content.decode()
+
+
+# ------------------------------------------------ cles d'API en libre-service
+def test_user_creates_an_api_key_shown_only_once(client_for, researcher_a):
+    client = client_for(researcher_a)
+    reponse = client.post(
+        reverse("accounts:api_key_create"), {"label": "Intégration", "expires_in_days": "30"}
+    )
+    assert reponse["Location"] == reverse("accounts:api_key_created")
+    page = client.get(reponse["Location"])
+    assert page["Cache-Control"] == "no-store"
+    raw = page.context["key"]
+    assert raw in page.content.decode()
+    assert client.get(reverse("accounts:api_key_created")).status_code == 302
+
+    key = ApiKey.objects.get(user=researcher_a)
+    assert key.key_hash != raw and raw.startswith(key.prefix)
+    assert 29 <= (key.expires_at - timezone.now()).days <= 30
+    anonymous = Client()
+    assert anonymous.get("/api/v1/reports/", HTTP_X_EVDP_API_KEY=raw).status_code == 200
+
+
+def test_api_key_revocation_is_limited_to_its_owner(client_for, researcher_a, researcher_b):
+    client_for(researcher_a).post(
+        reverse("accounts:api_key_create"), {"label": "A", "expires_in_days": "90"}
+    )
+    key = ApiKey.objects.get(user=researcher_a)
+    url = reverse("accounts:api_key_revoke", args=[key.pk])
+    assert client_for(researcher_b).post(url).status_code == 404
+    assert client_for(researcher_a).post(url).status_code == 302
+    key.refresh_from_db()
+    assert key.is_active is False
+
+
+def test_active_api_keys_are_capped(client_for, researcher_a):
+    from apps.accounts.views import MAX_ACTIVE_API_KEYS
+
+    client = client_for(researcher_a)
+    for i in range(MAX_ACTIVE_API_KEYS + 1):
+        client.post(
+            reverse("accounts:api_key_create"), {"label": f"k{i}", "expires_in_days": "30"}
+        )
+    assert (
+        ApiKey.objects.filter(user=researcher_a, is_active=True).count() == MAX_ACTIVE_API_KEYS
+    )
+
+
+def test_redoc_runs_without_external_fonts_and_with_its_worker(client, settings):
+    """Google Fonts et le worker « blob: » de la recherche Redoc etaient
+    bloques par la CSP de production : erreurs en console a chaque visite."""
+    settings.CSP_DIRECTIVES = {"default-src": "'self'", "script-src": "'self'"}
+    response = client.get("/api/redoc/")
+    assert "fonts.googleapis" not in response.content.decode()
+    assert "worker-src 'self' blob:" in response["Content-Security-Policy"]
+    # L'exception reste propre a Redoc.
+    assert "worker-src" not in client.get("/api/docs/")["Content-Security-Policy"]
+
+
+def test_api_refuses_anonymous_report_with_public_credit(client_for, researcher_a):
+    payload = {**REPORT_PAYLOAD, "is_anonymous": True, "wants_credit": True}
+    response = post_report(client_for(researcher_a), payload)
+    assert response.status_code == 400
+    assert "wants_credit" in response.json()

@@ -1,0 +1,70 @@
+{% comment %}
+Champs d'un programme, regroupes par sujet. Partage par la creation
+(programs/form.html) et la gestion (programs/manage.html) ; le <form> et le
+bouton d'envoi restent a la page appelante. Le comportement lie au type
+(Bug Bounty) vient de static/js/program-form.js.
+{% endcomment %}
+{% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+<div class="card">
+  <div class="card-header"><h2>Identification</h2></div>
+  <div class="card-body">
+    {% include "partials/form_field.html" with field=form.name %}
+    <div class="form-grid">
+      {% include "partials/form_field.html" with field=form.program_type %}
+      {% include "partials/form_field.html" with field=form.organization %}
+      {% include "partials/form_field.html" with field=form.status %}
+      {% include "partials/form_field.html" with field=form.confidentiality %}
+    </div>
+    <div class="notice" id="bounty-hint" hidden>
+      Un Bug Bounty ne récompense qu'un chercheur identifié : le signalement
+      anonyme y est toujours refusé, quel que soit le réglage « Réception » ci-dessous.
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Présentation publique</h2></div>
+  <div class="card-body">
+    {% include "partials/form_field.html" with field=form.summary %}
+    {% include "partials/form_field.html" with field=form.description %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Règles et cadre légal</h2></div>
+  <div class="card-body">
+    {% include "partials/form_field.html" with field=form.rules %}
+    {% include "partials/form_field.html" with field=form.out_of_scope_notes %}
+    {% include "partials/form_field.html" with field=form.eligibility %}
+    {% include "partials/form_field.html" with field=form.safe_harbor %}
+    {% include "partials/form_field.html" with field=form.disclosure_policy %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Calendrier et SLA</h2></div>
+  <div class="card-body">
+    <div class="form-grid">
+      {% include "partials/form_field.html" with field=form.starts_on %}
+      {% include "partials/form_field.html" with field=form.ends_on %}
+      {% include "partials/form_field.html" with field=form.sla_policy %}
+      {% include "partials/form_field.html" with field=form.disclosure_delay_days %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Contact et sécurité</h2></div>
+  <div class="card-body">
+    {% include "partials/form_field.html" with field=form.contact_email %}
+    {% include "partials/form_field.html" with field=form.pgp_public_key %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Réception des signalements</h2></div>
+  <div class="card-body">
+    {% include "partials/form_field.html" with field=form.allows_anonymous_reports %}
+    {% include "partials/form_field.html" with field=form.requires_verified_email %}
+  </div>
+</div>

@@ -7,6 +7,8 @@ Principes appliques :
   - Securite par defaut : en-tetes, cookies, hachage Argon2, uploads bornes.
 """
 
+import base64
+import hashlib
 from pathlib import Path
 
 import environ
@@ -29,6 +31,16 @@ if _env_file.exists():
     env.read_env(str(_env_file))
 
 SECRET_KEY = env("SECRET_KEY", default="dev-only-insecure-key-change-me")
+
+# Cles Fernet des champs chiffres au repos (apps.core.fields), separees par des
+# virgules : la premiere chiffre, toutes dechiffrent (rotation). La production
+# l'exige (config/settings/prod.py) ; ailleurs, a defaut, une cle est derivee
+# de SECRET_KEY pour que le developpement et les tests fonctionnent tels quels.
+FIELD_ENCRYPTION_KEYS = env.list("FIELD_ENCRYPTION_KEY", default=[]) or [
+    base64.urlsafe_b64encode(
+        hashlib.sha256(f"evdp-fields:{SECRET_KEY}".encode()).digest()
+    ).decode()
+]
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
@@ -50,6 +62,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "django_filters",
     "drf_spectacular",
+    "drf_spectacular_sidecar",
     "django_celery_beat",
 ]
 
@@ -223,6 +236,9 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ALWAYS_EAGER = False
+# Un broker injoignable doit echouer vite plutot que de figer la requete web
+# qui publie une tache.
+CELERY_BROKER_TRANSPORT_OPTIONS = {"socket_connect_timeout": 3}
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # ---------------------------------------------------------------------------
@@ -230,6 +246,9 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 # ---------------------------------------------------------------------------
 CLAMAV_HOST = env("CLAMAV_HOST", default="")
 CLAMAV_PORT = env.int("CLAMAV_PORT", default=3310)
+# Doit egaler StreamMaxLength de clamd (25 Mo par defaut) : au-dela, le
+# fichier est marque non analyse plutot qu'envoye pour rien.
+CLAMAV_STREAM_MAX_LENGTH = env.int("CLAMAV_STREAM_MAX_LENGTH", default=25 * 1024 * 1024)
 
 CELERY_BEAT_SCHEDULE = {
     "evdp-sla-sweep": {
@@ -240,13 +259,37 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.coordination.tasks.sweep_disclosure_schedule",
         "schedule": crontab(minute=15),
     },
+    "evdp-claim-reminders": {
+        "task": "apps.coordination.tasks.remind_claims",
+        "schedule": crontab(minute=0, hour="8,14"),
+    },
+    "evdp-needs-information-sweep": {
+        "task": "apps.coordination.tasks.sweep_needs_information",
+        "schedule": crontab(minute=45, hour=6),
+    },
     "evdp-purge-expired-tokens": {
         "task": "apps.accounts.tasks.purge_expired_tokens",
         "schedule": crontab(minute=0, hour=3),
     },
+    "evdp-expiration-cle-pgp": {
+        "task": "apps.accounts.tasks.warn_national_pgp_key_expiry",
+        "schedule": crontab(minute=0, hour=9),
+    },
+    "evdp-remises-cle-pgp-expirees": {
+        "task": "apps.accounts.tasks.purge_pgp_key_deliveries",
+        "schedule": crontab(minute=5),
+    },
+    "evdp-inscriptions-non-activees": {
+        "task": "apps.accounts.tasks.purge_pending_activations",
+        "schedule": crontab(minute=15, hour=3),
+    },
     "evdp-relance-comptes-non-verifies": {
         "task": "apps.accounts.tasks.remind_unverified_accounts",
         "schedule": crontab(minute=30, hour=8),
+    },
+    "evdp-analyses-en-attente": {
+        "task": "apps.attachments.tasks.sweep_pending_scans",
+        "schedule": crontab(minute="*/15"),
     },
 }
 
@@ -277,6 +320,8 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 CSRF_COOKIE_HTTPONLY = False  # requis pour que HTMX lise le jeton
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_NAME = "evdp_csrftoken"
+# Echec CSRF : page d'erreur du projet (formulaire expire), pas la page brute.
+CSRF_FAILURE_VIEW = "apps.core.views.csrf_failure"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 X_FRAME_OPTIONS = "DENY"
@@ -284,11 +329,33 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
+# Cartographie : fond de carte. Les tuiles sont chargees par le navigateur,
+# pas par le serveur ; leur origine doit donc figurer dans `img-src`. Pour un
+# fonctionnement hors ligne ou souverain, pointer vers un serveur de tuiles
+# interne ; une URL vide affiche la carte sans fond (regions seules).
+MAP_TILE_URL = env(
+    "EVDP_MAP_TILE_URL", default="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+)
+MAP_ATTRIBUTION = env("EVDP_MAP_ATTRIBUTION", default="&copy; contributeurs OpenStreetMap")
+
+
+def _tile_origin(url):
+    """Origine CSP des tuiles : `{s}` (sous-domaine tournant) devient `*`."""
+    if not url.startswith(("https://", "http://")):
+        return ""
+    scheme, _, rest = url.partition("://")
+    host = rest.split("/", 1)[0].replace("{s}", "*")
+    return f"{scheme}://{host}"
+
+
+MAP_TILE_ORIGIN = _tile_origin(MAP_TILE_URL)
+_IMG_SRC = " ".join(filter(None, ["'self' data:", MAP_TILE_ORIGIN]))
+
 CSP_DIRECTIVES = {
     "default-src": "'self'",
     "script-src": "'self' 'unsafe-inline'",
     "style-src": "'self' 'unsafe-inline'",
-    "img-src": "'self' data:",
+    "img-src": _IMG_SRC,
     "font-src": "'self' data:",
     "connect-src": "'self'",
     "frame-ancestors": "'none'",
@@ -334,13 +401,18 @@ REST_FRAMEWORK = {
 SPECTACULAR_SETTINGS = {
     "TITLE": "eVDP API",
     "DESCRIPTION": (
-        "API de la plateforme nationale de divulgation coordonnee de "
-        "vulnerabilites et de Bug Bounty (CYBER-DEF 2)."
+        "API de la plateforme nationale de divulgation coordonnée de "
+        "vulnérabilités et de Bug Bounty (CYBER-DEF 2)."
     ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "COMPONENT_SPLIT_REQUEST": True,
+    # Swagger UI et Redoc servis depuis nos fichiers statiques : la CSP de
+    # production (script-src 'self') bloquait ceux du CDN, page blanche.
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
     # Plusieurs modeles exposent un champ "status" ou "severity" avec des
     # valeurs differentes : on nomme explicitement chaque enumeration pour
     # produire un schema OpenAPI lisible et stable.
@@ -384,6 +456,12 @@ EVDP = {
         "EVDP_VERIFICATION_REMINDER_DAYS", default=["14", "7", "1"]
     ),
     "MAX_ATTACHMENT_SIZE": env.int("EVDP_MAX_ATTACHMENT_SIZE", default=25 * 1024 * 1024),
+    # Une demonstration d'exploit filmee depasse vite 25 Mo : plafond dedie.
+    # Nginx doit l'accepter aussi (client_max_body_size des chemins de depot).
+    "ATTACHMENT_VIDEO_EXTENSIONS": ["mp4", "webm"],
+    "MAX_VIDEO_ATTACHMENT_SIZE": env.int(
+        "EVDP_MAX_VIDEO_ATTACHMENT_SIZE", default=200 * 1024 * 1024
+    ),
     "ATTACHMENT_ALLOWED_EXTENSIONS": env.list(
         "EVDP_ATTACHMENT_EXTENSIONS",
         default=[
@@ -392,6 +470,11 @@ EVDP = {
             "jpeg",
             "gif",
             "webp",
+            # Photos de telephone (iPhone, nombreux Android).
+            "heic",
+            "heif",
+            "mp4",
+            "webm",
             "pdf",
             "txt",
             "md",
@@ -407,6 +490,7 @@ EVDP = {
             "eml",
             "asc",
             "pgp",
+            "gpg",
         ],
     ),
     "ATTACHMENT_BLOCKED_EXTENSIONS": [
@@ -436,6 +520,12 @@ EVDP = {
         "htm",
     ],
     "MAX_ATTACHMENTS_PER_CASE": env.int("EVDP_MAX_ATTACHMENTS_PER_CASE", default=20),
+    # Delai apres lequel une prise en charge restee sans action est rappelee.
+    "CLAIM_REMINDER_HOURS": env.int("EVDP_CLAIM_REMINDER_HOURS", default=48),
+    # Triage et analyse confies d'office au responsable le moins charge
+    # (apps.coordination.services.auto_claim). False : prise en charge
+    # manuelle uniquement.
+    "AUTO_CLAIM": env.bool("EVDP_AUTO_CLAIM", default=True),
     "MAX_PAYOUT_METHODS": env.int("EVDP_MAX_PAYOUT_METHODS", default=5),
     "MAX_ID_DOCUMENT_SIZE": env.int("EVDP_MAX_ID_DOCUMENT_SIZE", default=10 * 1024 * 1024),
     "CAPTCHA_ENABLED": env("EVDP_CAPTCHA_ENABLED"),
@@ -450,13 +540,20 @@ EVDP = {
     },
     "RATE_LIMITS": {
         "login": env("EVDP_RL_LOGIN", default="10/5m"),
+        # Meme regle indexee sur le compte vise : freine un essai de mots de
+        # passe reparti sur de nombreuses IP contre un seul compte.
+        "login_account": env("EVDP_RL_LOGIN_ACCOUNT", default="10/15m"),
         "register": env("EVDP_RL_REGISTER", default="5/1h"),
+        # Renvoi du lien d'activation (inscription en attente).
+        "activation": env("EVDP_RL_ACTIVATION", default="5/1h"),
         "report": env("EVDP_RL_REPORT", default="10/1h"),
         "password_reset": env("EVDP_RL_PASSWORD_RESET", default="5/1h"),
         # Second facteur : limite par compte, pas par IP. Un code a six
         # chiffres se devine en 10^6 essais ; la limite les rend hors de
         # portee sans bloquer le titulaire legitime qui se trompe.
         "mfa": env("EVDP_RL_MFA", default="10/5m"),
+        # « Appareil perdu » : quelques demandes par compte et par jour.
+        "mfa_reset_request": env("EVDP_RL_MFA_RESET_REQUEST", default="3/1d"),
         # Jeton de suivi long et aleatoire (haute entropie) : la limite sert
         # surtout a ralentir le crawl/scraping, pas a empecher un brute-force
         # qui serait de toute facon impraticable vu l'espace de recherche.

@@ -12,6 +12,20 @@ arrêté par la coordination nationale ; le versement est réalisé hors platefo
 puis enregistré ici.</p>
 {% endif %}
 
+<div class="grid grid-4 mb-2">
+  <div class="stat"><div class="stat-value">{{ indicators.total }}</div><div class="stat-label">Récompenses</div></div>
+  <div class="stat warning"><div class="stat-value">{{ indicators.groups.pending }}</div><div class="stat-label">En attente</div></div>
+  <div class="stat"><div class="stat-value">{{ indicators.groups.approved }}</div><div class="stat-label">Approuvées</div></div>
+  <div class="stat"><div class="stat-value">{% for currency, total in indicators.paid %}{{ total|floatformat:0 }} {{ currency }}{% if not forloop.last %}<br>{% endif %}{% empty %}0{% endfor %}</div><div class="stat-label">Versé</div></div>
+</div>
+
+<div class="btn-row mb-2">
+  <a class="btn btn-sm {% if not selected_status %}btn-accent{% else %}btn-outline{% endif %}" href="{% url 'bounty:list' %}">Toutes</a>
+  {% for key, label in tabs %}
+    <a class="btn btn-sm {% if selected_status == key %}btn-accent{% else %}btn-outline{% endif %}" href="?status={{ key }}">{{ label }}</a>
+  {% endfor %}
+</div>
+
 <div class="card"><div class="card-body table-wrap">
   <table class="table">
     <thead><tr>
@@ -35,5 +49,6 @@ puis enregistré ici.</p>
     </tbody>
   </table>
 </div></div>
+{% query_replace page='' as extra_query %}
 {% include "partials/pagination.html" %}
 {% endblock %}

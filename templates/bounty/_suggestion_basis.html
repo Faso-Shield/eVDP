@@ -1,0 +1,20 @@
+{% load evdp_tags %}
+{% comment %}
+Explique le montant propose : palier du programme pour la severite validee,
+et position du score CVSS dans ce palier. `suggestion` vient de
+RewardPolicy.suggestion.
+{% endcomment %}
+{% if suggestion.tier %}
+  <p class="small muted mb-1">
+    Calcul : palier « {{ severity }} » du programme
+    ({{ suggestion.tier.min_amount|money }} – {{ suggestion.tier.max_amount|money }} {{ currency }}){% if suggestion.tier.scope_id %}, propre à l'actif {{ suggestion.tier.scope.identifier }}{% endif %}.
+    {% if suggestion.score is not None %}
+      Le score CVSS {{ suggestion.score }} place le montant à {{ suggestion.position }} % de la fourchette.
+    {% else %}
+      Sans score CVSS, la borne haute est proposée.
+    {% endif %}
+    Vous pouvez l'ajuster ; hors palier, une justification est exigée.
+  </p>
+{% elif suggestion %}
+  <p class="small muted mb-1">Le programme ne définit pas de palier pour cette sévérité : saisissez le montant.</p>
+{% endif %}

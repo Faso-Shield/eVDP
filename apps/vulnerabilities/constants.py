@@ -32,6 +32,11 @@ class Severity(models.TextChoices):
         return order.get(value, 0)
 
 
+#: Severites qui justifient d'alerter l'equipe au-dela du responsable de
+#: l'etape des l'arrivee d'un signalement.
+HIGH_URGENCY_SEVERITIES = frozenset({Severity.CRITICAL, Severity.HIGH})
+
+
 class VulnerabilityType(models.TextChoices):
     AUTHENTICATION = "AUTHENTICATION", "Authentification"
     AUTHORIZATION = "AUTHORIZATION", "Autorisation / contrôle d'accès"

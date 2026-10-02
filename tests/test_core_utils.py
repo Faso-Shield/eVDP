@@ -32,6 +32,39 @@ def test_next_sequence_is_isolated_per_year_and_model():
     assert other_year_value == "TESTSEQ-2100-000001"
 
 
+def test_new_counter_starts_after_existing_identifiers(analyst):
+    """Base anterieure au compteur : les identifiants existants sont sautes.
+
+    Regression : le compteur partait de zero et redonnait
+    EVDP-ADV-AAAA-000001, deja pris -> IntegrityError au clic sur
+    « Rediger un advisory ».
+    """
+    from apps.core.models import SequenceCounter
+    from apps.disclosures.models import Advisory
+    from apps.disclosures.services import create_advisory
+
+    first = create_advisory(Advisory(title="Existant", summary="Resume."), analyst)
+    # Simule une base dont le compteur n'a jamais vu cet advisory.
+    SequenceCounter.objects.all().delete()
+
+    second = create_advisory(Advisory(title="Nouveau", summary="Resume."), analyst)
+    assert second.advisory_id != first.advisory_id
+    assert int(second.advisory_id[-6:]) == int(first.advisory_id[-6:]) + 1
+
+
+def test_counter_lagging_behind_the_data_skips_taken_numbers(analyst):
+    from apps.core.models import SequenceCounter
+    from apps.disclosures.models import Advisory
+    from apps.disclosures.services import create_advisory
+
+    first = create_advisory(Advisory(title="A", summary="Resume."), analyst)
+    create_advisory(Advisory(title="B", summary="Resume."), analyst)
+    SequenceCounter.objects.update(last_value=0)  # compteur en retard
+
+    third = create_advisory(Advisory(title="C", summary="Resume."), analyst)
+    assert int(third.advisory_id[-6:]) == int(first.advisory_id[-6:]) + 2
+
+
 @pytest.mark.django_db(transaction=True)
 def test_next_sequence_has_no_collision_under_concurrent_calls():
     """Regression : l'ancienne implementation derivait le prochain numero du

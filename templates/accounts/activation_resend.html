@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Renvoyer le lien d'activation{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px;margin:2rem auto">
+  <div class="card-header"><h1 style="font-size:1.4rem">Renvoyer le lien d'activation</h1></div>
+  <div class="card-body">
+    <p class="muted">Saisissez l'adresse utilisée à l'inscription : un nouveau
+    lien vous sera envoyé si l'inscription attend encore sa confirmation.</p>
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="form-field">
+        <label for="email">Adresse email<abbr class="required" title="Champ obligatoire">*</abbr></label>
+        <input type="email" name="email" id="email" required autocomplete="email">
+      </div>
+      <button class="btn btn-block" type="submit">Renvoyer le lien</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
