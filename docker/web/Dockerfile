@@ -33,7 +33,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/home/evdp/.local/bin:${PATH}"
 
 # curl est requis par les healthchecks ; libpq5 par psycopg.
-RUN apt-get update && apt-get install --no-install-recommends -y \
+# apt-get upgrade applique les correctifs de securite Debian publies apres
+# la derniere reconstruction de l'image python officielle (scan Trivy).
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install --no-install-recommends -y \
         libpq5 \
         curl \
         tini \
