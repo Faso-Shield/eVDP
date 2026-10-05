@@ -90,10 +90,20 @@ cd evdp
 # 1. Configuration
 cp .env.example .env
 
-# 2. Générer une clé secrète et renseigner les mots de passe
+# 2. Remplacer TOUTES les valeurs « CHANGEZ-MOI » de .env
+#    (les deux commandes ne demandent que la bibliothèque standard Python)
+
+# SECRET_KEY : clé de signature Django (≥ 50 caractères)
 python -c "import secrets; print(secrets.token_urlsafe(64))"
-#   → reporter la valeur dans SECRET_KEY
-#   → définir POSTGRES_PASSWORD et FIELD_ENCRYPTION_KEY
+
+# FIELD_ENCRYPTION_KEY : clé Fernet (44 caractères, se termine par « = »)
+python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+
+# POSTGRES_PASSWORD : mot de passe fort de votre choix
+# SITE_BASE_URL     : adresse réelle de l'instance, ex. http://localhost
+
+# Vérifier qu'il ne reste aucune valeur d'exemple (ne doit rien afficher)
+grep -n "CHANGEZ-MOI" .env
 
 # 3. Démarrer la plateforme
 docker compose up -d
@@ -131,6 +141,14 @@ docker compose ps                      # tous les services en "healthy"
 curl -fsS http://localhost/health/     # {"status": "ok", ...}
 curl -fsS http://localhost/ready/      # base et cache disponibles
 ```
+
+> **`evdp-web` et `evdp-worker` redémarrent en boucle ?** Consultez
+> `docker logs evdp-web`. Le message `FIELD_ENCRYPTION_KEY invalide`
+> (`Fernet key must be 32 url-safe base64-encoded bytes`) signifie que la
+> valeur d'exemple de `.env` n'a pas été remplacée : générez une clé
+> (étape 2), reportez-la dans `.env`, puis relancez `docker compose up -d`.
+> Ne changez jamais cette clé une fois des données enregistrées : les
+> données de versement déjà chiffrées deviendraient illisibles.
 
 ---
 
