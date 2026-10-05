@@ -32,10 +32,14 @@ cd evdp
 cp .env.example .env
 ```
 
-Générez une clé secrète :
+Générez les deux clés (bibliothèque standard Python uniquement) :
 
 ```bash
+# SECRET_KEY (≥ 50 caractères)
 python -c "import secrets; print(secrets.token_urlsafe(64))"
+
+# FIELD_ENCRYPTION_KEY : clé Fernet, 44 caractères terminés par « = »
+python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
 ```
 
 Renseignez au minimum dans `.env` :
@@ -43,14 +47,22 @@ Renseignez au minimum dans `.env` :
 | Variable | Rôle |
 |----------|------|
 | `SECRET_KEY` | Clé de signature Django — **obligatoire**, ≥ 50 caractères |
-| `FIELD_ENCRYPTION_KEY` | Clé Fernet des données de versement chiffrées — **obligatoire** (commande dans `.env.example`) |
+| `FIELD_ENCRYPTION_KEY` | Clé Fernet des données de versement chiffrées — **obligatoire**, à ne jamais changer une fois des données enregistrées |
 | `POSTGRES_PASSWORD` | Mot de passe PostgreSQL — **obligatoire** |
+| `SITE_BASE_URL` | Adresse réelle de l'instance (ex. `https://vdp.exemple.bf`) |
 | `ALLOWED_HOSTS` | Domaines servis (ex. `vdp.exemple.bf`) |
 | `CSRF_TRUSTED_ORIGINS` | Origines complètes (ex. `https://vdp.exemple.bf`) |
 
 > `docker compose` **refuse de démarrer** si `SECRET_KEY`, `FIELD_ENCRYPTION_KEY`
 > ou `POSTGRES_PASSWORD` sont absents : c'est
 > volontaire, aucune valeur par défaut de production n'existe.
+>
+> En revanche, il **ne détecte pas** une valeur d'exemple laissée en place :
+> vérifiez qu'il n'en reste aucune (la commande ne doit rien afficher) :
+>
+> ```bash
+> grep -n "CHANGEZ-MOI" .env
+> ```
 
 ### 2.3 Démarrage
 
@@ -207,6 +219,7 @@ docker compose down -v                         # ⚠️ supprime les données
 | Symptôme | Cause probable | Résolution |
 |----------|----------------|------------|
 | `SECRET_KEY est obligatoire` | `.env` absent ou incomplet | `cp .env.example .env` et renseigner les valeurs |
+| `evdp-web` et `evdp-worker` redémarrent en boucle, `docker logs evdp-web` affiche `FIELD_ENCRYPTION_KEY invalide` (`Fernet key must be 32 url-safe base64-encoded bytes`) | Valeur d'exemple `CHANGEZ-MOI-cle-fernet` laissée dans `.env` | Générer une clé (§2.2), la reporter dans `.env`, puis `docker compose up -d` |
 | `evdp-web` redémarre en boucle | Base non prête | `docker compose logs evdp-db` ; l'entrypoint attend jusqu'à 120 s |
 | `/ready/` renvoie 503 | Redis ou PostgreSQL injoignable | `docker compose ps`, vérifier les healthchecks |
 | CSS absent | `collectstatic` non exécuté | `docker compose restart evdp-web` |
