@@ -1,5 +1,7 @@
 """Vues d'authentification et de gestion de compte."""
 
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -13,24 +15,27 @@ from django.contrib.auth.views import (
     PasswordResetView,
 )
 from django.db import transaction
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode
+from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_encode
 from django.views.decorators.debug import sensitive_post_parameters
+from django.views.decorators.http import require_POST
 
+from apps.accounts.permissions import require_not_read_only
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.core.middleware import get_client_ip
 from apps.core.ratelimit import rate_limited, reset
 from apps.notifications.models import NotificationKind
-from apps.notifications.services import notify
+from apps.notifications.services import notify, notify_many
 from apps.researchers.services import get_or_create_profile
 
 from . import mfa
 from .forms import (
+    ApiKeyForm,
     EmailAuthenticationForm,
     ProfileForm,
     RegistrationForm,
@@ -39,7 +44,7 @@ from .forms import (
     TotpCodeForm,
 )
 from .middleware import elevate, session_is_elevated
-from .models import TokenPurpose, UserToken
+from .models import ApiKey, TokenPurpose, User, UserToken
 
 #: Secret candidat d'un enrolement en cours. Il ne rejoint le compte qu'une
 #: fois un code valide fourni : un enrolement abandonne ne laisse rien
@@ -47,8 +52,15 @@ from .models import TokenPurpose, UserToken
 SETUP_SESSION_KEY = "mfa_setup_candidate"
 
 
+def _login_par_compte(request):
+    """Limite indexee sur le compte vise : un essai de mots de passe reparti
+    sur de nombreuses IP echappe a la limite par IP."""
+    return (request.POST.get("username") or "").strip().lower() or "-"
+
+
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")
 @method_decorator(rate_limited("login"), name="dispatch")
+@method_decorator(rate_limited("login_account", key_func=_login_par_compte), name="dispatch")
 class EvdpLoginView(LoginView):
     template_name = "accounts/login.html"
     authentication_form = EmailAuthenticationForm
@@ -62,6 +74,7 @@ class EvdpLoginView(LoginView):
             user.last_login_ip = ip
             user.save(update_fields=["last_login_ip", "updated_at"])
         reset("login", ip or "-")
+        reset("login_account", _login_par_compte(self.request))
         return response
 
 
@@ -79,7 +92,12 @@ def register(request):
         form = RegistrationForm(request.POST)
         if form.is_valid():
             with transaction.atomic():
-                user = form.save()
+                # Le compte reste inactif tant que l'adresse n'est pas confirmee :
+                # une adresse saisie par erreur ou usurpee ne donne acces a rien.
+                user = form.save(commit=False)
+                user.is_active = False
+                user.pending_activation = True
+                user.save()
                 get_or_create_profile(
                     user,
                     pseudonym=form.cleaned_data.get("pseudonym") or "",
@@ -92,24 +110,62 @@ def register(request):
                 obj=user,
                 request=request,
                 role=user.role,
+                pending_activation=True,
             )
-            notify(
-                user,
-                NotificationKind.ACCOUNT,
-                title="Bienvenue sur eVDP",
-                body="Confirmez votre adresse email pour activer toutes les fonctions.",
-                url=f"/verify-email/{token.token}/",
-            )
-            messages.success(
-                request,
-                "Compte créé. Un email de vérification vous à été envoyé : "
-                "confirmez votre adresse pour soumettre des rapports.",
-            )
-            login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-            return redirect("dashboard:home")
+            send_activation_email(user, token)
+            return render(request, "accounts/activation_sent.html", {"email": user.email})
     else:
         form = RegistrationForm()
     return render(request, "accounts/register.html", {"form": form})
+
+
+def send_activation_email(user, token):
+    """Lien d'activation, envoye directement : notify() ignore un compte inactif."""
+    from django.conf import settings
+    from django.core.mail import send_mail
+
+    from apps.notifications.services import _absolute
+
+    link = _absolute(reverse("accounts:verify_email", args=[token.token]))
+    send_mail(
+        subject="[eVDP] Activez votre compte",
+        message=(
+            "Votre compte eVDP a été créé. Confirmez votre adresse email pour "
+            f"l'activer :\n\n{link}\n\nCe lien est valable 24 heures. Si vous "
+            "n'êtes pas à l'origine de cette inscription, ignorez ce message : "
+            "le compte ne sera jamais activé."
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+        fail_silently=True,
+    )
+
+
+@rate_limited("activation")
+def resend_activation(request):
+    """Nouveau lien d'activation, sur simple saisie de l'adresse.
+
+    La reponse est la meme que l'adresse corresponde ou non a une inscription
+    en attente : la page ne revele pas quels comptes existent.
+    """
+    if request.method == "POST":
+        email = (request.POST.get("email") or "").strip().lower()
+        user = User.objects.filter(email=email, pending_activation=True).first()
+        if user is not None:
+            send_activation_email(user, UserToken.issue(user, TokenPurpose.EMAIL_VERIFICATION))
+        return render(
+            request, "accounts/activation_sent.html", {"email": email, "resent": True}
+        )
+    return render(request, "accounts/activation_resend.html")
+
+
+def _safe_next(request):
+    """`next` s'il designe une page de ce site, None sinon."""
+    target = request.GET.get("next") or ""
+    allowed = url_has_allowed_host_and_scheme(
+        target, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    )
+    return target if allowed else None
 
 
 def _mfa_par_compte(request):
@@ -174,7 +230,7 @@ def mfa_setup(request):
                 "Double authentification activée. Un code vous sera demandé "
                 "à chaque connexion.",
             )
-            return redirect("dashboard:home")
+            return _show_new_backup_codes(request, user)
 
     return render(
         request,
@@ -202,15 +258,31 @@ def mfa_challenge(request):
 
     form = TotpCodeForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        if mfa.consume_code(request.user, form.cleaned_data["code"]):
+        code = form.cleaned_data["code"]
+        # Code de secours (lettres et chiffres) ou code TOTP (six chiffres).
+        by_backup = mfa.looks_like_backup_code(code)
+        if by_backup:
+            accepted = mfa.consume_backup_code(request.user, code)
+        else:
+            accepted = mfa.consume_code(request.user, code)
+        if accepted:
+            if by_backup:
+                remaining = mfa.remaining_backup_codes(request.user)
+                if remaining <= mfa.BACKUP_CODES_LOW:
+                    messages.warning(
+                        request,
+                        f"Il vous reste {remaining} code(s) de secours : "
+                        "régénérez-en depuis votre profil.",
+                    )
             elevate(request)
             log_action(
                 AuditAction.MFA_VERIFIED,
                 actor=request.user,
                 obj=request.user,
                 request=request,
+                method="code_de_secours" if by_backup else "totp",
             )
-            return redirect(request.GET.get("next") or "dashboard:home")
+            return redirect(_safe_next(request) or "dashboard:home")
         log_action(
             AuditAction.MFA_FAILED,
             actor=request.user,
@@ -221,6 +293,157 @@ def mfa_challenge(request):
         messages.error(request, "Code incorrect ou déjà utilisé.")
 
     return render(request, "accounts/mfa_challenge.html", {"form": form})
+
+
+#: Cles d'API actives par compte : au-dela, en revoquer une d'abord.
+MAX_ACTIVE_API_KEYS = 5
+#: Cle tout juste creee, en attente de son unique affichage.
+API_KEY_SESSION_KEY = "api_key_created"
+
+
+@login_required
+@require_POST
+@require_not_read_only
+def api_key_create(request):
+    """Cree une cle d'API pour son titulaire.
+
+    La valeur en clair ne transite ni par un message flash (stocke dans un
+    cookie) ni par l'URL : elle est montree une fois, sur une page non mise
+    en cache.
+    """
+    from apps.api.authentication import generate_key
+
+    form = ApiKeyForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Clé non créée : indiquez un nom et une durée de validité.")
+        return redirect("accounts:profile")
+    if request.user.api_keys.filter(is_active=True).count() >= MAX_ACTIVE_API_KEYS:
+        messages.error(
+            request,
+            f"{MAX_ACTIVE_API_KEYS} clés actives au maximum : révoquez-en une d'abord.",
+        )
+        return redirect("accounts:profile")
+    raw, prefix, key_hash = generate_key()
+    api_key = ApiKey.objects.create(
+        user=request.user,
+        label=form.cleaned_data["label"],
+        prefix=prefix,
+        key_hash=key_hash,
+        expires_at=timezone.now() + timedelta(days=form.cleaned_data["expires_in_days"]),
+    )
+    log_action(
+        AuditAction.API_KEY_CREATED,
+        actor=request.user,
+        obj=api_key,
+        request=request,
+        label=api_key.label,
+        expires_at=api_key.expires_at.isoformat(),
+    )
+    request.session[API_KEY_SESSION_KEY] = {"label": api_key.label, "key": raw}
+    return redirect("accounts:api_key_created")
+
+
+@login_required
+def api_key_created(request):
+    created = request.session.pop(API_KEY_SESSION_KEY, None)
+    if not created:
+        return redirect("accounts:profile")
+    response = render(request, "accounts/api_key_created.html", created)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@login_required
+@require_POST
+def api_key_revoke(request, key_id):
+    api_key = get_object_or_404(ApiKey, pk=key_id, user=request.user, is_active=True)
+    api_key.is_active = False
+    api_key.save(update_fields=["is_active", "updated_at"])
+    log_action(
+        AuditAction.API_KEY_REVOKED,
+        actor=request.user,
+        obj=api_key,
+        request=request,
+        label=api_key.label,
+    )
+    messages.success(request, f"Clé « {api_key.label} » révoquée.")
+    return redirect("accounts:profile")
+
+
+@login_required
+@require_POST
+@rate_limited("mfa_reset_request", key_func=_mfa_par_compte)
+def mfa_lost_device(request):
+    """« J'ai perdu mon appareil » : previent les gestionnaires de comptes.
+
+    Le compte a prouve son mot de passe mais pas son second facteur : il ne
+    peut pas reinitialiser lui-meme (le mot de passe seul suffirait alors a
+    contourner le second facteur). Un gestionnaire de comptes verifie
+    l'identite de la personne hors ligne, puis reinitialise depuis la fiche
+    du compte.
+    """
+    from apps.accounts.roles import ROLE_CAPABILITIES, Capability
+
+    user = request.user
+    if not user.mfa_required or not user.mfa_enabled:
+        return redirect("accounts:mfa_challenge")
+    roles = [
+        role for role, caps in ROLE_CAPABILITIES.items() if Capability.MANAGE_USERS in caps
+    ]
+    managers = User.objects.filter(is_active=True, role__in=roles).exclude(pk=user.pk)
+    notify_many(
+        managers,
+        NotificationKind.ACCOUNT,
+        title=f"Appareil perdu : {user.email}",
+        body=(
+            f"{user.display_name or user.email} ({user.get_role_display()}) a perdu son "
+            "authentificateur. Vérifiez son identité par un autre canal avant de "
+            "réinitialiser son second facteur."
+        ),
+        url=reverse("accounts:user_manage_detail", args=[user.pk]),
+    )
+    log_action(AuditAction.MFA_RESET_REQUESTED, actor=user, obj=user, request=request)
+    messages.success(
+        request,
+        "Demande transmise aux gestionnaires de comptes. Ils vous contacteront pour "
+        "vérifier votre identité, puis réinitialiseront votre second facteur.",
+    )
+    return redirect("accounts:mfa_challenge")
+
+
+#: Codes de secours tout juste generes, en attente de leur unique affichage.
+BACKUP_CODES_SESSION_KEY = "mfa_backup_codes"
+
+
+def _show_new_backup_codes(request, user):
+    request.session[BACKUP_CODES_SESSION_KEY] = mfa.generate_backup_codes(user)
+    log_action(AuditAction.MFA_BACKUP_CODES_GENERATED, actor=user, obj=user, request=request)
+    return redirect("accounts:mfa_backup_codes")
+
+
+@login_required
+def mfa_backup_codes(request):
+    """Affiche une seule fois les codes de secours qui viennent d'etre generes."""
+    codes = request.session.pop(BACKUP_CODES_SESSION_KEY, None)
+    if not codes:
+        return redirect("accounts:profile")
+    response = render(request, "accounts/mfa_backup_codes.html", {"codes": codes})
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@login_required
+@require_POST
+@rate_limited("mfa", key_func=_mfa_par_compte)
+def mfa_regenerate_backup_codes(request):
+    """Nouveau lot de codes de secours, contre le mot de passe du compte."""
+    user = request.user
+    if not user.mfa_enabled or not session_is_elevated(request):
+        return redirect("accounts:profile")
+    if not user.check_password(request.POST.get("password", "")):
+        messages.error(request, "Mot de passe incorrect : aucun code n'a été généré.")
+        return redirect("accounts:profile")
+    return _show_new_backup_codes(request, user)
 
 
 def verify_email(request, token):
@@ -234,11 +457,32 @@ def verify_email(request, token):
         messages.error(request, "Lien de vérification invalide ou expiré.")
         return redirect("core:home")
     user = entry.user
+    activating = user.pending_activation
+    if not user.is_active and not activating:
+        # Compte desactive par un administrateur : un ancien lien ne le
+        # reactive pas.
+        messages.error(request, "Ce compte est désactivé.")
+        return redirect("core:home")
     user.email_verified = True
-    user.save(update_fields=["email_verified", "updated_at"])
+    fields = ["email_verified", "updated_at"]
+    if activating:
+        user.is_active = True
+        user.pending_activation = False
+        fields += ["is_active", "pending_activation"]
+    user.save(update_fields=fields)
     entry.consume()
-    log_action(AuditAction.EMAIL_VERIFIED, actor=user, obj=user, request=request)
-    messages.success(request, "Adresse email vérifiée. Merci.")
+    log_action(
+        AuditAction.EMAIL_VERIFIED,
+        actor=user,
+        obj=user,
+        request=request,
+        activation=activating,
+    )
+    if activating:
+        login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        messages.success(request, "Adresse confirmée : votre compte est activé. Bienvenue !")
+    else:
+        messages.success(request, "Adresse email vérifiée. Merci.")
     return redirect("dashboard:home")
 
 
@@ -252,10 +496,10 @@ def resend_verification(request):
         request.user,
         NotificationKind.ACCOUNT,
         title="Vérification de votre adresse email",
-        body="Un nouveau lien de verification est disponible.",
+        body="Un nouveau lien de vérification est disponible.",
         url=f"/verify-email/{token.token}/",
     )
-    messages.success(request, "Un nouveau lien de vérification vous à été envoyé.")
+    messages.success(request, "Un nouveau lien de vérification vous a été envoyé.")
     return redirect("accounts:profile")
 
 
@@ -302,6 +546,10 @@ def profile(request):
             "profile_form": profile_form,
             "researcher_profile": researcher_profile,
             "api_keys": request.user.api_keys.filter(is_active=True),
+            "api_key_form": ApiKeyForm(),
+            "backup_codes_left": (
+                mfa.remaining_backup_codes(request.user) if request.user.mfa_enabled else None
+            ),
         },
     )
 

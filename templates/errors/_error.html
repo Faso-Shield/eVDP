@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% comment %}
+Mise en page commune des pages d'erreur (400, 403, 404, 500).
+
+Chaque page fournit son code, son titre, son message et son illustration ;
+les liens de sortie s'adaptent au visiteur (connecté ou non, chercheur ou
+compte métier). Aucune ressource externe ni script : compatible CSP.
+{% endcomment %}
+{% block container_class %}container-narrow{% endblock %}
+{% block content %}
+<section class="error-page" aria-labelledby="error-title">
+  <div class="error-card">
+    <div class="error-visual" aria-hidden="true">
+      {% block illustration %}{% endblock %}
+    </div>
+    <div class="error-body">
+      <p class="error-code">{% block code %}{% endblock %}</p>
+      <h1 id="error-title" class="error-title">{% block heading %}{% endblock %}</h1>
+      <div class="error-message">{% block message %}{% endblock %}</div>
+      {% block detail %}{% endblock %}
+
+      <div class="error-actions">
+        {% if user.is_authenticated %}
+          <a class="btn btn-accent" href="{% url 'dashboard:home' %}">Mon tableau de bord</a>
+        {% else %}
+          <a class="btn btn-accent" href="{% url 'core:home' %}">Retour à l'accueil</a>
+        {% endif %}
+        <a class="btn btn-outline" href="{% url 'disclosures:advisory_list' %}">Advisories publiés</a>
+      </div>
+
+      <ul class="error-links">
+        {% if user.is_authenticated %}<li><a href="{% url 'core:home' %}">Accueil</a></li>{% endif %}
+        {% if can_report %}<li><a href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a></li>{% endif %}
+        <li><a href="{% url 'programs:list' %}">Programmes</a></li>
+        {% if not user.is_authenticated %}<li><a href="{% url 'accounts:login' %}">Se connecter</a></li>{% endif %}
+      </ul>
+    </div>
+  </div>
+  <p class="error-footnote">{{ PLATFORM_NAME }} · Plateforme nationale de divulgation coordonnée</p>
+</section>
+{% endblock %}

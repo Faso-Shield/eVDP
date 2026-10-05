@@ -71,11 +71,9 @@ def test_expected_assets_are_present():
 def test_views_render_with_case_without_organization(
     client_for, analyst, researcher_a, sla_policy
 ):
-    from apps.reports.services import submit_report
+    from .conftest import build_report, submit
 
-    from .conftest import build_report
-
-    submit_report(
+    submit(
         build_report(researcher_a, organization=None, title="Sans organisation"),
         reporter=researcher_a,
     )
@@ -86,14 +84,15 @@ def test_views_render_with_case_without_organization(
 
 
 @pytest.mark.django_db
-def test_advisory_list_renders_without_organization(client, coordinator, case_alpha):
-    from apps.disclosures.models import AdvisoryStatus
-    from apps.disclosures.services import create_advisory_from_case, publish_advisory
+def test_advisory_list_renders_without_organization(client, analyst, coordinator, case_alpha):
+    from apps.disclosures.models import Advisory, AdvisoryStatus
+    from apps.disclosures.services import create_advisory, publish_advisory
 
-    case_alpha.organization = None
-    case_alpha.save(update_fields=["organization"])
-
-    advisory = create_advisory_from_case(case_alpha, coordinator, summary="Resume public.")
+    # Advisory autonome sans organisation : un advisory issu d'un dossier ne
+    # se publie que par l'etape 10 du workflow v2.
+    advisory = create_advisory(
+        Advisory(title="Sans organisation", summary="Resume public."), analyst
+    )
     advisory.status = AdvisoryStatus.APPROVED
     advisory.save(update_fields=["status"])
     publish_advisory(advisory, coordinator)
@@ -119,3 +118,18 @@ def test_no_model_change_is_left_without_a_migration():
         call_command("makemigrations", "--check", "--dry-run", stdout=sortie, verbosity=1)
     except SystemExit:
         pytest.fail("Des changements de modele n'ont pas de migration : " + sortie.getvalue())
+
+
+INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>", re.IGNORECASE)
+INLINE_HANDLER = re.compile(r"""\son[a-z]+\s*=\s*["']""", re.IGNORECASE)
+
+
+def test_no_inline_script_in_templates():
+    """La CSP de production (script-src 'self') bloquerait tout script inline,
+    y compris les attributs onclick/onchange : la page casserait en silence."""
+    offenders = []
+    for template in _template_files():
+        content = template.read_text(encoding="utf-8")
+        if INLINE_SCRIPT.search(content) or INLINE_HANDLER.search(content):
+            offenders.append(template.name)
+    assert not offenders, "Script inline dans : " + ", ".join(sorted(offenders))

@@ -19,7 +19,7 @@ graph TB
         REDIS[("evdp-redis<br/>cache + broker")]
         WORKER["evdp-worker<br/>Celery"]
         BEAT["evdp-beat<br/>planificateur"]
-        MINIO[("evdp-minio<br/>pièces jointes<br/>bucket privé")]
+        MEDIA[("volume evdp-media<br/>pièces jointes<br/>sur disque")]
         MAIL["evdp-mailpit<br/>emails"]
         CLAM["evdp-clamav<br/>(optionnel)"]
     end
@@ -32,14 +32,14 @@ graph TB
     NGINX --> WEB
     WEB --> DB
     WEB --> REDIS
-    WEB --> MINIO
+    WEB --> MEDIA
     WEB --> MAIL
 
     REDIS --> WORKER
     REDIS --> BEAT
     BEAT --> REDIS
     WORKER --> DB
-    WORKER --> MINIO
+    WORKER --> MEDIA
     WORKER --> MAIL
     WORKER -.->|analyse antivirus| CLAM
 
@@ -48,12 +48,13 @@ graph TB
     classDef store fill:#123f6d,stroke:#071c33,color:#fff
     class NGINX exposed
     class WEB,WORKER,BEAT,MAIL,CLAM internal
-    class DB,REDIS,MINIO store
+    class DB,REDIS,MEDIA store
 ```
 
 **Points clés**
 
 - Seul `evdp-nginx` publie un port vers l'extérieur.
-- PostgreSQL, Redis et MinIO ne sont joignables que depuis le réseau interne.
+- PostgreSQL et Redis ne sont joignables que depuis le réseau interne ; les
+  pièces jointes résident dans le volume `evdp-media`, partagé par web et worker.
 - Les pièces jointes ne sont jamais servies par Nginx : `/media/` retourne 404.
 - ClamAV est optionnel ; en son absence l'analyse est marquée `SKIPPED`.

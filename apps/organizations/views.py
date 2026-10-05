@@ -5,15 +5,33 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from apps.accounts.permissions import require_capability, require_not_read_only
 from apps.accounts.roles import Capability, Role
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination import selectors
+from apps.dashboard.maps import can_view_map, is_national_scope
+from apps.notifications.models import NotificationKind
+from apps.notifications.services import notify
 
 from .forms import OrganizationForm, OrganizationMemberForm
-from .models import Organization, OrganizationMember, OrganizationStatus
+from .models import MembershipRole, Organization, OrganizationMember, OrganizationStatus
+
+
+def _map_url(user, organization):
+    """Lien vers l'organisation sur la carte, pour qui peut ouvrir la carte.
+
+    Meme garde que dashboard.views.map_view : un lien qui menerait a un refus
+    n'est pas propose. Un DSI n'a de lien que vers ses propres organisations :
+    sa carte ne montre qu'elles.
+    """
+    if not can_view_map(user):
+        return None
+    if not is_national_scope(user) and organization.id not in set(user.organization_ids()):
+        return None
+    return f"{reverse('dashboard:map')}?org={organization.id}"
 
 
 def organization_list(request):
@@ -119,6 +137,7 @@ def organization_manage(request, slug):
                 :15
             ],
             "member_form": OrganizationMemberForm(),
+            "map_url": _map_url(request.user, organization),
         },
     )
 
@@ -139,11 +158,18 @@ def organization_member_add(request, slug):
             if invited:
                 from apps.accounts.models import User
 
+                # Le role du compte suit son role dans l'organisation : une
+                # personne invitee comme DSI recoit un compte DSI.
+                invited_role = (
+                    Role.DSI_ADMIN
+                    if form.cleaned_data["membership_role"] == MembershipRole.DSI
+                    else Role.ORGANIZATION_MANAGER
+                )
                 target_user = User.objects.create_user(
                     email=form.cleaned_data["email"],
                     password=None,
                     full_name=form.cleaned_data["full_name"],
-                    role=Role.ORGANIZATION_MANAGER,
+                    role=invited_role,
                 )
                 log_action(
                     AuditAction.USER_CREATED,
@@ -192,6 +218,19 @@ def organization_member_add(request, slug):
                         "choisir son mot de passe lui a été transmis.",
                     )
                 else:
+                    # Une invitation previent la personne ; un rattachement a
+                    # un compte existant la rendait participante des dossiers
+                    # de l'organisation sans qu'elle le sache.
+                    notify(
+                        target_user,
+                        NotificationKind.ACCOUNT,
+                        title=f"Rattaché à {organization.name} sur eVDP",
+                        body=(
+                            f"{request.user.display_name or request.user.email} vous a "
+                            f"rattaché à l'organisation {organization.name}, avec le rôle "
+                            f"« {member.get_membership_role_display()} »."
+                        ),
+                    )
                     messages.success(
                         request, f"{target_user.email} ajouté comme membre de l'organisation."
                     )

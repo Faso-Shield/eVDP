@@ -20,6 +20,37 @@ def purge_expired_tokens():
     return count
 
 
+@shared_task(name="apps.accounts.tasks.purge_pgp_key_deliveries")
+def purge_pgp_key_deliveries():
+    """Efface la cle privee chiffree des remises expirees sans etre recuperees."""
+    from apps.core.models import PGPKeyDelivery
+
+    return (
+        PGPKeyDelivery.objects.filter(expires_at__lte=timezone.now())
+        .exclude(payload="")
+        .update(payload="", updated_at=timezone.now())
+    )
+
+
+#: Inscription jamais confirmee : supprimee apres ce delai, ce qui libere
+#: l'adresse pour une nouvelle inscription.
+PENDING_ACTIVATION_DAYS = 7
+
+
+@shared_task(name="apps.accounts.tasks.purge_pending_activations")
+def purge_pending_activations():
+    """Supprime les inscriptions dont le lien d'activation n'a jamais servi."""
+    from .models import User
+
+    cutoff = timezone.now() - timedelta(days=PENDING_ACTIVATION_DAYS)
+    stale = User.objects.filter(
+        pending_activation=True, is_active=False, created_at__lt=cutoff
+    )
+    count = stale.count()
+    stale.delete()
+    return count
+
+
 @shared_task(name="apps.accounts.tasks.remind_unverified_accounts")
 def remind_unverified_accounts():
     """Relance les comptes non verifies avant l'expiration de leur sursis.
@@ -67,3 +98,36 @@ def remind_unverified_accounts():
         envoyees += 1
 
     return envoyees
+
+
+@shared_task(name="apps.accounts.tasks.warn_national_pgp_key_expiry")
+def warn_national_pgp_key_expiry():
+    """Previent les gestionnaires de la cle nationale avant son expiration."""
+    from django.urls import reverse
+
+    from apps.core.pgp import national_key_expiring
+    from apps.notifications.models import NotificationKind
+    from apps.notifications.services import notify_many
+
+    from .models import User
+    from .roles import ROLE_CAPABILITIES, Capability
+
+    key = national_key_expiring()
+    if key is None:
+        return 0
+    roles = [r for r, caps in ROLE_CAPABILITIES.items() if Capability.MANAGE_PGP_KEYS in caps]
+    expired = key.expires_at <= timezone.now()
+    title = "Clé PGP nationale expirée" if expired else "Clé PGP nationale bientôt expirée"
+    return len(
+        notify_many(
+            User.objects.filter(is_active=True, role__in=roles),
+            NotificationKind.ACCOUNT,
+            title=title,
+            body=(
+                f"La clé {key.readable_fingerprint} expire le "
+                f"{timezone.localtime(key.expires_at):%d/%m/%Y}. Publiez la nouvelle clé "
+                "avant cette date : les signaleurs chiffrent avec la clé publiée."
+            ),
+            url=reverse("core:pgp_key_manage"),
+        )
+    )

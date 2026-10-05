@@ -3,6 +3,7 @@
 {% block title %}Tableau de bord CSIRT{% endblock %}
 
 {% block dashboard_content %}
+{% include "partials/my_claims_banner.html" %}
 <div class="flex-between mb-2">
   <h1 class="mb-0">Tableau de bord CSIRT</h1>
   <div class="btn-row">
@@ -140,7 +141,11 @@
       {% for case in overdue %}
         <div class="flex-between" style="padding:.35rem 0;border-bottom:1px solid var(--border)">
           <a href="{{ case.get_absolute_url }}" class="mono">{{ case.case_id }}</a>
-          <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
+          <span class="flex" style="gap:.3rem">
+            {% if case.overdue_internal %}<span class="pill" title="Échéance dépassée dont le CSIRT est responsable">Interne</span>{% endif %}
+            {% if case.overdue_external %}<span class="pill" title="Échéance dépassée dont l'organisation est responsable">Externe</span>{% endif %}
+            <span class="badge {{ case.severity|severity_class }}">{{ case.get_severity_display }}</span>
+          </span>
         </div>
       {% empty %}<p class="muted">Aucun dépassement.</p>{% endfor %}
     </div>

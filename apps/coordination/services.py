@@ -5,18 +5,19 @@ qui garantissent la coherence workflow + audit + notifications + SLA.
 """
 
 import secrets
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from apps.accounts.roles import Capability
+from apps.accounts.roles import Capability, Role
 from apps.audit.models import AuditAction, AuditResult
 from apps.audit.services import log_action
 from apps.core.utils import hash_text
 from apps.notifications.models import NotificationKind
-from apps.notifications.services import notify, notify_case_team, notify_external
+from apps.notifications.services import notify, notify_external, notify_many
 from apps.vulnerabilities.constants import Severity
 
 from .constants import (
@@ -37,11 +38,31 @@ from .models import (
     SLAEvent,
     SLAPolicy,
 )
+from .visibility import readable_channels, writable_channels
 from .workflow import (
+    ADMISSIBILITY_CHECKLIST,
+    MAX_INSUFFICIENT_FIX,
+    ORG_VISIBLE_STATES,
+    PRIMARY,
+    TERMINAL_STATES,
+    BountyStage,
     CaseStatus,
     TransitionNotAllowed,
+    available_actions,
     check_transition,
+    claim_holder,
+    claim_pools,
+    current_actions,
+    current_owner_ids,
+    get_action,
+    insufficient_fix_count,
+    must_claim,
     public_status_bucket,
+    public_status_of,
+    resolve_target,
+    step_owners,
+    user_pools,
+    working_advisory,
 )
 
 #: Duree de validite d'un lien de suivi remis a un declarant sans compte.
@@ -50,23 +71,22 @@ TRACKING_TOKEN_VALIDITY = timedelta(days=180)
 #: Statut -> evenement de chronologie correspondant.
 STATUS_TIMELINE_EVENTS = {
     CaseStatus.ACKNOWLEDGED: TimelineEventType.ACKNOWLEDGED,
-    CaseStatus.TRIAGE: TimelineEventType.TRIAGE_STARTED,
+    CaseStatus.IN_ANALYSIS: TimelineEventType.TRIAGE_STARTED,
     CaseStatus.NEEDS_INFORMATION: TimelineEventType.INFORMATION_REQUESTED,
+    CaseStatus.VALIDATION_PENDING: TimelineEventType.QUALIFICATION_SUBMITTED,
     CaseStatus.VALIDATED: TimelineEventType.VALIDATED,
-    CaseStatus.SEVERITY_ASSIGNED: TimelineEventType.SEVERITY_SET,
-    CaseStatus.VENDOR_CONTACTED: TimelineEventType.ORGANIZATION_CONTACTED,
-    CaseStatus.VENDOR_ACKNOWLEDGED: TimelineEventType.ORGANIZATION_ACKNOWLEDGED,
+    CaseStatus.VENDOR_NOTIFIED: TimelineEventType.ORGANIZATION_CONTACTED,
+    CaseStatus.REMEDIATION_IN_PROGRESS: TimelineEventType.ORGANIZATION_ACKNOWLEDGED,
     CaseStatus.FIX_AVAILABLE: TimelineEventType.FIX_PROVIDED,
     CaseStatus.FIX_VERIFIED: TimelineEventType.FIX_VERIFIED,
-    CaseStatus.DISCLOSURE_SCHEDULED: TimelineEventType.DISCLOSURE_SCHEDULED,
-    CaseStatus.PUBLISHED: TimelineEventType.ADVISORY_PUBLISHED,
-    CaseStatus.REWARD_APPROVED: TimelineEventType.REWARD_APPROVED,
+    CaseStatus.ADVISORY_REVIEW: TimelineEventType.ADVISORY_SUBMITTED,
+    CaseStatus.REJECTION_PENDING: TimelineEventType.REJECTION_PROPOSED,
     CaseStatus.DUPLICATE: TimelineEventType.DUPLICATE_MARKED,
     CaseStatus.REJECTED: TimelineEventType.REJECTED,
     CaseStatus.CLOSED: TimelineEventType.CLOSED,
 }
 
-#: Statuts declenchant une notification au declarant.
+#: Statuts declenchant une notification dediee au declarant.
 STATUS_NOTIFICATIONS = {
     CaseStatus.ACKNOWLEDGED: NotificationKind.ACKNOWLEDGEMENT,
     CaseStatus.NEEDS_INFORMATION: NotificationKind.INFORMATION_REQUESTED,
@@ -123,11 +143,26 @@ def add_participant(case, user, role=ParticipantRole.OBSERVER, added_by=None):
     return participant
 
 
+def participant_role_for(user):
+    """Badge d'un compte metier qui prend un dossier en charge : son role reel."""
+    return {
+        Role.TRIAGER: ParticipantRole.TRIAGER,
+        Role.CSIRT_ANALYST: ParticipantRole.ANALYST,
+        Role.NATIONAL_COORDINATOR: ParticipantRole.COORDINATOR,
+        Role.DSI_ADMIN: ParticipantRole.DSI,
+        Role.ORGANIZATION_MANAGER: ParticipantRole.ORGANIZATION,
+    }.get(user.role, ParticipantRole.OBSERVER)
+
+
 def ensure_default_participants(case):
-    """Rattache automatiquement le declarant et les contacts de l'organisation."""
+    """Rattache le declarant, puis les contacts de l'organisation.
+
+    Les contacts de l'organisation ne sont rattaches qu'a partir de l'etape 5
+    (transmission a l'organisation) : jamais pendant le triage.
+    """
     if case.reporter_id:
         add_participant(case, case.reporter, ParticipantRole.REPORTER)
-    if case.organization_id:
+    if case.organization_id and case.status in ORG_VISIBLE_STATES:
         from apps.organizations.models import MembershipRole
 
         members = case.organization.members.filter(
@@ -157,21 +192,44 @@ def resolve_sla_policy(case):
 
 
 def schedule_initial_sla(case):
-    """Cree les echeances d'accuse de reception et de premier triage."""
+    """Ouvre l'echeance de l'etape 1 (accuse de reception, 72 h)."""
     policy = resolve_sla_policy(case)
     if policy is None:
         return []
-    now = timezone.now()
-    events = []
-    for kind, due in (
-        (SLAKind.ACKNOWLEDGEMENT, now + timedelta(hours=policy.acknowledgement_hours)),
-        (SLAKind.TRIAGE, now + timedelta(days=policy.triage_days)),
-    ):
-        event, _ = SLAEvent.objects.get_or_create(
-            case=case, kind=kind, defaults={"due_at": due, "policy": policy}
+    due = timezone.now() + timedelta(hours=policy.acknowledgement_hours)
+    return [open_sla(case, SLAKind.ACKNOWLEDGEMENT, due, policy=policy)]
+
+
+def open_sla(case, kind, due_at, policy=None):
+    """Ouvre (ou rouvre) l'echeance d'une etape.
+
+    Une etape peut etre rejouee (renvoi a l'auteur, correctif insuffisant) :
+    son echeance repart alors de zero au lieu de rester soldee.
+    """
+    policy = policy or resolve_sla_policy(case)
+    event, created = SLAEvent.objects.get_or_create(
+        case=case, kind=kind, defaults={"due_at": due_at, "policy": policy}
+    )
+    if not created:
+        event.due_at = due_at
+        event.state = SLAState.PENDING
+        event.satisfied_at = None
+        event.warned_at = None
+        event.breached_at = None
+        event.save(
+            update_fields=[
+                "due_at",
+                "state",
+                "satisfied_at",
+                "warned_at",
+                "breached_at",
+                "updated_at",
+            ]
         )
-        events.append(event)
-    return events
+        # created_at sert de point de depart au calcul du seuil orange.
+        SLAEvent.objects.filter(pk=event.pk).update(created_at=timezone.now())
+        event.refresh_from_db(fields=["created_at"])
+    return event
 
 
 def schedule_sla(case, kind, due_at):
@@ -192,57 +250,88 @@ def satisfy_sla(case, kind):
     return event
 
 
-def _sla_side_effects(case, new_status):
-    """Ouvre et solde les echeances au fil du workflow."""
-    policy = resolve_sla_policy(case)
-    now = timezone.now()
+#: Echeance ouverte en entrant dans un statut : type et delai selon la politique.
+_SLA_ON_ENTRY = {
+    CaseStatus.ACKNOWLEDGED: (SLAKind.TRIAGE, "triage_days"),
+    CaseStatus.VALIDATION_PENDING: (SLAKind.VALIDATION, "validation_days"),
+    CaseStatus.VENDOR_NOTIFIED: (SLAKind.VENDOR_RESPONSE, "vendor_response_days"),
+    CaseStatus.FIX_AVAILABLE: (SLAKind.VERIFICATION, "verification_days"),
+}
 
-    if new_status in (CaseStatus.RECEIVED, CaseStatus.ACKNOWLEDGED):
-        satisfy_sla(case, SLAKind.ACKNOWLEDGEMENT)
-    if new_status in (
-        CaseStatus.TRIAGE,
-        CaseStatus.VALIDATED,
-        CaseStatus.REJECTED,
-        CaseStatus.DUPLICATE,
-        CaseStatus.OUT_OF_SCOPE,
-        CaseStatus.NOT_APPLICABLE,
-        CaseStatus.INFORMATIVE,
-    ):
-        satisfy_sla(case, SLAKind.TRIAGE)
+#: Echeance soldee en quittant un statut vers l'avant.
+_SLA_ON_EXIT = {
+    CaseStatus.SUBMITTED: SLAKind.ACKNOWLEDGEMENT,
+    CaseStatus.IN_ANALYSIS: SLAKind.TRIAGE,
+    CaseStatus.VALIDATION_PENDING: SLAKind.VALIDATION,
+    CaseStatus.VENDOR_NOTIFIED: SLAKind.VENDOR_RESPONSE,
+    CaseStatus.REMEDIATION_IN_PROGRESS: SLAKind.REMEDIATION,
+    CaseStatus.FIX_AVAILABLE: SLAKind.VERIFICATION,
+}
+
+#: Statuts d'exception : l'echeance de l'etape d'origine n'est pas soldee.
+_SUSPENDING_STATES = (CaseStatus.NEEDS_INFORMATION, CaseStatus.REJECTION_PENDING)
+
+
+def _sla_side_effects(case, previous, new_status):
+    """Ouvre et solde les echeances au fil des etapes."""
+    exit_kind = _SLA_ON_EXIT.get(previous)
+    if exit_kind and new_status not in _SUSPENDING_STATES:
+        satisfy_sla(case, exit_kind)
+    if new_status in TERMINAL_STATES:
+        case.sla_events.filter(state__in=[SLAState.PENDING, SLAState.APPROACHING]).update(
+            state=SLAState.CANCELLED
+        )
+        return
+    if previous in _SUSPENDING_STATES:
+        # Retour a l'etape d'origine : son echeance, reportee, reste en cours.
+        return
+    policy = resolve_sla_policy(case)
     if policy is None:
         return
-    if new_status == CaseStatus.VENDOR_CONTACTED:
-        schedule_sla(
-            case,
-            SLAKind.VENDOR_RESPONSE,
-            now + timedelta(days=policy.vendor_response_days),
-        )
-    if new_status == CaseStatus.VENDOR_ACKNOWLEDGED:
-        satisfy_sla(case, SLAKind.VENDOR_RESPONSE)
-    if new_status in (CaseStatus.VALIDATED, CaseStatus.REMEDIATION):
-        schedule_sla(
+    entry = _SLA_ON_ENTRY.get(new_status)
+    if entry:
+        kind, days_field = entry
+        due = timezone.now() + timedelta(days=getattr(policy, days_field))
+        open_sla(case, kind, due, policy=policy)
+    if new_status == CaseStatus.REMEDIATION_IN_PROGRESS and case.remediation_target_date:
+        open_sla(
             case,
             SLAKind.REMEDIATION,
-            now + timedelta(days=policy.remediation_days_for(case.severity)),
+            _start_of_day(case.remediation_target_date + timedelta(days=1)),
+            policy=policy,
         )
-    if new_status in (CaseStatus.FIX_AVAILABLE, CaseStatus.FIX_VERIFIED):
-        satisfy_sla(case, SLAKind.REMEDIATION)
-    if new_status in (CaseStatus.PUBLISHED, CaseStatus.CLOSED):
-        case.sla_events.filter(state=SLAState.PENDING).update(state=SLAState.CANCELLED)
+
+
+def _pause_sla(case):
+    case.sla_paused_at = timezone.now()
+
+
+def _resume_sla(case):
+    """Reporte les echeances en cours de la duree de la suspension."""
+    if case.sla_paused_at is None:
+        return
+    paused_for = timezone.now() - case.sla_paused_at
+    for event in case.sla_events.filter(state__in=[SLAState.PENDING, SLAState.APPROACHING]):
+        event.due_at = event.due_at + paused_for
+        event.save(update_fields=["due_at", "updated_at"])
+    case.sla_paused_at = None
 
 
 # ---------------------------------------------------------------------------
-# Transition de statut
+# Actions de workflow
 # ---------------------------------------------------------------------------
-def transition_case(case, target_status, actor, comment="", request=None):
-    """Applique une transition de statut controlee et tracee.
+def perform_action(case, action_key, actor, data=None, request=None):
+    """Execute une action du workflow v2 apres les controles serveur.
 
     La verification est faite HORS transaction : un refus doit laisser une
     trace d'audit persistante, or un rollback effacerait cette trace.
+    `actor=None` designe le systeme (taches planifiees).
     """
-    previous = case.status
+    data = dict(data or {})
+    data["comment"] = (data.get("comment") or "").strip()
     try:
-        check_transition(previous, target_status, case.workflow, user=actor)
+        action = get_action(action_key)
+        check_transition(case, action, user=actor, data=data)
     except TransitionNotAllowed as exc:
         log_action(
             AuditAction.STATUS_CHANGED,
@@ -250,25 +339,133 @@ def transition_case(case, target_status, actor, comment="", request=None):
             obj=case,
             result=AuditResult.DENIED,
             request=request,
-            from_status=previous,
-            to_status=target_status,
+            workflow_action=action_key,
+            from_status=case.status,
             reason=str(exc),
         )
         raise
-    return _apply_transition(case, target_status, actor, comment, request, previous)
+    return _apply_action(case, action, actor, data, request)
+
+
+def transition_case(case, target_status, actor, comment="", request=None, data=None):
+    """Compatibilite : applique l'action qui mene au statut demande.
+
+    Chaque etape n'ayant qu'une action par cible, le statut vise suffit a
+    retrouver le bouton correspondant ; tous les controles s'appliquent.
+    """
+    for action in available_actions(case):
+        if (
+            action.track == "case"
+            and action.target
+            and resolve_target(case, action) == target_status
+        ):
+            payload = dict(data or {})
+            payload["comment"] = comment
+            return perform_action(case, action.key, actor, data=payload, request=request)
+    log_action(
+        AuditAction.STATUS_CHANGED,
+        actor=actor,
+        obj=case,
+        result=AuditResult.DENIED,
+        request=request,
+        from_status=case.status,
+        to_status=target_status,
+        reason="transition inexistante",
+    )
+    raise TransitionNotAllowed(f"Transition interdite : {case.status} -> {target_status}.")
 
 
 @transaction.atomic
-def _apply_transition(case, target_status, actor, comment, request, previous):
-    """Applique effectivement la transition validee (atomique)."""
-    case.status = target_status
+def _apply_action(case, action, actor, data, request):
+    """Applique effectivement l'action validee (atomique et auditee)."""
     now = timezone.now()
-    updates = ["status", "updated_at"]
+    previous = case.status
+    target = resolve_target(case, action) if action.track == "case" else None
+    updates = set()
+    handler = _ACTION_HANDLERS.get(action.key)
+    if handler is not None:
+        updates |= set(handler(case, actor, data, now, request) or ())
 
-    if target_status == CaseStatus.ACKNOWLEDGED and not case.acknowledged_at:
+    if target is not None and target != previous:
+        case.status = target
+        updates.add("status")
+        updates |= _status_timestamps(case, target, now)
+        if previous in _SUSPENDING_STATES and target == case.return_status:
+            case.return_status = ""
+            updates.add("return_status")
+    if updates:
+        case.save(update_fields=sorted(updates | {"updated_at"}))
+
+    if case.status in ORG_VISIBLE_STATES and previous not in ORG_VISIBLE_STATES:
+        ensure_default_participants(case)
+    if case.status != previous:
+        CaseStatusHistory.objects.create(
+            case=case,
+            from_status=previous,
+            to_status=case.status,
+            actor=actor,
+            comment=data["comment"],
+        )
+        add_timeline_event(
+            case,
+            STATUS_TIMELINE_EVENTS.get(case.status, TimelineEventType.STATUS_CHANGED),
+            case.get_status_display(),
+            actor=actor,
+            action=action.key,
+        )
+        _sla_side_effects(case, previous, case.status)
+        case.refresh_priority()
+        log_action(
+            AuditAction.STATUS_CHANGED,
+            actor=actor,
+            obj=case,
+            request=request,
+            workflow_action=action.key,
+            from_status=previous,
+            to_status=case.status,
+        )
+        _notify_status_change(case, previous, case.status, actor)
+        _apply_reputation(case, case.status, actor)
+    else:
+        log_action(
+            AuditAction.CASE_UPDATED,
+            actor=actor,
+            obj=case,
+            request=request,
+            workflow_action=action.key,
+            bounty_stage=case.bounty_stage,
+            comment=data["comment"][:200],
+        )
+    _notify_next_owner(case, actor)
+    return case
+
+
+def _status_timestamps(case, target, now):
+    updates = set()
+    if target == CaseStatus.ACKNOWLEDGED and not case.acknowledged_at:
         case.acknowledged_at = now
-        updates.append("acknowledged_at")
-    if target_status == CaseStatus.VALIDATED and not case.validated_at:
+        updates.add("acknowledged_at")
+    if target == CaseStatus.FIX_AVAILABLE and not case.remediated_at:
+        case.remediated_at = now
+        updates.add("remediated_at")
+    if target in TERMINAL_STATES and not case.closed_at:
+        case.closed_at = now
+        updates.add("closed_at")
+    return updates
+
+
+# -- Effets propres a chaque action -------------------------------------------
+def _on_declare_admissible(case, actor, data, now, request):
+    case.admissibility_checklist = {
+        key: bool(data.get(key)) for key, _label in ADMISSIBILITY_CHECKLIST
+    }
+    return ["admissibility_checklist"]
+
+
+def _on_validate(case, actor, data, now, request):
+
+    updates = []
+    if not case.validated_at:
         case.validated_at = now
         updates.append("validated_at")
         if case.program_id and case.disclosure_date is None:
@@ -276,56 +473,397 @@ def _apply_transition(case, target_status, actor, comment, request, previous):
                 now + timedelta(days=case.program.disclosure_delay_days)
             ).date()
             updates.append("disclosure_date")
-    if target_status in (CaseStatus.FIX_VERIFIED, CaseStatus.FIX_AVAILABLE):
-        if not case.remediated_at:
-            case.remediated_at = now
-            updates.append("remediated_at")
-    if target_status == CaseStatus.PUBLISHED:
-        case.is_published = True
-        updates.append("is_published")
-    if target_status == CaseStatus.CLOSED and not case.closed_at:
-        case.closed_at = now
-        updates.append("closed_at")
+    return updates
 
-    case.save(update_fields=updates)
 
-    CaseStatusHistory.objects.create(
-        case=case,
-        from_status=previous,
-        to_status=target_status,
-        actor=actor,
-        comment=comment,
+def _on_notify_vendor(case, actor, data, now, request):
+    case.vendor_notified_at = now
+    return ["vendor_notified_at"]
+
+
+def _on_remediation_plan(case, actor, data, now, request):
+    case.remediation_plan = data["remediation_plan"].strip()
+    case.remediation_target_date = data["remediation_target_date"]
+    return ["remediation_plan", "remediation_target_date"]
+
+
+def _on_declare_fix(case, actor, data, now, request):
+    case.fix_description = data["fix_description"].strip()
+    case.fix_version = (data.get("fix_version") or "").strip()[:120]
+    case.fix_deployed_on = data.get("fix_deployed_on") or None
+    return ["fix_description", "fix_version", "fix_deployed_on"]
+
+
+def _open_bounty_branch(case):
+    """Ouvre la branche prime d'un dossier Bug Bounty, une seule fois.
+
+    L'analyste ne propose la prime qu'au terme de son travail : correctif
+    confirme (etape 8), ou dossier parti en advisory sans correctif. La
+    proposition repose ainsi sur une severite et un impact etablis.
+    """
+    from apps.programs.models import ProgramType
+
+    if case.bounty_stage:
+        return []
+    eligible = (
+        case.program_id is not None
+        and case.program.program_type == ProgramType.BUG_BOUNTY
+        and case.reporter_id is not None
     )
+    case.bounty_stage = BountyStage.ELIGIBLE if eligible else BountyStage.NOT_ELIGIBLE
+    return ["bounty_stage"]
+
+
+def _on_confirm_fix(case, actor, data, now, request):
+    case.verification_report = data["verification_report"].strip()
+    return ["verification_report", *_open_bounty_branch(case)]
+
+
+def _on_insufficient_fix(case, actor, data, now, request):
+    post_message(
+        case,
+        None,
+        "Correctif jugé insuffisant par le CSIRT :\n\n" + data["comment"],
+        confidentiality=Confidentiality.ORGANIZATION,
+        is_system=True,
+    )
+    # L'historique n'enregistre ce renvoi qu'apres le gestionnaire.
+    if insufficient_fix_count(case) + 1 >= MAX_INSUFFICIENT_FIX:
+        escalate_case(
+            case,
+            actor,
+            f"{MAX_INSUFFICIENT_FIX} correctifs jugés insuffisants",
+            request=request,
+            save=False,
+        )
+        return ["escalated_at"]
+    return []
+
+
+def _on_submit_advisory(case, actor, data, now, request):
+    from apps.disclosures.models import AdvisoryStatus
+
+    advisory = working_advisory(case)
+    if advisory.status == AdvisoryStatus.DRAFT:
+        advisory.status = AdvisoryStatus.IN_REVIEW
+        advisory.save(update_fields=["status", "updated_at"])
+    return _open_bounty_branch(case)
+
+
+def _on_publish(case, actor, data, now, request):
+    from apps.disclosures.models import AdvisoryStatus
+    from apps.disclosures.services import publish_advisory
+
+    advisory = working_advisory(case)
+    if advisory.status in (AdvisoryStatus.DRAFT, AdvisoryStatus.IN_REVIEW):
+        advisory.status = AdvisoryStatus.APPROVED
+        advisory.save(update_fields=["status", "updated_at"])
+    publish_advisory(advisory, actor, request=request, from_workflow=True)
+    case.is_published = True
+    return ["is_published"]
+
+
+def _on_propose_bounty(case, actor, data, now, request):
+    from apps.bounty.services import propose_bounty
+
+    propose_bounty(
+        case,
+        actor,
+        amount=data.get("amount"),
+        justification=data.get("justification", ""),
+        request=request,
+    )
+    add_timeline_event(case, TimelineEventType.REWARD_PROPOSED, "Prime proposée", actor)
+    return []
+
+
+def _on_approve_bounty(case, actor, data, now, request):
+    from apps.bounty.services import approve_bounty
+
+    justification = (data.get("justification") or "").strip()
+    note = data["comment"] + (f"\n\nMontant : {justification}" if justification else "")
+    approve_bounty(case.bounty, actor, amount=data.get("amount"), note=note, request=request)
+    return []
+
+
+def _on_return_bounty(case, actor, data, now, request):
+    bounty = case.bounty
+    bounty.decision_note = data["comment"]
+    bounty.save(update_fields=["decision_note", "updated_at"])
+    case.bounty_stage = BountyStage.ELIGIBLE
+    add_timeline_event(case, TimelineEventType.RETURNED, "Prime renvoyée au proposeur", actor)
+    return ["bounty_stage"]
+
+
+def _on_request_information(case, actor, data, now, request):
+    case.return_status = case.status
+    _pause_sla(case)
+    post_message(
+        case,
+        None,
+        "Compléments demandés par l'équipe de coordination :\n\n" + data["comment"],
+        confidentiality=Confidentiality.RESEARCHER,
+        is_system=True,
+    )
+    return ["return_status", "sla_paused_at"]
+
+
+def _on_send_information(case, actor, data, now, request):
+    _resume_sla(case)
+    post_message(case, actor, data["comment"], confidentiality=Confidentiality.RESEARCHER)
+    add_timeline_event(
+        case, TimelineEventType.INFORMATION_PROVIDED, "Compléments reçus", actor
+    )
+    return ["sla_paused_at"]
+
+
+def _on_propose_rejection(case, actor, data, now, request):
+    if case.status != CaseStatus.NEEDS_INFORMATION:
+        case.return_status = case.status
+    case.duplicate_of = None
+    return ["return_status", "duplicate_of"]
+
+
+def _on_propose_duplicate(case, actor, data, now, request):
+    case.return_status = case.status
+    case.duplicate_of = data["original"]
+    return ["return_status", "duplicate_of"]
+
+
+def _on_confirm_rejection(case, actor, data, now, request):
+    if case.duplicate_of_id:
+        log_action(
+            AuditAction.REPORT_DUPLICATED,
+            actor=actor,
+            obj=case,
+            request=request,
+            original_case=case.duplicate_of.case_id,
+        )
+    else:
+        log_action(AuditAction.REPORT_REJECTED, actor=actor, obj=case, request=request)
+    case.sla_paused_at = None
+    return ["sla_paused_at"]
+
+
+def _on_return_rejection(case, actor, data, now, request):
+    case.duplicate_of = None
+    _resume_sla(case)
+    add_timeline_event(
+        case, TimelineEventType.RETURNED, "Rejet renvoyé à l'étape d'origine", actor
+    )
+    return ["duplicate_of", "sla_paused_at"]
+
+
+def _on_propose_closure(case, actor, data, now, request):
+    add_timeline_event(
+        case, TimelineEventType.RETURNED, "Clôture sans advisory proposée", actor
+    )
+    return []
+
+
+def _on_close_without_advisory(case, actor, data, now, request):
+    add_timeline_event(
+        case, TimelineEventType.CLOSED, "Dossier clos sans publication d'advisory", actor
+    )
+    return []
+
+
+def _on_return_to_author(case, actor, data, now, request):
+    add_timeline_event(case, TimelineEventType.RETURNED, "Renvoyé à l'auteur", actor)
+    return []
+
+
+def _on_escalate(case, actor, data, now, request):
+    escalate_case(case, actor, data["comment"], request=request, save=False)
+    return ["escalated_at"]
+
+
+def _on_deadline_disclosure(case, actor, data, now, request):
+    case.deadline_disclosure_at = now
     add_timeline_event(
         case,
-        STATUS_TIMELINE_EVENTS.get(target_status, TimelineEventType.STATUS_CHANGED),
-        f"{case.get_status_display()}",
-        actor=actor,
+        TimelineEventType.DISCLOSURE_SCHEDULED,
+        "Divulgation à échéance décidée",
+        actor,
     )
-    _sla_side_effects(case, target_status)
-    case.refresh_priority()
+    return ["deadline_disclosure_at"]
 
-    log_action(
-        AuditAction.STATUS_CHANGED,
-        actor=actor,
-        obj=case,
-        request=request,
-        from_status=previous,
-        to_status=target_status,
-    )
 
-    _notify_status_change(case, target_status, actor)
-    _apply_reputation(case, target_status, actor)
+_ACTION_HANDLERS = {
+    "declare_admissible": _on_declare_admissible,
+    "validate_qualification": _on_validate,
+    "notify_vendor": _on_notify_vendor,
+    "submit_remediation_plan": _on_remediation_plan,
+    "declare_fix": _on_declare_fix,
+    "confirm_fix": _on_confirm_fix,
+    "insufficient_fix": _on_insufficient_fix,
+    "submit_advisory": _on_submit_advisory,
+    "publish_and_close": _on_publish,
+    "propose_bounty": _on_propose_bounty,
+    "approve_bounty": _on_approve_bounty,
+    "return_bounty": _on_return_bounty,
+    "request_information": _on_request_information,
+    "send_information": _on_send_information,
+    "propose_rejection": _on_propose_rejection,
+    "propose_duplicate": _on_propose_duplicate,
+    "confirm_rejection": _on_confirm_rejection,
+    "return_rejection": _on_return_rejection,
+    "return_to_author": _on_return_to_author,
+    "propose_closure": _on_propose_closure,
+    "close_without_advisory": _on_close_without_advisory,
+    "escalate": _on_escalate,
+    "decide_deadline_disclosure": _on_deadline_disclosure,
+}
+
+
+def escalate_case(case, actor, reason, request=None, save=True):
+    """Alerte rouge : le Coordinateur est notifie, le statut ne change pas."""
+    from apps.accounts.models import User
+    from apps.accounts.roles import Role
+
+    if case.escalated_at:
+        return case
+    case.escalated_at = timezone.now()
+    if save:
+        case.save(update_fields=["escalated_at", "updated_at"])
+        log_action(
+            AuditAction.CASE_UPDATED,
+            actor=actor,
+            obj=case,
+            request=request,
+            workflow_action="escalate",
+            reason=reason[:200],
+        )
+    add_timeline_event(case, TimelineEventType.ESCALATED, "Dossier escaladé", actor)
+    coordinators = User.objects.filter(is_active=True, role=Role.NATIONAL_COORDINATOR)
+    notify_many(coordinators, NotificationKind.ESCALATED, case=case)
     return case
 
 
-def _notify_status_change(case, status, actor):
-    kind = STATUS_NOTIFICATIONS.get(status, NotificationKind.STATUS_CHANGED)
-    if case.reporter_id:
-        notify(case.reporter, kind, case=case)
-    elif getattr(case.report, "reporter_email", ""):
-        notify_external(case.report.reporter_email, kind, case=case)
-    notify_case_team(case, NotificationKind.STATUS_CHANGED, exclude=actor)
+def _notify_status_change(case, previous, status, actor):
+    """Declarant : seulement quand son statut simplifie evolue (ou action dediee)."""
+    kind = STATUS_NOTIFICATIONS.get(status)
+    if kind is None and public_status_bucket(previous) != public_status_bucket(status):
+        kind = NotificationKind.STATUS_CHANGED
+    if kind is not None:
+        if case.reporter_id:
+            if actor is None or case.reporter_id != actor.pk:
+                notify(case.reporter, kind, case=case)
+        elif getattr(case.report, "reporter_email", ""):
+            notify_external(case.report.reporter_email, kind, case=case)
+    # Les responsables de l'etape suivante recoivent leur propre avis
+    # (notify_step_owners) : pas de doublon « statut modifie ».
+    notify_case_staff(
+        case, NotificationKind.STATUS_CHANGED, exclude=actor, skip=current_owner_ids(case)
+    )
+
+
+def notify_case_staff(case, kind, exclude=None, skip=()):
+    """Equipe du dossier hors declarant, limitee a qui voit le dossier."""
+    from apps.accounts.models import User
+
+    ids = set(case.participant_user_ids())
+    if case.assignee_id:
+        ids.add(case.assignee_id)
+    ids.discard(case.reporter_id)
+    ids -= set(skip)
+    if exclude is not None:
+        ids.discard(exclude.pk)
+    recipients = [
+        user
+        for user in User.objects.filter(id__in=ids, is_active=True)
+        if case.is_visible_to(user)
+    ]
+    return notify_many(recipients, kind, case=case)
+
+
+def owners_of(case, action):
+    """Utilisateurs pouvant cliquer le bouton `action` sur ce dossier."""
+    return step_owners(case, action)
+
+
+#: Roles dont les etapes sont confiees automatiquement au moins charge : le
+#: triage (etapes 1-2) et l'analyse (etapes 3-9). Coordinateur, auditeur et
+#: comptes d'organisation gardent la prise en charge manuelle.
+AUTO_CLAIM_ROLES = frozenset({Role.TRIAGER, Role.CSIRT_ANALYST})
+
+
+def _load(user):
+    """(dossiers en cours pris en charge, date de la derniere prise en charge)."""
+    held = CaseAssignment.objects.filter(user=user, is_active=True).exclude(
+        case__status__in=TERMINAL_STATES
+    )
+    last = CaseAssignment.objects.filter(user=user).order_by("-created_at").first()
+    # A charge egale, le dossier va a qui attend depuis le plus longtemps.
+    return (held.count(), last.created_at if last else datetime.min.replace(tzinfo=UTC))
+
+
+@transaction.atomic
+def auto_claim(case):
+    """Confie chaque etape en cours restee libre au responsable le moins charge.
+
+    Applique a la soumission et a chaque etape franchie, avant l'avis aux
+    responsables : seul l'elu est alors avise. La prise en charge vaut pour
+    les etapes suivantes du meme role, comme une prise en charge manuelle ;
+    transfert et prise en charge restent possibles ensuite.
+    """
+    if not settings.EVDP.get("AUTO_CLAIM", True):
+        return []
+    chosen = []
+    for action, pool in claim_pools(case):
+        if claim_holder(case, action) is not None:
+            continue
+        candidates = [user for user in pool if user.role in AUTO_CLAIM_ROLES]
+        if not candidates:
+            continue
+        user = min(candidates, key=_load)
+        _record_claim(case, user, None, "Prise en charge automatique", None, pool)
+        add_timeline_event(
+            case,
+            TimelineEventType.ASSIGNED,
+            f"Dossier confié à {user} (charge la plus faible)",
+        )
+        log_action(
+            AuditAction.CASE_ASSIGNED,
+            actor=None,
+            obj=case,
+            claimed_by=str(user),
+            automatic=True,
+            steps=[action.step or action.key],
+        )
+        chosen.append(user)
+    return chosen
+
+
+def notify_step_owners(case, actor=None):
+    """Notification et email au responsable de chaque etape en cours.
+
+    Appelee a chaque etape franchie (et a la soumission) : le responsable
+    du bouton attendu -- dossier et branche prime -- est avise dans la
+    plateforme et par email (« En attente de : … »). Le declarant, quand
+    l'etape lui revient, l'est par sa propre notification de statut.
+    """
+    notified = []
+    for action in current_actions(case):
+        # L'escalade a son propre avis (NotificationKind.ESCALATED).
+        if action.reporter_only or action.kind != PRIMARY:
+            continue
+        recipients = [
+            user for user in step_owners(case, action) if actor is None or user.pk != actor.pk
+        ]
+        notified += notify_many(
+            recipients,
+            NotificationKind.ACTION_REQUIRED,
+            case=case,
+            title=f"[{case.case_id}] {action.label}",
+            body=f"Étape {action.step or '—'} : {action.label}. Vous en êtes responsable.",
+        )
+    return notified
+
+
+def _notify_next_owner(case, actor):
+    auto_claim(case)
+    notify_step_owners(case, actor)
 
 
 def _apply_reputation(case, status, actor):
@@ -340,30 +878,214 @@ def _apply_reputation(case, status, actor):
 # Assignation
 # ---------------------------------------------------------------------------
 @transaction.atomic
-def assign_case(case, assignee, actor, note="", request=None):
-    if not actor.has_capability(Capability.ASSIGN_CASE):
-        raise PermissionDenied("Vous n'êtes pas autorisé à assigner un case.")
-    case.assignments.filter(is_active=True).update(is_active=False)
-    case.assignee = assignee
+def _record_claim(case, user, actor, note, request, pool):
+    """Enregistre la prise en charge de `user`, liberant ses collegues."""
+    pool_ids = {member.pk for member in pool}
+    case.assignments.filter(is_active=True, user_id__in=pool_ids).update(is_active=False)
+    CaseAssignment.objects.create(case=case, user=user, assigned_by=actor, note=note[:255])
+    case.assignee = user
     case.save(update_fields=["assignee", "updated_at"])
-    if assignee is not None:
-        CaseAssignment.objects.create(case=case, user=assignee, assigned_by=actor, note=note)
-        add_participant(case, assignee, ParticipantRole.ANALYST, added_by=actor)
-        notify(assignee, NotificationKind.CASE_ASSIGNED, case=case)
-    add_timeline_event(
-        case,
-        TimelineEventType.ASSIGNED,
-        f"Dossier assigne a {assignee}" if assignee else "Assignation retiree",
+    add_participant(case, user, participant_role_for(user), added_by=actor)
+
+
+@transaction.atomic
+def claim_case(case, actor, request=None):
+    """« Prendre en charge » : le responsable de l'etape s'attribue le dossier.
+
+    Exigee avant toute action : le dossier disparait alors de la file de ses
+    collegues du meme role, qui ne recoivent plus ses avis. L'attribution
+    vaut pour les etapes suivantes de ce meme role (l'analyste suit son
+    dossier de l'etape 3 a l'etape 9) et ne gene jamais les autres roles.
+    """
+    pools = [
+        (action, pool)
+        for action, pool in user_pools(case, actor)
+        if claim_holder(case, action) is None
+    ]
+    if not user_pools(case, actor):
+        raise PermissionDenied("Réservé au responsable de l'étape en cours.")
+    if not pools:
+        holder = next(
+            (claim_holder(case, action) for action, _ in user_pools(case, actor)), None
+        )
+        raise ValidationError(
+            f"Dossier déjà pris en charge par {holder.display_name if holder else 'un collègue'}."
+        )
+    members = [member for _action, pool in pools for member in pool]
+    _record_claim(case, actor, actor, "Prise en charge", request, members)
+    add_timeline_event(case, TimelineEventType.ASSIGNED, "Dossier pris en charge", actor=actor)
+    log_action(
+        AuditAction.CASE_ASSIGNED,
         actor=actor,
+        obj=case,
+        request=request,
+        claimed_by=str(actor),
+        steps=[action.step or action.key for action, _pool in pools],
+    )
+    return case
+
+
+def _held_pools(case, user):
+    return [
+        (action, pool)
+        for action, pool in user_pools(case, user)
+        if claim_holder(case, action) == user
+    ]
+
+
+@transaction.atomic
+def transfer_case(case, actor, target, note="", request=None):
+    """« Transférer à un collègue » : passage de relais au sein du meme role."""
+    held = _held_pools(case, actor)
+    if not held:
+        raise PermissionDenied("Seul le compte qui a pris le dossier en charge le transfère.")
+    members = [member for _action, pool in held for member in pool]
+    if target is None or target.pk == actor.pk or target not in members:
+        raise ValidationError(
+            "Le destinataire doit être un collègue responsable de cette étape."
+        )
+    _record_claim(case, target, actor, note or "Transfert", request, members)
+    notify(target, NotificationKind.CASE_ASSIGNED, case=case)
+    add_timeline_event(
+        case, TimelineEventType.ASSIGNED, f"Dossier transféré à {target}", actor=actor
     )
     log_action(
         AuditAction.CASE_ASSIGNED,
         actor=actor,
         obj=case,
         request=request,
-        assignee=str(assignee) if assignee else None,
+        transferred_to=str(target),
+        note=note[:200],
     )
     return case
+
+
+def transfer_candidates(case, user):
+    """Collegues a qui `user` peut transferer le dossier (meme role, meme etape)."""
+    seen, result = set(), []
+    for _action, pool in _held_pools(case, user):
+        for member in pool:
+            if member.pk != user.pk and member.pk not in seen:
+                seen.add(member.pk)
+                result.append(member)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Dossiers pris en charge : rappel
+# ---------------------------------------------------------------------------
+#: Actions d'un titulaire qui comptent comme un travail sur le dossier.
+_WORK_ACTIONS = (
+    AuditAction.STATUS_CHANGED,
+    AuditAction.CASE_UPDATED,
+    AuditAction.MESSAGE_SENT,
+    AuditAction.ATTACHMENT_UPLOADED,
+    AuditAction.ADVISORY_CREATED,
+    AuditAction.ADVISORY_UPDATED,
+    AuditAction.BOUNTY_PROPOSED,
+    AuditAction.BOUNTY_APPROVED,
+)
+
+
+def my_claims(user):
+    """Dossiers que `user` a pris en charge et qui attendent encore son action.
+
+    Chaque entree porte la date de prise en charge, l'action attendue et
+    `idle` : aucune modification du dossier par `user` depuis sa prise en
+    charge. Un dossier passe a l'etape d'un autre role, ou transfere, sort
+    de la liste.
+    """
+    from apps.audit.models import AuditLog, AuditResult
+
+    from .models import Case
+
+    if not user or not user.is_authenticated:
+        return []
+    entries = []
+    assignments = (
+        CaseAssignment.objects.filter(user=user, is_active=True)
+        .select_related("case")
+        .order_by("created_at")
+    )
+    for assignment in assignments:
+        case = assignment.case
+        if case.status in TERMINAL_STATES or not case.is_visible_to(user):
+            continue
+        held = _held_pools(case, user)
+        if not held:
+            continue
+        # Reference : prise en charge, ou arrivee du dossier a l'etape en
+        # cours si elle est posterieure (l'analyste qui retrouve a l'etape 5
+        # un dossier pris a l'etape 3 doit le voir signale).
+        since = assignment.created_at
+        last_step = case.status_history.order_by("-created_at").first()
+        if last_step is not None and last_step.created_at > since:
+            since = last_step.created_at
+        worked = AuditLog.objects.filter(
+            actor=user,
+            object_type=Case.__name__,
+            object_id=str(case.pk),
+            action__in=_WORK_ACTIONS,
+            result=AuditResult.SUCCESS,
+            # >= : sous Windows, l'horloge avance par pas d'environ 15 ms ; un
+            # message ecrit juste apres la prise en charge peut porter le meme
+            # horodatage. La prise en charge elle-meme (CASE_ASSIGNED) n'est
+            # pas un travail : elle ne fausse pas le resultat.
+            timestamp__gte=since,
+        )
+        # La transition qui a amene le dossier a l'etape en cours n'est pas un
+        # travail sur cette etape (son audit suit l'historique de quelques ms).
+        worked = worked.exclude(
+            action=AuditAction.STATUS_CHANGED, metadata__to_status=case.status
+        ).exists()
+        entries.append(
+            {
+                "case": case,
+                "claimed_at": assignment.created_at,
+                "waiting_since": since,
+                "action": held[0][0],
+                "idle": not worked,
+            }
+        )
+    return entries
+
+
+def remind_idle_claims(idle_after=None, now=None):
+    """Rappel (notification et email) des prises en charge restees sans action.
+
+    Un rappel par dossier et par jour au plus : le titulaire n'est relance
+    que tant que le dossier attend son action sans qu'il y ait touche.
+    """
+    from django.conf import settings
+
+    from apps.accounts.models import User
+    from apps.notifications.models import Notification
+
+    now = now or timezone.now()
+    idle_after = idle_after or timedelta(hours=settings.EVDP.get("CLAIM_REMINDER_HOURS", 48))
+    sent = 0
+    holders = User.objects.filter(is_active=True, case_assignments__is_active=True).distinct()
+    for user in holders:
+        for entry in my_claims(user):
+            if not entry["idle"] or now - entry["waiting_since"] < idle_after:
+                continue
+            already = Notification.objects.filter(
+                recipient=user,
+                case=entry["case"],
+                kind=NotificationKind.CLAIM_REMINDER,
+                created_at__gte=now - timedelta(days=1),
+            ).exists()
+            if already:
+                continue
+            notify(
+                user,
+                NotificationKind.CLAIM_REMINDER,
+                case=entry["case"],
+                title=f"[{entry['case'].case_id}] Rappel : {entry['action'].label}",
+                body="Vous avez pris ce dossier en charge sans y avoir encore agi.",
+            )
+            sent += 1
+    return sent
 
 
 # ---------------------------------------------------------------------------
@@ -374,20 +1096,25 @@ def post_message(
     case,
     author,
     body,
-    confidentiality=Confidentiality.PARTICIPANTS,
+    confidentiality=Confidentiality.RESEARCHER,
     request=None,
     is_system=False,
 ):
-    """Publie un message dans le fil securise du case."""
+    """Publie un message dans l'un des canaux du dossier.
+
+    Le canal doit etre ouvert en ecriture a l'auteur selon la matrice de
+    visibilite : la DSI n'ecrit jamais au chercheur, le declarant jamais a
+    l'organisation.
+    """
     if not is_system:
         if not case.is_visible_to(author):
             raise PermissionDenied("Vous n'avez pas accès à ce dossier.")
-        if confidentiality != Confidentiality.PARTICIPANTS and not author.has_capability(
-            Capability.POST_INTERNAL_MESSAGE
-        ):
-            raise PermissionDenied("Vous n'êtes pas autorisé à publier un message interne.")
         if getattr(author, "is_read_only", False):
             raise PermissionDenied("Rôle en lecture seule.")
+        if confidentiality not in writable_channels(case, author):
+            raise PermissionDenied("Vous n'êtes pas autorisé à écrire dans ce canal.")
+        if must_claim(case, author):
+            raise PermissionDenied("Prenez d'abord le dossier en charge.")
     if not (body or "").strip():
         raise ValidationError("Le message ne peut pas être vide.")
 
@@ -406,62 +1133,82 @@ def post_message(
         message_id=str(message.pk),
         confidentiality=confidentiality,
     )
-    if confidentiality == Confidentiality.PARTICIPANTS:
-        notify_case_team(case, NotificationKind.NEW_MESSAGE, exclude=author)
+    _notify_channel(case, confidentiality, exclude=None if is_system else author)
     return message
 
 
-def visible_messages(case, user):
-    """Fil de discussion filtre selon le niveau de confidentialite."""
-    queryset = case.messages.select_related("author").prefetch_related("attachments")
-    if user.is_superuser or user.is_national:
-        from apps.accounts.roles import Role
+def _notify_channel(case, confidentiality, exclude=None):
+    """Avise les lecteurs du canal, jamais au-dela."""
+    from apps.accounts.models import User
 
-        if user.role in (Role.NATIONAL_COORDINATOR, Role.SUPER_ADMIN) or user.is_superuser:
-            return queryset
-        return queryset.exclude(confidentiality=Confidentiality.RESTRICTED)
-    return queryset.filter(confidentiality=Confidentiality.PARTICIPANTS)
+    ids = set(case.participant_user_ids())
+    if case.assignee_id:
+        ids.add(case.assignee_id)
+    if case.reporter_id:
+        ids.add(case.reporter_id)
+    if exclude is not None:
+        ids.discard(exclude.pk)
+    recipients = [
+        user
+        for user in User.objects.filter(id__in=ids, is_active=True)
+        if confidentiality in readable_channels(case, user)
+    ]
+    return notify_many(recipients, NotificationKind.NEW_MESSAGE, case=case)
+
+
+def visible_messages(case, user):
+    """Fil de discussion filtre selon les canaux lisibles par l'utilisateur."""
+    return (
+        case.messages.select_related("author")
+        .prefetch_related("attachments")
+        .filter(confidentiality__in=readable_channels(case, user))
+    )
 
 
 # ---------------------------------------------------------------------------
 # Doublons
 # ---------------------------------------------------------------------------
-@transaction.atomic
 def mark_duplicate(case, original, actor, comment="", request=None):
-    """Marque un case comme doublon d'un autre.
+    """Propose le dossier comme doublon d'un autre (etapes 1 a 3).
 
-    Le declarant est informe du doublon mais n'obtient AUCUNE information sur
-    le case original (identifiant, organisation, contenu).
+    Le Coordinateur confirme ensuite (DUPLICATE). Le declarant est informe
+    du doublon mais n'obtient AUCUNE information sur le dossier original.
     """
-    if not actor.has_capability(Capability.TRIAGE_CASE):
-        raise PermissionDenied("Capacité de triage requise.")
-    if original.pk == case.pk:
-        raise ValidationError("Un case ne peut pas être le doublon de lui-même.")
-    if original.duplicate_of_id == case.pk:
-        raise ValidationError("Référence circulaire de doublon.")
-
-    case.duplicate_of = original
-    case.save(update_fields=["duplicate_of", "updated_at"])
-    transition_case(case, CaseStatus.DUPLICATE, actor, comment=comment, request=request)
-    log_action(
-        AuditAction.REPORT_DUPLICATED,
-        actor=actor,
-        obj=case,
+    return perform_action(
+        case,
+        "propose_duplicate",
+        actor,
+        data={"comment": comment, "original": original},
         request=request,
-        original_case=original.case_id,
     )
-    return case
 
 
 # ---------------------------------------------------------------------------
-# Severite
+# Qualification
 # ---------------------------------------------------------------------------
+#: Etats ou la qualification reste modifiable : une fois soumise a
+#: validation, elle ne change plus sans renvoi a l'auteur.
+QUALIFICATION_EDITABLE_STATES = (
+    CaseStatus.SUBMITTED,
+    CaseStatus.ACKNOWLEDGED,
+    CaseStatus.IN_ANALYSIS,
+    CaseStatus.NEEDS_INFORMATION,
+)
+
+
 @transaction.atomic
 def set_severity(case, actor, severity=None, cvss_vector="", request=None):
-    """Definit la severite retenue, eventuellement calculee depuis un CVSS."""
+    """Definit la severite retenue, calculee depuis un CVSS v3.1 ou v4.0.
+
+    Seul l'analyste CSIRT saisit le CVSS (matrice v2).
+    """
     if not actor.has_capability(Capability.SET_SEVERITY):
         raise PermissionDenied("Capacité requise pour définir la sévérité.")
-    from apps.vulnerabilities.cvss import CVSSError, evaluate
+    if case.status not in QUALIFICATION_EDITABLE_STATES:
+        raise ValidationError("La qualification n'est plus modifiable à cette étape.")
+    if must_claim(case, actor):
+        raise PermissionDenied("Prenez d'abord le dossier en charge.")
+    from apps.vulnerabilities.cvss import CVSSError, evaluate, score_as_decimal
 
     updates = ["severity", "updated_at"]
     if cvss_vector:
@@ -470,7 +1217,7 @@ def set_severity(case, actor, severity=None, cvss_vector="", request=None):
         except CVSSError as exc:
             raise ValidationError({"cvss_vector": str(exc)}) from exc
         case.cvss_vector = cvss_vector
-        case.cvss_score = score
+        case.cvss_score = score_as_decimal(score)
         severity = severity or computed
         updates += ["cvss_vector", "cvss_score"]
     case.severity = severity or case.severity
@@ -479,7 +1226,7 @@ def set_severity(case, actor, severity=None, cvss_vector="", request=None):
     add_timeline_event(
         case,
         TimelineEventType.SEVERITY_SET,
-        f"Severite retenue : {case.get_severity_display()}",
+        f"Sévérité retenue : {case.get_severity_display()}",
         actor=actor,
     )
     log_action(
@@ -495,7 +1242,10 @@ def set_severity(case, actor, severity=None, cvss_vector="", request=None):
 
 @transaction.atomic
 def schedule_disclosure(case, actor, disclosure_date, request=None):
-    if not actor.has_capability(Capability.CHANGE_CASE_STATUS):
+    if not (
+        actor.has_capability(Capability.ARBITRATE_CASE)
+        or actor.has_capability(Capability.COORDINATE_VENDOR)
+    ):
         raise PermissionDenied("Capacité requise.")
     case.disclosure_date = disclosure_date
     case.save(update_fields=["disclosure_date", "updated_at"])
@@ -503,7 +1253,7 @@ def schedule_disclosure(case, actor, disclosure_date, request=None):
     add_timeline_event(
         case,
         TimelineEventType.DISCLOSURE_SCHEDULED,
-        f"Divulgation planifiee le {disclosure_date:%d/%m/%Y}",
+        f"Divulgation planifiée le {disclosure_date:%d/%m/%Y}",
         actor=actor,
     )
     log_action(
@@ -569,7 +1319,7 @@ def resolve_tracking_token(raw_token):
 
 def public_status_for(case):
     """(cle, libelle, resultat) simplifies pour la page de suivi publique."""
-    key, label = public_status_bucket(case.status)
+    key, label = public_status_of(case)
     return {
         "key": key,
         "label": label,
@@ -581,8 +1331,13 @@ def public_status_for(case):
 
 
 __all__ = [
+    "perform_action",
+    "escalate_case",
     "transition_case",
-    "assign_case",
+    "claim_case",
+    "transfer_case",
+    "my_claims",
+    "remind_idle_claims",
     "post_message",
     "visible_messages",
     "mark_duplicate",

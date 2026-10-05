@@ -51,13 +51,37 @@ def next_sequence(model, field, prefix, year=None, width=6):
     with transaction.atomic():
         try:
             with transaction.atomic():
-                SequenceCounter.objects.create(key=counter_key, last_value=0)
+                # Un compteur neuf part du plus grand numero deja en base : sur
+                # une base anterieure au compteur (ou restauree), repartir de
+                # zero redonnerait des identifiants existants.
+                SequenceCounter.objects.create(
+                    key=counter_key, last_value=_highest_suffix(model, field, pattern)
+                )
         except IntegrityError:
             pass
         counter = SequenceCounter.objects.select_for_update().get(key=counter_key)
-        counter.last_value += 1
+        # Garde-fou : un numero deja pris (compteur en retard sur les donnees)
+        # est saute plutot que de faire echouer la creation sur l'unicite.
+        taken = model._default_manager.filter(**{f"{field}__startswith": pattern})
+        candidate = counter.last_value + 1
+        while taken.filter(**{field: f"{pattern}{candidate:0{width}d}"}).exists():
+            candidate += 1
+        counter.last_value = candidate
         counter.save(update_fields=["last_value"])
-        return f"{pattern}{counter.last_value:0{width}d}"
+        return f"{pattern}{candidate:0{width}d}"
+
+
+def _highest_suffix(model, field, pattern):
+    """Plus grand numero existant pour ce prefixe et cette annee (0 si aucun)."""
+    highest = 0
+    values = model._default_manager.filter(**{f"{field}__startswith": pattern}).values_list(
+        field, flat=True
+    )
+    for value in values:
+        suffix = value[len(pattern) :]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return highest
 
 
 def truncate(text, limit=120):

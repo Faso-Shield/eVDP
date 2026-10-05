@@ -24,6 +24,13 @@ class NotificationKind(models.TextChoices):
     DUPLICATE = "DUPLICATE", "Rapport en doublon"
     SLA_APPROACHING = "SLA_APPROACHING", "Échéance SLA proche"
     SLA_BREACHED = "SLA_BREACHED", "SLA dépassé"
+    ESCALATED = "ESCALATED", "Dossier escaladé"
+    ACTION_REQUIRED = "ACTION_REQUIRED", "Action attendue"
+    CLAIM_REMINDER = "CLAIM_REMINDER", "Rappel de prise en charge"
+    PAYOUT_DETAILS_REQUESTED = (
+        "PAYOUT_DETAILS_REQUESTED",
+        "Coordonnées de paiement à compléter",
+    )
     DISCLOSURE_UPCOMING = "DISCLOSURE_UPCOMING", "Divulgation imminente"
     ADVISORY_PUBLISHED = "ADVISORY_PUBLISHED", "Advisory publié"
     BOUNTY_PROPOSED = "BOUNTY_PROPOSED", "Récompense proposée"
@@ -85,8 +92,8 @@ class EmailTemplate(TimeStampedModel):
     class Meta:
         db_table = "email_templates"
         ordering = ["code"]
-        verbose_name = "Modele d'email"
-        verbose_name_plural = "Modeles d'email"
+        verbose_name = "Modèle d'email"
+        verbose_name_plural = "Modèles d'email"
 
     def __str__(self):
         return self.code

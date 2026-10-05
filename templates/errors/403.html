@@ -1,8 +1,15 @@
-{% extends "base.html" %}
+{% extends "errors/_error.html" %}
 {% block title %}Accès refusé{% endblock %}
-{% block container_class %}container-narrow{% endblock %}
-{% block content %}
-<h1>403 — Accès refusé</h1>
-<p>Votre rôle ne vous autorise pas à effectuer cette action. La tentative a été journalisée.</p>
-<a class="btn" href="{% url 'dashboard:home' %}">Retour au tableau de bord</a>
+{% block code %}403{% endblock %}
+{% block heading %}Accès réservé{% endblock %}
+{% block message %}
+  <p>
+    Votre compte ne permet pas d'effectuer cette action ou d'ouvrir cette page.
+    Chaque rôle n'accède qu'à ce que son étape du traitement exige.
+  </p>
+  <p class="error-note">
+    La tentative a été enregistrée dans le journal d'audit. Si vous pensez
+    qu'il s'agit d'une erreur, contactez le coordinateur national.
+  </p>
 {% endblock %}
+{% block illustration %}{% include "errors/_shield.svg.html" %}{% endblock %}

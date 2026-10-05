@@ -2,8 +2,9 @@
 # eVDP - Plateforme nationale de divulgation coordonnee de vulnerabilites
 # Projet CYBER-DEF 2
 #
-# Seul Nginx est expose. PostgreSQL, Redis et MinIO restent sur le reseau
-# interne et ne sont joignables que par les services applicatifs.
+# Seul Nginx est expose. PostgreSQL et Redis restent sur le reseau interne
+# et ne sont joignables que par les services applicatifs. Les pieces jointes
+# sont stockees sur disque, dans le volume evdp-media.
 #
 #   docker compose up -d
 #   docker compose run --rm evdp-web seed
@@ -12,6 +13,7 @@
 x-app-env: &app-env
   DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.prod}
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY est obligatoire, voir .env.example}
+  FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?FIELD_ENCRYPTION_KEY est obligatoire, voir .env.example}
   DEBUG: ${DEBUG:-False}
   ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,evdp-web,evdp-nginx}
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost,http://127.0.0.1}
@@ -25,14 +27,17 @@ x-app-env: &app-env
   REDIS_URL: redis://evdp-redis:6379/0
   REDIS_HOST: evdp-redis
   REDIS_PORT: "6379"
-  USE_S3: ${USE_S3:-True}
-  MINIO_ENDPOINT: http://evdp-minio:9000
-  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-evdp-minio}
-  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
-  MINIO_BUCKET: ${MINIO_BUCKET:-evdp-attachments}
-  EMAIL_HOST: evdp-mailpit
-  EMAIL_PORT: "1025"
-  EMAIL_USE_TLS: "False"
+  # Pieces jointes sur disque (volume evdp-media). Les images MinIO ne sont
+  # plus distribuees publiquement ; USE_S3=True reste possible vers un
+  # stockage S3 externe (variables MINIO_* dans .env).
+  USE_S3: ${USE_S3:-False}
+  # Mailpit par defaut ; un relais reel (avec authentification) se
+  # configure dans .env, sans toucher a ce fichier.
+  EMAIL_HOST: ${EMAIL_HOST:-evdp-mailpit}
+  EMAIL_PORT: ${EMAIL_PORT:-1025}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-False}
+  EMAIL_USER: ${EMAIL_USER:-}
+  EMAIL_PASSWORD: ${EMAIL_PASSWORD:-}
   DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-eVDP <no-reply@evdp.bf>}
   SITE_BASE_URL: ${SITE_BASE_URL:-}
   EVDP_NATIONAL_TEAM: ${EVDP_NATIONAL_TEAM:-ANSSI-BF / CSIRT National}
@@ -40,7 +45,9 @@ x-app-env: &app-env
   EVDP_DEFAULT_CURRENCY: ${EVDP_DEFAULT_CURRENCY:-XOF}
   PGP_PUBLIC_KEY: ${PGP_PUBLIC_KEY:-}
   PGP_FINGERPRINT: ${PGP_FINGERPRINT:-}
-  CLAMAV_HOST: ${CLAMAV_HOST:-}
+  # Antivirus actif par defaut (service evdp-clamav). Vide : desactive.
+  CLAMAV_HOST: ${CLAMAV_HOST-evdp-clamav}
+  CLAMAV_STREAM_MAX_LENGTH: ${CLAMAV_STREAM_MAX_LENGTH:-26214400}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   LOG_FORMAT: ${LOG_FORMAT:-json}
   TIME_ZONE: ${TIME_ZONE:-Africa/Ouagadougou}
@@ -115,50 +122,6 @@ services:
         limits:
           memory: 384m
 
-  evdp-minio:
-    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
-    container_name: evdp-minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-evdp-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
-      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
-    volumes:
-      - evdp-minio-data:/data
-    networks:
-      - evdp-backend
-    # MVP : MinIO n'est pas expose publiquement. La console est accessible
-    # uniquement en local via docker-compose.dev.yml.
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 15s
-      timeout: 5s
-      retries: 6
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-
-  evdp-minio-init:
-    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
-    container_name: evdp-minio-init
-    depends_on:
-      evdp-minio:
-        condition: service_healthy
-    environment:
-      MINIO_ENDPOINT: http://evdp-minio:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-evdp-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD est obligatoire}
-      MINIO_BUCKET: ${MINIO_BUCKET:-evdp-attachments}
-    volumes:
-      - ./docker/minio/init.sh:/init.sh:ro
-    entrypoint: ["/bin/sh", "/init.sh"]
-    networks:
-      - evdp-backend
-    restart: "no"
-
   evdp-mailpit:
     image: axllent/mailpit:v1.21
     container_name: evdp-mailpit
@@ -180,7 +143,7 @@ services:
           memory: 192m
 
   evdp-clamav:
-    image: clamav/clamav:1.4
+    image: clamav/clamav:1.4.6
     container_name: evdp-clamav
     restart: unless-stopped
     volumes:
@@ -210,8 +173,6 @@ services:
       evdp-db:
         condition: service_healthy
       evdp-redis:
-        condition: service_healthy
-      evdp-minio:
         condition: service_healthy
     deploy:
       resources:
@@ -295,7 +256,6 @@ networks:
 volumes:
   evdp-db-data:
   evdp-redis-data:
-  evdp-minio-data:
   evdp-static:
   evdp-media:
   evdp-clamav-data:

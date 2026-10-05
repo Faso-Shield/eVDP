@@ -1,0 +1,42 @@
+{% extends "base_dashboard.html" %}
+{% load evdp_tags %}
+{% block title %}Comptes{% endblock %}
+{% block dashboard_content %}
+<div class="flex-between mb-2">
+  <h1 class="mb-0">Comptes</h1>
+  <a class="btn btn-accent" href="{% url 'accounts:user_manage_create' %}">Créer un compte métier</a>
+</div>
+
+<div class="card mb-2"><div class="card-body">
+  <form method="get" class="filters">
+    {% for field in form %}{% include "partials/form_field.html" %}{% endfor %}
+    <div class="filters-actions">
+      <button class="btn btn-sm" type="submit">Filtrer</button>
+      <a class="btn btn-sm btn-outline" href="{% url 'accounts:user_manage_list' %}">Réinitialiser</a>
+    </div>
+  </form>
+</div></div>
+
+<div class="card"><div class="card-body table-wrap">
+  <table class="table">
+    <thead><tr><th>Email</th><th>Nom</th><th>Rôle</th><th>Second facteur</th><th>État</th><th>Dernière connexion</th><th></th></tr></thead>
+    <tbody>
+    {% for account in page_obj %}
+      <tr>
+        <td>{{ account.email }}</td>
+        <td class="small">{{ account.full_name|default:"—" }}</td>
+        <td class="small">{{ account.get_role_display }}</td>
+        <td class="small">{% if account.mfa_required %}{% if account.mfa_enabled %}Enregistré{% else %}À enregistrer{% endif %}{% else %}—{% endif %}</td>
+        <td><span class="status">{% if account.is_active %}Actif{% else %}Désactivé{% endif %}</span></td>
+        <td class="small">{{ account.last_login|date:"d/m/Y H:i"|default:"—" }}</td>
+        <td><a class="btn btn-sm btn-outline" href="{% url 'accounts:user_manage_detail' account.pk %}">Gérer</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="muted">Aucun compte.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% query_replace page='' as extra_query %}
+  {% include "partials/pagination.html" %}
+</div></div>
+{% endblock %}

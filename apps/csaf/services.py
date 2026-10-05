@@ -122,7 +122,7 @@ def _resolve_cve(vulnerability):
 def import_csaf(document, actor, organization=None, program=None, request=None):
     """Cree un rapport + un case par vulnerabilite declaree dans le document."""
     if not actor.has_capability(Capability.IMPORT_CSAF):
-        raise PermissionDenied("Capacite requise pour importer du CSAF.")
+        raise PermissionDenied("Capacité requise pour importer du CSAF.")
     validate_document(document)
     meta = document["document"]
     title_prefix = meta.get("title", "Import CSAF")[:150]
@@ -205,7 +205,7 @@ def _export_notes(advisory):
     """Notes CSAF construites depuis les seuls champs redactionnels publics."""
     notes = []
     for category, title, text in (
-        ("summary", "Resume public", advisory.summary),
+        ("summary", "Résumé public", advisory.summary),
         ("description", "Description", advisory.description),
         ("details", "Impact", advisory.impact),
     ):
@@ -302,9 +302,9 @@ def export_advisory_to_csaf(advisory):
     messages, pieces jointes) n'est atteignable depuis cette fonction.
     """
     if advisory.status != AdvisoryStatus.PUBLISHED:
-        raise ValidationError("Seul un advisory publie peut etre exporte au format CSAF.")
+        raise ValidationError("Seul un advisory publié peut être exporté au format CSAF.")
     if not advisory.is_published:
-        raise ValidationError("Cet advisory n'est pas encore effectivement publie.")
+        raise ValidationError("Cet advisory n'est pas encore effectivement publié.")
 
     released = _iso(advisory.published_at)
 

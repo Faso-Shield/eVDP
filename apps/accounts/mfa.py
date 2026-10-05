@@ -14,11 +14,15 @@ TOTP uniquement : ni SMS ni email, dont l'acheminement n'est pas maitrise par
 la plateforme et dont l'interception est un scenario documente.
 """
 
+import secrets
 import time
 
 import pyotp
 import segno
 from django.conf import settings
+from django.utils import timezone
+
+from apps.core.utils import hash_text
 
 from .roles import BUSINESS_ROLES
 
@@ -117,3 +121,65 @@ def consume_code(user, code, now=None):
     user.mfa_last_step = pas
     user.save(update_fields=["mfa_last_step", "updated_at"])
     return True
+
+
+# ---------------------------------------------------------------------------
+# Codes de secours
+# ---------------------------------------------------------------------------
+#: Dix codes de dix caracteres (50 bits chacun), sans les caracteres qui se
+#: confondent a la lecture (0/O, 1/I/L).
+BACKUP_CODE_COUNT = 10
+BACKUP_CODE_LENGTH = 10
+BACKUP_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+#: En deca, la connexion rappelle d'en regenerer.
+BACKUP_CODES_LOW = 2
+
+
+def _normalize(code):
+    return (code or "").strip().upper().replace(" ", "").replace("-", "")
+
+
+def looks_like_backup_code(code):
+    normalized = _normalize(code)
+    return len(normalized) == BACKUP_CODE_LENGTH and all(
+        char in BACKUP_CODE_ALPHABET for char in normalized
+    )
+
+
+def generate_backup_codes(user):
+    """Remplace les codes de `user` par un nouveau lot et le rend en clair.
+
+    C'est le seul moment ou les codes existent en clair : les anciens sont
+    invalides, un code perdu ou divulgue ne doit plus servir.
+    """
+    from .models import MFABackupCode
+
+    codes = [
+        "".join(secrets.choice(BACKUP_CODE_ALPHABET) for _ in range(BACKUP_CODE_LENGTH))
+        for _ in range(BACKUP_CODE_COUNT)
+    ]
+    user.mfa_backup_codes.all().delete()
+    MFABackupCode.objects.bulk_create(
+        MFABackupCode(user=user, code_hash=hash_text(code)) for code in codes
+    )
+    return [f"{code[:5]}-{code[5:]}" for code in codes]
+
+
+def consume_backup_code(user, code):
+    """Brule un code de secours encore valide. Vrai s'il l'etait.
+
+    Une seule mise a jour conditionnelle : deux requetes simultanees ne
+    peuvent pas utiliser le meme code.
+    """
+    if not looks_like_backup_code(code):
+        return False
+    return (
+        user.mfa_backup_codes.filter(
+            code_hash=hash_text(_normalize(code)), used_at__isnull=True
+        ).update(used_at=timezone.now())
+        == 1
+    )
+
+
+def remaining_backup_codes(user):
+    return user.mfa_backup_codes.filter(used_at__isnull=True).count()

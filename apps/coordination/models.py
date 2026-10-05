@@ -23,7 +23,9 @@ from .constants import (
 from .workflow import (
     DISMISSED_STATES,
     ORG_VISIBLE_STATES,
+    STEP_SCOPED_ROLES,
     TERMINAL_STATES,
+    BountyStage,
     CaseStatus,
     kanban_column_for,
 )
@@ -34,16 +36,29 @@ class SLAPolicy(TimeStampedModel):
 
     name = models.CharField(max_length=120, unique=True)
     is_default = models.BooleanField(default=False)
-    acknowledgement_hours = models.PositiveIntegerField(default=72)
-    triage_days = models.PositiveIntegerField(default=5)
-    vendor_response_days = models.PositiveIntegerField(default=7)
+    acknowledgement_hours = models.PositiveIntegerField(
+        default=72, help_text="Étape 1 : accusé de réception."
+    )
+    triage_days = models.PositiveIntegerField(
+        default=5, help_text="Étapes 2 et 3 : recevabilité puis qualification."
+    )
+    validation_days = models.PositiveIntegerField(
+        default=2, help_text="Étape 4 : validation de la qualification."
+    )
+    vendor_response_days = models.PositiveIntegerField(
+        default=5, help_text="Étape 6 : plan de remédiation de l'organisation."
+    )
     remediation_days_critical = models.PositiveIntegerField(default=30)
-    remediation_days_high = models.PositiveIntegerField(default=30)
-    remediation_days_medium = models.PositiveIntegerField(default=60)
+    remediation_days_high = models.PositiveIntegerField(default=60)
+    remediation_days_medium = models.PositiveIntegerField(default=90)
     remediation_days_low = models.PositiveIntegerField(default=90)
+    verification_days = models.PositiveIntegerField(
+        default=5, help_text="Étape 8 : contre-vérification du correctif."
+    )
     disclosure_delay_days = models.PositiveIntegerField(default=90)
     warning_ratio = models.PositiveSmallIntegerField(
-        default=80, help_text="Pourcentage du délai à partir duquel une alerte est levée."
+        default=75,
+        help_text="Pourcentage du délai à partir duquel la carte passe en orange.",
     )
 
     class Meta:
@@ -85,19 +100,59 @@ class CaseQuerySet(models.QuerySet):
         """
         if not user or not user.is_authenticated:
             return self.none()
-        if user.is_national:
+        if user.role in STEP_SCOPED_ROLES:
+            scope = models.Q(reporter=user) | models.Q(pk__in=self._owned_ids(user))
+            return self.filter(scope | self._archive_filter(user)).distinct()
+        if user.sees_all_cases:
             return self
-        filters = models.Q(participants__user=user, participants__is_active=True)
-        filters |= models.Q(reporter=user)
+        filters = models.Q(reporter=user)
         if user.is_organization_user:
+            # Une organisation ne voit un dossier qu'a partir de l'etape 5,
+            # une fois le CSIRT l'ayant explicitement notifiee -- jamais
+            # pendant le triage, pour proteger le declarant d'une reaction
+            # prematuree. Etre participant n'y deroge pas.
             org_ids = user.organization_ids()
             if org_ids:
-                # Une organisation ne voit un dossier qui la concerne qu'une
-                # fois le CSIRT l'ayant explicitement engagee (statut
-                # ORG_VISIBLE_STATES) -- jamais pendant le triage, pour
-                # proteger le declarant d'une reaction prematuree.
                 filters |= models.Q(organization_id__in=org_ids, status__in=ORG_VISIBLE_STATES)
+            filters |= models.Q(
+                participants__user=user,
+                participants__is_active=True,
+                status__in=ORG_VISIBLE_STATES,
+            )
+        else:
+            filters |= models.Q(participants__user=user, participants__is_active=True)
         return self.filter(filters).distinct()
+
+    def _archive_filter(self, user):
+        """Archives visibles (voir workflow.archive_access)."""
+        from .workflow import (
+            ARCHIVE_CONTENT_ROLES,
+            ARCHIVE_METADATA_ROLES,
+            ORGANIZATION_ARCHIVE_ROLES,
+        )
+
+        if user.role in ARCHIVE_CONTENT_ROLES | ARCHIVE_METADATA_ROLES:
+            return models.Q(status__in=TERMINAL_STATES)
+        if user.role in ORGANIZATION_ARCHIVE_ROLES:
+            org_ids = user.organization_ids()
+            if org_ids:
+                return models.Q(status=CaseStatus.CLOSED, organization_id__in=org_ids)
+        return models.Q(pk__in=[])
+
+    def _owned_ids(self, user):
+        """Dossiers dont `user` est responsable de l'etape en cours.
+
+        Pre-filtre SQL par statut (etapes dont le bouton porte une capacite
+        de l'utilisateur), puis controle exact par dossier : assignation,
+        quatre yeux et branche prime sont ceux de workflow.step_owners.
+        """
+        from .workflow import current_owner_ids, statuses_owned_by
+
+        statuses, stages = statuses_owned_by(user)
+        candidates = Case.objects.filter(
+            models.Q(status__in=statuses) | models.Q(bounty_stage__in=stages)
+        )
+        return [case.pk for case in candidates if user.pk in current_owner_ids(case)]
 
     def sla_breached(self):
         return self.filter(sla_events__state=SLAState.BREACHED).distinct()
@@ -159,7 +214,7 @@ class Case(BaseModel):
         max_length=16, choices=Severity.choices, default=Severity.MEDIUM, db_index=True
     )
     cvss_score = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
-    cvss_vector = models.CharField(max_length=120, blank=True)
+    cvss_vector = models.CharField(max_length=255, blank=True)
     cwe = models.ForeignKey(
         "vulnerabilities.CWE",
         null=True,
@@ -202,6 +257,37 @@ class Case(BaseModel):
     disclosure_date = models.DateField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     is_published = models.BooleanField(default=False)
+
+    # -- Workflow v2 -----------------------------------------------------------
+    bounty_stage = models.CharField(
+        max_length=24,
+        choices=BountyStage.choices,
+        default=BountyStage.NONE,
+        blank=True,
+        db_index=True,
+        help_text="Statut de prime, distinct du statut du dossier.",
+    )
+    return_status = models.CharField(
+        max_length=24,
+        choices=CaseStatus.choices,
+        blank=True,
+        help_text="Étape d'origine à retrouver après des compléments ou un rejet renvoyé.",
+    )
+    admissibility_checklist = models.JSONField(default=dict, blank=True)
+    vendor_notified_at = models.DateTimeField(null=True, blank=True)
+    remediation_plan = models.TextField(blank=True)
+    remediation_target_date = models.DateField(null=True, blank=True)
+    fix_description = models.TextField(blank=True)
+    fix_version = models.CharField(max_length=120, blank=True)
+    fix_deployed_on = models.DateField(null=True, blank=True)
+    verification_report = models.TextField(blank=True)
+    sla_paused_at = models.DateTimeField(
+        null=True, blank=True, help_text="SLA suspendu pendant une demande de compléments."
+    )
+    escalated_at = models.DateTimeField(null=True, blank=True)
+    deadline_disclosure_at = models.DateTimeField(
+        null=True, blank=True, help_text="Divulgation à échéance décidée par le Coordinateur."
+    )
 
     objects = CaseQuerySet.as_manager()
 
@@ -282,19 +368,40 @@ class Case(BaseModel):
         )
 
     def is_visible_to(self, user):
-        """Verification unitaire cote objet (complement du queryset)."""
+        """Verification unitaire cote objet (complement du queryset).
+
+        Agent de triage et analyste CSIRT ne voient un dossier que lorsqu'ils
+        sont responsables de son etape en cours : une fois leur etape
+        franchie, il sort de leur perimetre (404).
+        """
+        if not self.in_role_scope(user):
+            return False
+        if self.reporter_id == user.id or user.role not in STEP_SCOPED_ROLES:
+            return True
+        from .workflow import archive_access, current_owner_ids
+
+        if archive_access(self, user):
+            return True
+        return user.pk in current_owner_ids(self)
+
+    def in_role_scope(self, user):
+        """Perimetre du role, independamment de l'etape en cours.
+
+        Sert a determiner les responsables d'une etape (workflow.step_owners)
+        sans dependre, circulairement, de la regle d'etape elle-meme.
+        """
         if not user or not user.is_authenticated:
             return False
-        if user.is_national:
+        if user.sees_all_cases:
             return True
-        if self.is_participant(user):
+        if self.reporter_id == user.id:
             return True
-        if user.is_organization_user and self.organization_id:
-            return (
-                self.organization_id in set(user.organization_ids())
-                and self.status in ORG_VISIBLE_STATES
-            )
-        return False
+        if user.is_organization_user:
+            if self.status not in ORG_VISIBLE_STATES:
+                return False
+            if self.organization_id and self.organization_id in set(user.organization_ids()):
+                return True
+        return self.is_participant(user)
 
 
 class CaseStatusHistory(BaseModel):
@@ -390,7 +497,7 @@ class CaseMessage(BaseModel):
     confidentiality = models.CharField(
         max_length=16,
         choices=Confidentiality.choices,
-        default=Confidentiality.PARTICIPANTS,
+        default=Confidentiality.RESEARCHER,
         db_index=True,
     )
     is_system = models.BooleanField(default=False)
@@ -418,19 +525,12 @@ class CaseMessage(BaseModel):
         return super().save(*args, **kwargs)
 
     def is_visible_to(self, user):
-        """Un message interne n'est jamais visible d'un chercheur ni d'une DSI."""
+        """Visibilite du canal selon la matrice (voir coordination.visibility)."""
+        from .visibility import readable_channels
+
         if not user or not user.is_authenticated:
             return False
-        if self.confidentiality == Confidentiality.RESTRICTED:
-            from apps.accounts.roles import Role
-
-            return user.is_superuser or user.role in (
-                Role.NATIONAL_COORDINATOR,
-                Role.SUPER_ADMIN,
-            )
-        if self.confidentiality == Confidentiality.INTERNAL:
-            return user.is_national
-        return self.case.is_visible_to(user)
+        return self.confidentiality in readable_channels(self.case, user)
 
     def integrity_ok(self):
         return self.content_hash == hash_text(self.body)
@@ -461,7 +561,7 @@ class CaseTimelineEvent(BaseModel):
     class Meta:
         db_table = "case_timeline_events"
         ordering = ["occurred_at", "created_at"]
-        verbose_name = "Evenement de chronologie"
+        verbose_name = "Événement de chronologie"
         verbose_name_plural = "Chronologie"
 
     def __str__(self):
@@ -488,8 +588,8 @@ class SLAEvent(BaseModel):
         db_table = "sla_events"
         unique_together = [("case", "kind")]
         ordering = ["due_at"]
-        verbose_name = "Echeance SLA"
-        verbose_name_plural = "Echeances SLA"
+        verbose_name = "Échéance SLA"
+        verbose_name_plural = "Échéances SLA"
 
     def __str__(self):
         return f"{self.case.case_id} {self.kind} ({self.state})"

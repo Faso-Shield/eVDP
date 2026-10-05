@@ -43,7 +43,7 @@ def require_capability(*capabilities):
         @functools.wraps(view_func)
         def wrapper(request, *args, **kwargs):
             if not any(user_has_capability(request.user, cap) for cap in capabilities):
-                deny(request, "Capacite requise: " + ", ".join(capabilities))
+                deny(request, "Capacité requise : " + ", ".join(capabilities))
             return view_func(request, *args, **kwargs)
 
         return wrapper
@@ -59,7 +59,7 @@ def require_roles(*roles):
         def wrapper(request, *args, **kwargs):
             user = request.user
             if not (user.is_authenticated and (user.is_superuser or user.role in roles)):
-                deny(request, "Role requis: " + ", ".join(roles))
+                deny(request, "Rôle requis : " + ", ".join(roles))
             return view_func(request, *args, **kwargs)
 
         return wrapper
@@ -75,7 +75,7 @@ def require_not_read_only(view_func):
         if request.method not in ("GET", "HEAD", "OPTIONS") and getattr(
             request.user, "is_read_only", False
         ):
-            deny(request, "Role en lecture seule.")
+            deny(request, "Rôle en lecture seule.")
         return view_func(request, *args, **kwargs)
 
     return wrapper

@@ -1,6 +1,35 @@
 from django.contrib import admin
 
+from apps.accounts.roles import Capability
+
 from .models import Organization, OrganizationMember, SecurityContact
+
+
+class OrganizationManagersOnlyMixin:
+    """Gestion des organisations dans l'administration Django.
+
+    Ouverte aux comptes portant MANAGE_ALL_ORGANIZATIONS : super admin,
+    et Coordinateur ou analyste s'ils ont acces a l'administration. Un
+    simple compte staff sans cette capacite n'y accede pas.
+    """
+
+    def _allowed(self, request):
+        return request.user.has_capability(Capability.MANAGE_ALL_ORGANIZATIONS)
+
+    def has_module_permission(self, request):
+        return self._allowed(request)
+
+    def has_view_permission(self, request, obj=None):
+        return self._allowed(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self._allowed(request)
+
+    def has_add_permission(self, request, obj=None):
+        return self._allowed(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self._allowed(request)
 
 
 class OrganizationMemberInline(admin.TabularInline):
@@ -15,7 +44,7 @@ class SecurityContactInline(admin.TabularInline):
 
 
 @admin.register(Organization)
-class OrganizationAdmin(admin.ModelAdmin):
+class OrganizationAdmin(OrganizationManagersOnlyMixin, admin.ModelAdmin):
     list_display = ("name", "acronym", "organization_type", "sector", "status", "accepts_vdp")
     list_filter = ("organization_type", "sector", "status", "accepts_vdp")
     search_fields = ("name", "acronym", "domain", "official_email")
@@ -23,17 +52,17 @@ class OrganizationAdmin(admin.ModelAdmin):
     inlines = [OrganizationMemberInline, SecurityContactInline]
     actions = ["activate", "suspend"]
 
-    @admin.action(description="Activer les organisations selectionnees")
+    @admin.action(description="Activer les organisations sélectionnées")
     def activate(self, request, queryset):
         queryset.update(status="ACTIVE")
 
-    @admin.action(description="Suspendre les organisations selectionnees")
+    @admin.action(description="Suspendre les organisations sélectionnées")
     def suspend(self, request, queryset):
         queryset.update(status="SUSPENDED")
 
 
 @admin.register(OrganizationMember)
-class OrganizationMemberAdmin(admin.ModelAdmin):
+class OrganizationMemberAdmin(OrganizationManagersOnlyMixin, admin.ModelAdmin):
     list_display = ("user", "organization", "membership_role", "is_active", "is_primary")
     list_filter = ("membership_role", "is_active")
     search_fields = ("user__email", "organization__name")
@@ -41,7 +70,7 @@ class OrganizationMemberAdmin(admin.ModelAdmin):
 
 
 @admin.register(SecurityContact)
-class SecurityContactAdmin(admin.ModelAdmin):
+class SecurityContactAdmin(OrganizationManagersOnlyMixin, admin.ModelAdmin):
     list_display = ("name", "organization", "email", "is_primary")
     list_filter = ("is_primary",)
     search_fields = ("name", "email", "organization__name")

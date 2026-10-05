@@ -372,7 +372,7 @@ def test_valid_document_is_accepted():
 
 
 def test_unlisted_extension_is_rejected():
-    with pytest.raises(ValidationError, match="Format non accepte"):
+    with pytest.raises(ValidationError, match="Format non accepté"):
         validate_id_document(_upload("cnib.docx", content_type="application/msword"))
 
 

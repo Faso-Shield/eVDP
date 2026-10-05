@@ -39,7 +39,7 @@ Signaler  →  Analyser  →  Coordonner  →  Corriger  →  Publier
 - Formulaire public de signalement, avec ou sans compte, avec option **anonyme**
 - Chiffrement **PGP** optionnel du contenu sensible
 - Création automatique d'un dossier `EVDP-2026-000001`
-- Machine à états de 24 statuts, transitions strictement contrôlées
+- Workflow v2 : 11 étapes, un bouton par rôle, pré-requis bloquants, règle des quatre yeux
 - Messagerie sécurisée à 3 niveaux de confidentialité, avec hash d'intégrité
 - Pièces jointes validées, stockées sous nom opaque, jamais servies directement
 - Échéances **SLA** configurables surveillées par Celery Beat
@@ -93,7 +93,7 @@ cp .env.example .env
 # 2. Générer une clé secrète et renseigner les mots de passe
 python -c "import secrets; print(secrets.token_urlsafe(64))"
 #   → reporter la valeur dans SECRET_KEY
-#   → définir POSTGRES_PASSWORD et MINIO_ROOT_PASSWORD
+#   → définir POSTGRES_PASSWORD et FIELD_ENCRYPTION_KEY
 
 # 3. Démarrer la plateforme
 docker compose up -d
@@ -121,8 +121,8 @@ La plateforme est disponible sur **http://localhost/**.
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
-Expose en plus, **uniquement sur 127.0.0.1** : Mailpit (`:8025`), console MinIO
-(`:9001`), PostgreSQL (`:5432`), Redis (`:6379`), Django (`:8000`).
+Expose en plus, **uniquement sur 127.0.0.1** : Mailpit (`:8025`),
+PostgreSQL (`:5432`), Redis (`:6379`), Django (`:8000`).
 
 ### Vérification
 
@@ -166,15 +166,15 @@ Bounty), 3 dossiers à des stades différents, 1 récompense approuvée et
 INTERNET → Nginx → Django/DRF ─┬─ PostgreSQL
                                ├─ Redis ─┬─ Celery worker
                                │         └─ Celery beat
-                               ├─ MinIO (pièces jointes, privé)
+                               ├─ Volume evdp-media (pièces jointes, privé)
                                └─ Mailpit (emails)
 ```
 
-Seul Nginx publie un port. PostgreSQL, Redis et MinIO restent sur le réseau
+Seul Nginx publie un port. PostgreSQL et Redis restent sur le réseau
 interne `evdp-backend`.
 
 **Pile technique :** Python 3.12 · Django 5.2 · Django REST Framework ·
-PostgreSQL 16 · Redis 7 · Celery 5 · MinIO · Nginx · Django Templates + HTMX
+PostgreSQL 16 · Redis 7 · Celery 5 · Nginx · Django Templates + HTMX
 
 Voir **[ARCHITECTURE.md](ARCHITECTURE.md)** pour les décisions structurantes.
 
@@ -192,7 +192,7 @@ appliqués sans exception.
 | **Moindre privilège** | 10 rôles, 23 capacités, isolation appliquée au niveau du queryset |
 | **Tout est auditable** | Journal append-only ; les refus sont journalisés durablement |
 | **Ne jamais exposer les données internes** | La vue publique est un objet distinct du dossier privé |
-| **Aucune clé privée côté serveur** | Seules les clés publiques PGP sont stockées ; tout bloc privé est refusé |
+| **Aucune clé privée en clair côté serveur** | Seules les clés publiques PGP sont stockées ; la clé nationale se génère dans le navigateur et sa remise ne transite que chiffrée par un code qu'eVDP ignore |
 
 Mesures principales : Argon2, CSP, HSTS, CSRF, cookies durcis, rate limiting
 applicatif **et** bordure, validation des uploads (extension + MIME +
@@ -287,7 +287,8 @@ curl -X POST http://localhost/api/v1/reports/ \
 | `GET` | `/api/v1/reports/` | Lister ses dossiers |
 | `GET` | `/api/v1/reports/{case_id}/` | Détail d'un dossier |
 | `PATCH` | `/api/v1/reports/{case_id}/` | Qualifier (analystes) |
-| `POST` | `/api/v1/reports/{case_id}/transition/` | Changer de statut |
+| `POST` | `/api/v1/reports/{case_id}/actions/` | Action du workflow v2 (bouton) |
+| `POST` | `/api/v1/reports/{case_id}/transition/` | Changer de statut (compatibilité) |
 | `GET/POST` | `/api/v1/reports/{case_id}/messages/` | Messagerie |
 | `GET/POST` | `/api/v1/reports/{case_id}/attachments/` | Pièces jointes |
 | `GET/POST` | `/api/v1/programs/` | Programmes |

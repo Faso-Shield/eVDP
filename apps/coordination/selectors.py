@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from apps.vulnerabilities.constants import Severity
 
-from .constants import SLAState
+from .constants import SLAKind, SLAState
 from .models import Case
 from .workflow import DISMISSED_STATES, KANBAN_COLUMNS, TERMINAL_STATES, CaseStatus
 
@@ -62,18 +62,84 @@ def search_cases(
     return queryset
 
 
+#: Etat SLA -> couleur de badge (vert, orange a 75 % du delai, rouge a echeance).
+SLA_COLORS = {"ok": "sla-ok", "warning": "sla-warning", "breached": "sla-breached"}
+
+#: Echeances qui ne dependent que du CSIRT.
+INTERNAL_SLA_KINDS = frozenset(
+    {
+        SLAKind.ACKNOWLEDGEMENT,
+        SLAKind.TRIAGE,
+        SLAKind.VALIDATION,
+        SLAKind.VERIFICATION,
+        SLAKind.DISCLOSURE,
+    }
+)
+#: Echeances qui dependent de l'organisation affectee.
+EXTERNAL_SLA_KINDS = frozenset({SLAKind.VENDOR_RESPONSE, SLAKind.REMEDIATION})
+
+_ACTIVE_SLA_STATES = (SLAState.PENDING, SLAState.APPROACHING, SLAState.BREACHED)
+
+
+def next_deadline(case, now=None):
+    """Echeance active la plus proche : (date, depassee) ou None.
+
+    Lit les echeances prechargees. Une echeance passee compte comme depassee
+    meme avant que la tache periodique ne l'ait marquee BREACHED.
+    """
+    now = now or timezone.now()
+    events = [event for event in case.sla_events.all() if event.state in _ACTIVE_SLA_STATES]
+    if not events:
+        return None
+    event = min(events, key=lambda item: item.due_at)
+    return event.due_at, event.state == SLAState.BREACHED or event.due_at <= now
+
+
+def sla_color(case, now=None):
+    """Couleur d'echeance de l'etape en cours d'un dossier (ou "")."""
+    now = now or timezone.now()
+    events = [
+        event
+        for event in case.sla_events.all()
+        if event.state in (SLAState.PENDING, SLAState.APPROACHING, SLAState.BREACHED)
+    ]
+    if not events:
+        return ""
+    worst = "ok"
+    for event in events:
+        if event.state == SLAState.BREACHED or event.due_at <= now:
+            return SLA_COLORS["breached"]
+        policy = event.policy
+        ratio = (policy.warning_ratio if policy else 75) / 100
+        total = (event.due_at - event.created_at).total_seconds()
+        elapsed = (now - event.created_at).total_seconds()
+        if event.state == SLAState.APPROACHING or (total > 0 and elapsed / total >= ratio):
+            worst = "warning"
+    return SLA_COLORS[worst]
+
+
 def kanban_board(user, limit_per_column=40):
-    """Regroupe les cases visibles par colonne Kanban."""
-    queryset = visible_cases(user).exclude(status=CaseStatus.CLOSED)
+    """Regroupe les cases visibles par colonne Kanban.
+
+    La colonne « Clos » montre les dossiers termines (clos, rejetes,
+    doublons) que l'utilisateur voit en archives, les plus recemment
+    clotures d'abord ; au-dela de la limite, la liste complete prend le
+    relais (`truncated`).
+    """
+    queryset = visible_cases(user).prefetch_related("sla_events__policy")
     board = []
     for key, label, states in KANBAN_COLUMNS:
-        column_cases = list(queryset.filter(status__in=states)[:limit_per_column])
+        column = queryset.filter(status__in=states)
+        if key == "CLOSED":
+            column = column.order_by(F("closed_at").desc(nulls_last=True), "-updated_at")
+        count = column.count()
         board.append(
             {
                 "key": key,
                 "label": label,
-                "cases": column_cases,
-                "count": queryset.filter(status__in=states).count(),
+                "cases": list(column[:limit_per_column]),
+                "count": count,
+                "truncated": count > limit_per_column,
             }
         )
     return board
@@ -93,16 +159,20 @@ def case_statistics(user):
         "total": total,
         "new": queryset.filter(status=CaseStatus.SUBMITTED).count(),
         "in_triage": queryset.filter(
-            status__in=[CaseStatus.TRIAGE, CaseStatus.NEEDS_INFORMATION]
+            status__in=[
+                CaseStatus.ACKNOWLEDGED,
+                CaseStatus.IN_ANALYSIS,
+                CaseStatus.VALIDATION_PENDING,
+                CaseStatus.NEEDS_INFORMATION,
+                CaseStatus.REJECTION_PENDING,
+            ]
         ).count(),
         "validated": validated,
         "in_remediation": queryset.filter(
             status__in=[
-                CaseStatus.REMEDIATION,
-                CaseStatus.VENDOR_CONTACTED,
-                CaseStatus.VENDOR_ACKNOWLEDGED,
+                CaseStatus.VENDOR_NOTIFIED,
+                CaseStatus.REMEDIATION_IN_PROGRESS,
                 CaseStatus.FIX_AVAILABLE,
-                CaseStatus.IN_PROGRESS,
             ]
         ).count(),
         "critical": severities.get(Severity.CRITICAL, 0),
@@ -225,13 +295,38 @@ def vulnerability_type_distribution(user, limit=10):
     ]
 
 
+def _overdue(user):
+    return visible_cases(user).filter(sla_events__state=SLAState.BREACHED).distinct()
+
+
 def overdue_cases(user, limit=20):
-    return list(
-        visible_cases(user)
-        .filter(sla_events__state=SLAState.BREACHED)
-        .distinct()
-        .order_by("-priority_score")[:limit]
+    """Dossiers en retard, chacun marque selon qui porte le retard.
+
+    `overdue_internal` : une echeance du CSIRT est depassee ;
+    `overdue_external` : une echeance de l'organisation l'est. Les deux
+    peuvent coexister.
+    """
+    cases = list(
+        _overdue(user).prefetch_related("sla_events").order_by("-priority_score")[:limit]
     )
+    for case in cases:
+        breached = {e.kind for e in case.sla_events.all() if e.state == SLAState.BREACHED}
+        case.overdue_internal = bool(breached & INTERNAL_SLA_KINDS)
+        case.overdue_external = bool(breached & EXTERNAL_SLA_KINDS)
+    return cases
+
+
+def overdue_by_severity(user):
+    """Nombre de dossiers en depassement par severite, sans les identifier."""
+    rows = (
+        visible_cases(user)
+        .filter(pk__in=_overdue(user).values("pk"))
+        .values("severity")
+        .annotate(total=Count("id"))
+        .order_by()
+    )
+    counts = {row["severity"]: row["total"] for row in rows}
+    return [(label, counts.get(value, 0)) for value, label in Severity.choices]
 
 
 def dismissed_count(user):

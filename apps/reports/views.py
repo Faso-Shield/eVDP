@@ -1,21 +1,23 @@
 """Vue publique de signalement d'une vulnerabilite."""
 
+import json
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.accounts.verification import grace_deadline
-from apps.attachments.services import store_attachment
 from apps.coordination.services import public_status_for, resolve_tracking_token
 from apps.core.markdown_utils import render_markdown
 from apps.core.models import SiteSetting
+from apps.core.pgp import national_public_key
 from apps.core.ratelimit import rate_limited
 from apps.core.views import DEFAULT_DISCLOSURE_POLICY
 from apps.programs.models import Program
 from apps.vulnerabilities.constants import ReportSource
 
 from .forms import TrackingCodeForm, VulnerabilityReportForm
-from .services import submit_report
+from .services import MAX_SUBMISSION_FILES, may_report, submit_report
 
 
 @rate_limited("report")
@@ -24,6 +26,10 @@ def submit(request):
 
     Le rapport cree est prive : il n'apparait jamais sur une page publique.
     """
+    if not may_report(request.user):
+        # Compte metier : pas de formulaire, une explication.
+        return render(request, "reports/business_account.html", status=403)
+
     program = None
     program_slug = request.GET.get("program")
     if program_slug:
@@ -41,15 +47,15 @@ def submit(request):
                     request=request,
                     source=ReportSource.WEB,
                     reporter=request.user if request.user.is_authenticated else None,
+                    attachments=request.FILES.getlist("attachments"),
                 )
             except ValidationError as exc:
                 messages.error(request, "; ".join(exc.messages))
             else:
-                _attach_files(request, case, report)
                 if request.user.is_authenticated:
                     messages.success(
                         request,
-                        f"Signalement enregistre sous la référence {case.case_id}. "
+                        f"Signalement enregistré sous la référence {case.case_id}. "
                         "Suivez son traitement dans votre espace.",
                     )
                     return redirect("coordination:case_detail", case_id=case.case_id)
@@ -86,6 +92,9 @@ def submit(request):
         {
             "form": form,
             "program": program,
+            "program_rules": _program_rules(request.user),
+            "pgp_available": bool(national_public_key()),
+            "max_attachments": MAX_SUBMISSION_FILES,
             "policy_excerpt": render_markdown(policy[:1200]),
             "delai_verification": grace_deadline(request.user),
             # Meme annonce que sur la fiche du programme : un visiteur sans
@@ -98,23 +107,18 @@ def submit(request):
     )
 
 
-def _attach_files(request, case, report):
-    """Enregistre les pieces jointes fournies avec le formulaire."""
-    files = request.FILES.getlist("attachments")
-    for uploaded in files[:5]:
-        try:
-            store_attachment(
-                uploaded,
-                request.user if request.user.is_authenticated else None,
-                case=case,
-                report=report,
-                request=request,
-            )
-        except ValidationError as exc:
-            messages.warning(
-                request,
-                f"Pièce jointe « {uploaded.name} » refusée : {'; '.join(exc.messages)}",
-            )
+def _program_rules(user):
+    """Motifs de refus de chaque programme public pour ce declarant, avec et
+    sans anonymat : le formulaire les annonce des le choix du programme, avec
+    le texte meme du refus qu'il recevrait a l'envoi."""
+    rules = {
+        str(program.pk): {
+            "refus": program.reporter_rejection(user) or "",
+            "refus_anonyme": program.reporter_rejection(user, is_anonymous=True) or "",
+        }
+        for program in Program.objects.public()
+    }
+    return json.dumps(rules)
 
 
 def submitted(request):

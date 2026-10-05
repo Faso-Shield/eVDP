@@ -36,9 +36,9 @@ class ApiKeyAuthentication(authentication.BaseAuthentication):
             .first()
         )
         if entry is None or not entry.is_usable:
-            raise exceptions.AuthenticationFailed("Cle d'API invalide ou expiree.")
+            raise exceptions.AuthenticationFailed("Clé d'API invalide ou expirée.")
         if not entry.user.is_active:
-            raise exceptions.AuthenticationFailed("Compte desactive.")
+            raise exceptions.AuthenticationFailed("Compte désactivé.")
         ApiKey.objects.filter(pk=entry.pk).update(last_used_at=timezone.now())
         return (entry.user, entry)
 

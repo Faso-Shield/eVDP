@@ -1,10 +1,12 @@
 from django.contrib import admin
 
+from apps.core.admin import CaseContentAdminMixin
+
 from .models import VulnerabilityReport
 
 
 @admin.register(VulnerabilityReport)
-class VulnerabilityReportAdmin(admin.ModelAdmin):
+class VulnerabilityReportAdmin(CaseContentAdminMixin, admin.ModelAdmin):
     list_display = (
         "title",
         "vulnerability_type",

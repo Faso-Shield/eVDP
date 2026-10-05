@@ -1,10 +1,12 @@
 """Cycle de vie des recompenses Bug Bounty."""
 
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.accounts.roles import Capability
@@ -13,7 +15,7 @@ from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.coordination.constants import TimelineEventType
 from apps.coordination.services import add_timeline_event
-from apps.coordination.workflow import CaseStatus
+from apps.coordination.workflow import BountyStage, CaseStatus
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
 from apps.programs.models import ProgramType
@@ -25,6 +27,8 @@ from .models import (
     BountyStatus,
     PaymentStatus,
     ReviewDecision,
+    WalletEntry,
+    WalletEntryKind,
 )
 
 #: Un versement enregistre ne peut etre statue (regle ou en echec) que si le
@@ -36,8 +40,7 @@ from .models import (
 SETTLEMENT_ELIGIBLE_CASE_STATUSES = frozenset(
     {
         CaseStatus.FIX_VERIFIED,
-        CaseStatus.DISCLOSURE_SCHEDULED,
-        CaseStatus.PUBLISHED,
+        CaseStatus.ADVISORY_REVIEW,
         CaseStatus.CLOSED,
     }
 )
@@ -55,7 +58,156 @@ def suggested_amount(case):
     policy = getattr(program, "reward_policy", None) if program else None
     if not policy or not policy.is_active:
         return Decimal("0"), "XOF"
-    return policy.suggested_amount(case.severity, case.scope), policy.currency
+    return policy.suggested_amount(case.severity, case.scope, case.cvss_score), policy.currency
+
+
+def suggestion_for(case):
+    """Detail du montant propose : palier, score, position dans le palier."""
+    program = case.program
+    policy = getattr(program, "reward_policy", None) if program else None
+    if not policy or not policy.is_active:
+        return None
+    return policy.suggestion(case.severity, case.scope, case.cvss_score)
+
+
+def amount_outside_tier(case, amount):
+    """Le montant sort-il du palier de la matrice du programme ?"""
+    program = case.program
+    policy = getattr(program, "reward_policy", None) if program else None
+    if not policy or not policy.is_active:
+        return False
+    tier = policy.tier_for(case.severity, case.scope)
+    if tier is None:
+        return False
+    return not tier.contains(Decimal(amount))
+
+
+# ---------------------------------------------------------------------------
+# Coordonnees de paiement du chercheur
+# ---------------------------------------------------------------------------
+def payout_readiness(researcher):
+    """Etat du portefeuille : peut-on payer ce chercheur ?
+
+    Rend {"ready": bool, "missing": [libelles], "method": moyen principal}.
+    Les elements exiges sont ceux de PayoutProfile.is_complete, plus un moyen
+    de paiement principal actif.
+    """
+    if researcher is None:
+        return {"ready": False, "missing": ["Aucun chercheur identifié"], "method": None}
+    profile = getattr(researcher, "payout_profile", None)
+    method = (
+        profile.methods.filter(is_primary=True, is_active=True).first() if profile else None
+    )
+    missing = []
+    if profile is None:
+        missing += [
+            "Nom légal",
+            "Téléphone de contact",
+            "Pièce d'identité",
+            "Attestation d'exactitude",
+        ]
+    else:
+        if not profile.legal_full_name.strip():
+            missing.append("Nom légal")
+        if not profile.contact_phone.strip():
+            missing.append("Téléphone de contact")
+        if not profile.id_document_file:
+            missing.append("Pièce d'identité")
+        if not profile.accepted_terms:
+            missing.append("Attestation d'exactitude")
+    if method is None:
+        missing.append("Moyen de paiement principal")
+    return {"ready": not missing, "missing": missing, "method": method}
+
+
+#: Delai minimal entre deux relances d'un meme chercheur pour une prime.
+PAYOUT_REQUEST_COOLDOWN = timedelta(hours=24)
+
+
+def last_payout_request(bounty):
+    from apps.notifications.models import Notification
+
+    if not bounty.researcher_id:
+        return None
+    return (
+        Notification.objects.filter(
+            recipient_id=bounty.researcher_id,
+            case_id=bounty.case_id,
+            kind=NotificationKind.PAYOUT_DETAILS_REQUESTED,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def can_request_payout_details(user):
+    return user.has_capability(Capability.RECORD_PAYMENT) or user.has_capability(
+        Capability.APPROVE_BOUNTY
+    )
+
+
+@transaction.atomic
+def request_payout_details(bounty, actor, request=None, automatic=False):
+    """Demande au chercheur de completer ses coordonnees de paiement.
+
+    Notification dans la plateforme et email, avec la liste de ce qui manque
+    et un lien vers son portefeuille. Au plus une relance par jour et par
+    prime ; refusee si le portefeuille est deja complet. `automatic=True` :
+    relance declenchee par l'approbation de la prime.
+    """
+    if not automatic and not can_request_payout_details(actor):
+        raise PermissionDenied("Capacité requise pour relancer le chercheur.")
+    readiness = payout_readiness(bounty.researcher)
+    if bounty.researcher_id is None:
+        raise ValidationError("Aucun chercheur identifié pour cette récompense.")
+    if readiness["ready"]:
+        raise ValidationError("Le portefeuille du chercheur est déjà complet.")
+    previous = last_payout_request(bounty)
+    if previous and timezone.now() - previous.created_at < PAYOUT_REQUEST_COOLDOWN:
+        raise ValidationError(
+            f"Le chercheur a déjà été relancé le {timezone.localtime(previous.created_at):%d/%m/%Y à %H:%M}."
+        )
+    from django.urls import reverse
+
+    notification = notify(
+        bounty.researcher,
+        NotificationKind.PAYOUT_DETAILS_REQUESTED,
+        case=bounty.case,
+        title=f"[{bounty.case.case_id}] Complétez vos coordonnées de paiement",
+        body="À compléter : " + ", ".join(readiness["missing"]),
+        url=reverse("wallet:home"),
+    )
+    log_action(
+        AuditAction.PAYOUT_DETAILS_REQUESTED,
+        actor=actor,
+        obj=bounty,
+        request=request,
+        case=bounty.case.case_id,
+        missing=readiness["missing"],
+        automatic=automatic,
+    )
+    return notification
+
+
+def bounty_context(case):
+    """Reperes de decision d'une prime : matrice, montants, budget, portefeuille."""
+    program = case.program
+    policy = getattr(program, "reward_policy", None) if program else None
+    tier = policy.tier_for(case.severity, case.scope) if policy else None
+    bounty = getattr(case, "bounty", None)
+    suggested, currency = suggested_amount(case)
+    return {
+        "severity": case.get_severity_display(),
+        "scope": case.scope,
+        "tier": tier,
+        "currency": currency,
+        "suggested": suggested,
+        "suggestion": suggestion_for(case),
+        "bounty": bounty,
+        "within_policy": bounty.within_policy() if bounty else True,
+        "budget": budget_status(bounty) if bounty else None,
+        "payout": payout_readiness(case.reporter),
+    }
 
 
 def budget_status(bounty, amount=None):
@@ -102,6 +254,11 @@ def propose_bounty(case, actor, amount=None, justification="", request=None):
     """Cree ou met a jour la proposition de recompense d'un case Bug Bounty."""
     if not actor.has_capability(Capability.PROPOSE_BOUNTY):
         raise PermissionDenied("Capacité requise pour proposer une récompense.")
+    if case.bounty_stage != BountyStage.ELIGIBLE:
+        raise ValidationError(
+            "La branche prime n'est pas ouverte : une prime se propose une fois le "
+            "correctif confirmé (étape 8)."
+        )
     if not case.program_id or case.program.program_type != ProgramType.BUG_BOUNTY:
         raise ValidationError(
             "Une récompense ne peut être proposée que sur un programme Bug Bounty."
@@ -123,6 +280,12 @@ def propose_bounty(case, actor, amount=None, justification="", request=None):
     amount = Decimal(amount) if amount is not None else default_amount
     if amount < 0:
         raise ValidationError({"amount": "Montant négatif interdit."})
+    if amount_outside_tier(case, amount) and not (justification or "").strip():
+        raise ValidationError(
+            {
+                "justification": "Montant hors palier : une justification écrite est obligatoire."
+            }
+        )
 
     bounty = getattr(case, "bounty", None)
     if bounty is None:
@@ -138,6 +301,10 @@ def propose_bounty(case, actor, amount=None, justification="", request=None):
     bounty.status = BountyStatus.PENDING
     bounty.full_clean(exclude=["approved_amount"])
     bounty.save()
+    # Statut de prime du dossier (etape B1) : tenu ici, pour que tout chemin
+    # de proposition -- bouton du dossier, vue prime, API -- le fasse avancer.
+    case.bounty_stage = BountyStage.PROPOSED
+    case.save(update_fields=["bounty_stage", "updated_at"])
 
     log_action(
         AuditAction.BOUNTY_PROPOSED,
@@ -155,7 +322,10 @@ def propose_bounty(case, actor, amount=None, justification="", request=None):
 @transaction.atomic
 def review_bounty(bounty, reviewer, decision, comment="", suggested=None, request=None):
     """Enregistre un avis de revue (sans decision finale)."""
-    if not reviewer.has_capability(Capability.PROPOSE_BOUNTY):
+    if not (
+        reviewer.has_capability(Capability.PROPOSE_BOUNTY)
+        or reviewer.has_capability(Capability.APPROVE_BOUNTY)
+    ):
         raise PermissionDenied("Capacité requise pour participer à la revue.")
     review = BountyReview.objects.create(
         bounty=bounty,
@@ -186,6 +356,8 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
         raise PermissionDenied(
             "Le proposant d'une récompense ne peut pas l'approuver lui-même."
         )
+    if bounty.case.bounty_stage != BountyStage.PROPOSED:
+        raise ValidationError("Aucune prime proposée n'attend d'approbation sur ce dossier.")
     if not bounty.can_transition_to(BountyStatus.APPROVED):
         raise ValidationError(
             f"Transition interdite depuis l'état {bounty.get_status_display()}."
@@ -221,7 +393,7 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
         warnings.append("montant hors matrice du programme")
     if budget and budget["exceeded"]:
         warnings.append(
-            f"budget du programme depasse ({budget['projected']} / "
+            f"budget du programme dépassé ({budget['projected']} / "
             f"{budget['total']} {budget['currency']})"
         )
     if warnings:
@@ -242,10 +414,20 @@ def approve_bounty(bounty, approver, amount=None, note="", request=None):
         amount=str(amount),
         currency=bounty.currency,
     )
+    credit_wallet(bounty, approver)
+    # Portefeuille incomplet : le chercheur est relance d'office, sans quoi le
+    # versement resterait bloque sans qu'il le sache.
+    if bounty.researcher_id and not payout_readiness(bounty.researcher)["ready"]:
+        try:
+            request_payout_details(bounty, approver, request=request, automatic=True)
+        except ValidationError:
+            pass
+    bounty.case.bounty_stage = BountyStage.CREDITED
+    bounty.case.save(update_fields=["bounty_stage", "updated_at"])
     add_timeline_event(
         bounty.case,
         TimelineEventType.REWARD_APPROVED,
-        f"Recompense approuvee : {bounty.display_amount}",
+        f"Récompense approuvée et créditée : {bounty.display_amount}",
         actor=approver,
     )
     if bounty.researcher_id:
@@ -273,6 +455,9 @@ def reject_bounty(bounty, approver, note="", request=None):
     bounty.save(
         update_fields=["status", "decided_by", "decided_at", "decision_note", "updated_at"]
     )
+    # Une prime refusee termine la branche : le dossier peut se clore.
+    bounty.case.bounty_stage = BountyStage.NOT_ELIGIBLE
+    bounty.case.save(update_fields=["bounty_stage", "updated_at"])
     log_action(
         AuditAction.BOUNTY_REJECTED,
         actor=approver,
@@ -315,7 +500,7 @@ def record_payment(bounty, actor, amount=None, method=None, reference="", reques
     if not payout_profile or not payout_profile.is_complete:
         payout_warnings.append("portefeuille du chercheur incomplet")
     if not primary_method:
-        payout_warnings.append("aucun moyen de paiement principal declare")
+        payout_warnings.append("aucun moyen de paiement principal déclaré")
 
     payment = BountyPayment.objects.create(
         bounty=bounty,
@@ -370,12 +555,12 @@ def confirm_settlement(payment, actor, proof_file, note="", request=None):
     apps.bounty.views.payment_proof_download).
     """
     if not actor.has_capability(Capability.RECORD_PAYMENT):
-        raise PermissionDenied("Capacite requise pour confirmer un versement.")
+        raise PermissionDenied("Capacité requise pour confirmer un versement.")
     if payment.status != PaymentStatus.RECORDED:
-        raise ValidationError("Seul un versement enregistre peut etre confirme regle.")
+        raise ValidationError("Seul un versement enregistré peut être confirmé réglé.")
     if payment.bounty.case.status not in SETTLEMENT_ELIGIBLE_CASE_STATUSES:
         raise ValidationError(
-            "Le correctif du dossier doit etre verifie avant de confirmer le versement "
+            "Le correctif du dossier doit être vérifié avant de confirmer le versement "
             f"(statut actuel : {payment.bounty.case.get_status_display()})."
         )
     if not proof_file:
@@ -399,6 +584,18 @@ def confirm_settlement(payment, actor, proof_file, note="", request=None):
     bounty = payment.bounty
     bounty.status = BountyStatus.PAID
     bounty.save(update_fields=["status", "updated_at"])
+    # Le Wallet n'est debite qu'une fois le reglement prouve : un versement
+    # seulement enregistre peut encore echouer (mark_payment_failed).
+    if bounty.researcher_id:
+        WalletEntry.objects.create(
+            researcher=bounty.researcher,
+            bounty=bounty,
+            kind=WalletEntryKind.PAYOUT,
+            amount=-payment.amount,
+            currency=payment.currency,
+            label=f"Versement hors plateforme {payment.reference}".strip(),
+            created_by=actor,
+        )
 
     log_action(
         AuditAction.BOUNTY_PAYMENT_SETTLED,
@@ -424,12 +621,12 @@ def confirm_settlement(payment, actor, proof_file, note="", request=None):
 def mark_payment_failed(payment, actor, reason, request=None):
     """Signale qu'un versement enregistre n'a finalement pas abouti."""
     if not actor.has_capability(Capability.RECORD_PAYMENT):
-        raise PermissionDenied("Capacite requise pour signaler un echec de versement.")
+        raise PermissionDenied("Capacité requise pour signaler un échec de versement.")
     if payment.status != PaymentStatus.RECORDED:
-        raise ValidationError("Seul un versement enregistre peut etre marque en echec.")
+        raise ValidationError("Seul un versement enregistré peut être marqué en échec.")
     if payment.bounty.case.status not in SETTLEMENT_ELIGIBLE_CASE_STATUSES:
         raise ValidationError(
-            "Le correctif du dossier doit etre verifie avant de statuer sur ce versement "
+            "Le correctif du dossier doit être vérifié avant de statuer sur ce versement "
             f"(statut actuel : {payment.bounty.case.get_status_display()})."
         )
     if not reason.strip():
@@ -468,7 +665,112 @@ def authorize_proof_download(payment, user, request=None):
     return True
 
 
+# ---------------------------------------------------------------------------
+# Wallet : grand livre d'ecritures, solde calcule
+# ---------------------------------------------------------------------------
+def credit_wallet(bounty, actor):
+    """Credite le Wallet du chercheur du montant approuve (etape B2)."""
+    if not bounty.researcher_id:
+        return None
+    return WalletEntry.objects.create(
+        researcher=bounty.researcher,
+        bounty=bounty,
+        kind=WalletEntryKind.CREDIT,
+        amount=bounty.approved_amount,
+        currency=bounty.currency,
+        label=f"Prime {bounty.case.case_id}",
+        created_by=actor,
+    )
+
+
+@transaction.atomic
+def adjust_wallet(researcher, actor, amount, label, currency="XOF", request=None):
+    """Ecriture d'ajustement : seule facon de corriger un solde."""
+    if not actor.has_capability(Capability.APPROVE_BOUNTY):
+        raise PermissionDenied("Capacité requise pour ajuster un Wallet.")
+    if not (label or "").strip():
+        raise ValidationError({"label": "Un motif d'ajustement est obligatoire."})
+    amount = Decimal(amount)
+    if amount == 0:
+        raise ValidationError({"amount": "Un ajustement nul n'a pas de sens."})
+    entry = WalletEntry.objects.create(
+        researcher=researcher,
+        kind=WalletEntryKind.ADJUSTMENT,
+        amount=amount,
+        currency=currency,
+        label=label.strip()[:255],
+        created_by=actor,
+    )
+    log_action(
+        AuditAction.BOUNTY_APPROVED,
+        actor=actor,
+        obj=entry,
+        request=request,
+        wallet_adjustment=str(amount),
+        currency=currency,
+        researcher=str(researcher.pk),
+    )
+    return entry
+
+
+def visible_bounties(user):
+    """Primes visibles selon la matrice v2 (donnee « Wallet »).
+
+    Chercheur : les siennes. Auditeur : toutes. Analyste et Coordinateur :
+    celles des dossiers dont ils sont responsables de l'etape en cours, et,
+    pour qui enregistre les versements (RECORD_PAYMENT), celles dont un
+    versement reste a enregistrer ou a confirmer. Triage, DSI et super
+    admin : aucune.
+    """
+    from apps.accounts.roles import Role
+    from apps.coordination.models import Case
+
+    queryset = Bounty.objects.select_related("case", "program", "researcher")
+    if not user or not user.is_authenticated:
+        return queryset.none()
+    if user.role == Role.AUDITOR:
+        return queryset
+    if not (
+        user.has_capability(Capability.APPROVE_BOUNTY)
+        or user.has_capability(Capability.PROPOSE_BOUNTY)
+    ):
+        return queryset.filter(researcher=user)
+    scope = Q(researcher=user) | Q(case__in=Case.objects.visible_to(user))
+    if user.has_capability(Capability.RECORD_PAYMENT):
+        scope |= Q(status__in=PAYMENT_OPEN_STATUSES)
+    return queryset.filter(scope)
+
+
+#: Primes du perimetre de qui enregistre les versements : versement a
+#: enregistrer, a confirmer, ou regle (sa preuve reste consultable).
+PAYMENT_OPEN_STATUSES = (
+    BountyStatus.APPROVED,
+    BountyStatus.PAYMENT_PENDING,
+    BountyStatus.PAID,
+)
+
+
+def wallet_balance(researcher):
+    """Solde par devise, calcule a partir des ecritures (jamais stocke)."""
+    rows = (
+        WalletEntry.objects.filter(researcher=researcher)
+        .values("currency")
+        .annotate(total=Sum("amount"))
+        .order_by("currency")
+    )
+    return {row["currency"]: row["total"] or Decimal("0") for row in rows}
+
+
 __all__ = [
+    "suggestion_for",
+    "payout_readiness",
+    "request_payout_details",
+    "bounty_context",
+    "visible_bounties",
+    "amount_outside_tier",
+    "adjust_wallet",
+    "credit_wallet",
+    "wallet_balance",
     "budget_status",
     "propose_bounty",
     "review_bounty",

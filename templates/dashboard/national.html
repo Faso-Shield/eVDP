@@ -3,6 +3,7 @@
 {% block title %}Posture nationale{% endblock %}
 
 {% block dashboard_content %}
+{% include "partials/my_claims_banner.html" %}
 <h1>Posture nationale de vulnérabilités</h1>
 <p class="muted">{{ EVDP.NATIONAL_TEAM }} — vue agrégée réservée aux administrateurs nationaux.</p>
 
@@ -81,9 +82,8 @@
       <div class="flex-between"><span>Taux de validation</span><strong>{{ stats.validation_rate }} %</strong></div>
       <div class="flex-between"><span>Dossiers en remédiation</span><strong>{{ stats.in_remediation }}</strong></div>
       <div class="flex-between"><span>Récompenses versées</span><strong>{{ rewards_count }}</strong></div>
-      <p class="muted mt-2">Une carte du Burkina Faso par région est prévue dans une
-      version ultérieure (données de localisation déjà collectées au niveau des
-      organisations).</p>
+      <p class="mt-2"><a href="{% url 'dashboard:map' %}">Voir la carte du Burkina Faso</a>
+      — organisations et signalements par région.</p>
     </div>
   </div>
 
@@ -102,14 +102,14 @@
 
 <div class="card">
   <div class="card-header"><h2>Risques : dossiers en dépassement</h2></div>
-  <div class="card-body table-wrap">
-    <table class="table">
-      <thead><tr><th>Identifiant</th><th>Titre</th><th>Sévérité</th><th>Statut</th><th>Organisation</th><th>Créé</th></tr></thead>
-      <tbody>
-        {% for case in overdue %}{% include "partials/case_row.html" %}{% empty %}
-        <tr><td colspan="6" class="muted">Aucun dépassement d'échéance.</td></tr>{% endfor %}
-      </tbody>
-    </table>
+  <div class="card-body">
+    <p class="small muted">Nombre de dossiers dont une échéance est dépassée, par
+    sévérité. Le détail se consulte dans la vue CSIRT.</p>
+    {% for label, total in overdue_by_severity %}
+      <div class="flex-between" style="padding:.25rem 0;border-bottom:1px solid var(--border)">
+        <span>{{ label }}</span><strong class="mono">{{ total }}</strong>
+      </div>
+    {% endfor %}
   </div>
 </div>
 {% endblock %}

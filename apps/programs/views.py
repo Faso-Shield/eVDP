@@ -20,6 +20,7 @@ from apps.disclosures.models import Advisory, AdvisoryStatus
 
 from .forms import ProgramFilterForm, ProgramForm, ProgramScopeForm, RewardTierFormSet
 from .models import Program, ProgramType, RewardPolicy
+from .permissions import can_manage_program
 
 #: Champ de tri par cle du formulaire de filtre (programs:list).
 #: "reward" pousse les VDP (sans recompense, max_reward NULL) en fin de
@@ -33,8 +34,7 @@ SORT_FIELDS = {
 #: Etats attestant qu'un dossier a au moins ete corrige (pas seulement soumis).
 _RESOLVED_STATUSES = [
     CaseStatus.FIX_VERIFIED,
-    CaseStatus.DISCLOSURE_SCHEDULED,
-    CaseStatus.PUBLISHED,
+    CaseStatus.ADVISORY_REVIEW,
     CaseStatus.CLOSED,
 ]
 
@@ -183,9 +183,13 @@ def program_detail(request, slug):
     program = get_object_or_404(Program.objects.select_related("organization"), slug=slug)
     if not program.is_public:
         # Un programme prive ou en brouillon n'est visible que de son perimetre.
-        if not _can_manage(request.user, program):
+        if not can_manage_program(request.user, program):
             raise Http404("Programme introuvable.")
     reward_policy = getattr(program, "reward_policy", None)
+    if reward_policy is not None and not reward_policy.is_active:
+        # Programme repasse en VDP : sa politique est conservee (historique)
+        # mais desactivee, ses montants ne doivent plus etre annonces.
+        reward_policy = None
     return render(
         request,
         "programs/detail.html",
@@ -206,7 +210,7 @@ def program_detail(request, slug):
                 else []
             ),
             "reward_scopes": reward_policy.scopes_with_tiers() if reward_policy else [],
-            "can_manage": _can_manage(request.user, program),
+            "can_manage": can_manage_program(request.user, program),
             "stats": _program_stats(program),
             "hall_of_fame": _hall_of_fame(program),
             # Annonce des l'arrivee sur la page si le visiteur ne remplit pas
@@ -219,18 +223,6 @@ def program_detail(request, slug):
             "lien_signalement": f"{reverse('reports:submit')}?program={program.slug}",
         },
     )
-
-
-def _can_manage(user, program):
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser or user.has_capability(Capability.MANAGE_ALL_ORGANIZATIONS):
-        return True
-    if not user.has_capability(Capability.MANAGE_PROGRAM):
-        return False
-    if user.is_national:
-        return True
-    return program.organization_id in set(user.organization_ids())
 
 
 @login_required
@@ -282,7 +274,7 @@ def program_create(request):
 @require_capability(Capability.MANAGE_PROGRAM)
 def program_manage(request, slug):
     program = get_object_or_404(Program, slug=slug)
-    if not _can_manage(request.user, program):
+    if not can_manage_program(request.user, program):
         raise Http404("Programme introuvable.")
 
     policy = None
@@ -333,7 +325,7 @@ def program_manage(request, slug):
 @require_capability(Capability.MANAGE_PROGRAM)
 def scope_add(request, slug):
     program = get_object_or_404(Program, slug=slug)
-    if not _can_manage(request.user, program):
+    if not can_manage_program(request.user, program):
         raise Http404("Programme introuvable.")
     form = ProgramScopeForm(request.POST)
     if form.is_valid():
@@ -358,7 +350,7 @@ def scope_add(request, slug):
 @require_capability(Capability.MANAGE_PROGRAM)
 def scope_delete(request, slug, scope_id):
     program = get_object_or_404(Program, slug=slug)
-    if not _can_manage(request.user, program):
+    if not can_manage_program(request.user, program):
         raise Http404("Programme introuvable.")
     deleted, _ = program.scopes.filter(pk=scope_id).delete()
     if deleted:

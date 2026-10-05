@@ -1,7 +1,6 @@
 """Routage racine eVDP."""
 
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
@@ -42,5 +41,9 @@ handler403 = "apps.core.views.error_403"
 handler404 = "apps.core.views.error_404"
 handler500 = "apps.core.views.error_500"
 
+# /media/ n'est jamais servi directement, pas meme en DEBUG : une piece
+# jointe ne se lit que par apps.attachments.views.download, qui verifie les
+# droits et journalise l'acces.
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    # Apercu des pages d'erreur (masquees par les pages techniques en DEBUG).
+    urlpatterns += [path("__erreurs/<int:code>/", core_views.error_preview)]

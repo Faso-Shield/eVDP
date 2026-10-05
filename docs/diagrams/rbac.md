@@ -1,16 +1,19 @@
-# Diagramme — RBAC
+# Diagramme — RBAC (workflow v2)
+
+Chaque étape du workflow a une seule capacité propriétaire. Le super admin
+administre la plateforme mais ne voit **aucun** dossier (ISO/IEC 27001 A.5.3).
 
 ```mermaid
 graph LR
-    subgraph national["Rôles nationaux — voient tous les dossiers"]
-        SA["SUPER_ADMIN"]
+    subgraph national["Rôles nationaux"]
+        SA["SUPER_ADMIN<br/>(aucun dossier)"]
         NC["NATIONAL_COORDINATOR"]
-        CA["CSIRT_ANALYST"]
+        CA["CSIRT_ANALYST<br/>(+ senior : VALIDATE_SEVERITY)"]
         TR["TRIAGER"]
         AU["AUDITOR<br/>(lecture seule)"]
     end
 
-    subgraph orga["Rôles organisation — périmètre limité"]
+    subgraph orga["Rôles organisation — dès l'étape 5"]
         DSI["DSI_ADMIN"]
         OM["ORGANIZATION_MANAGER"]
     end
@@ -21,35 +24,38 @@ graph LR
         PU["PUBLIC_USER"]
     end
 
-    subgraph caps["Capacités"]
-        C1["VIEW_ALL_CASES"]
-        C2["VIEW_ORG_CASES"]
-        C3["TRIAGE_CASE"]
-        C4["CHANGE_CASE_STATUS"]
-        C5["SET_SEVERITY"]
-        C6["POST_INTERNAL_MESSAGE"]
-        C7["PROPOSE_BOUNTY"]
-        C8["APPROVE_BOUNTY"]
-        C9["RECORD_PAYMENT"]
-        C10["DRAFT_ADVISORY"]
-        C11["PUBLISH_ADVISORY"]
-        C12["VIEW_AUDIT_LOG"]
-        C13["VIEW_NATIONAL_DASHBOARD"]
-        C14["SUBMIT_REPORT"]
-        C15["MANAGE_PROGRAM"]
-        C16["EXPORT_DATA"]
+    subgraph caps["Capacités de workflow"]
+        C1["TRIAGE_CASE<br/>étapes 1-2"]
+        C2["SET_SEVERITY<br/>CVSS, étape 3"]
+        C3["VALIDATE_SEVERITY<br/>étape 4"]
+        C4["COORDINATE_VENDOR<br/>étapes 5, 8"]
+        C5["MANAGE_REMEDIATION<br/>étapes 6, 7"]
+        C6["DRAFT_ADVISORY<br/>étape 9"]
+        C7["PUBLISH_ADVISORY<br/>étape 10"]
+        C8["PROPOSE_BOUNTY<br/>B1"]
+        C9["APPROVE_BOUNTY<br/>B2"]
+        C10["REQUEST_INFORMATION<br/>PROPOSE_REJECTION"]
+        C11["ARBITRATE_CASE<br/>rejet, renvoi, escalade"]
+        C12["SUBMIT_REPORT"]
     end
 
-    SA --> C1 & C3 & C4 & C5 & C7 & C8 & C9 & C10 & C11 & C12 & C13 & C15 & C16
-    NC --> C1 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10 & C11 & C12 & C13 & C15 & C16
-    CA --> C1 & C3 & C4 & C5 & C6 & C7 & C10 & C15 & C16
-    TR --> C1 & C3 & C4 & C5 & C6
-    AU --> C1 & C12 & C13 & C16
-    DSI --> C2 & C4 & C6 & C7 & C15 & C16
-    OM --> C2 & C4 & C6 & C7 & C15 & C16
-    SR --> C14
-    BR --> C14
-    PU --> C14
+    subgraph admin["Capacités d'administration"]
+        A1["MANAGE_USERS"]
+        A2["MANAGE_ALL_ORGANIZATIONS"]
+        A3["MANAGE_PROGRAM"]
+        A4["VIEW_AUDIT_LOG"]
+    end
+
+    SA --> A1 & A2 & A3
+    NC --> C3 & C7 & C9 & C11 & A1 & A2 & A3 & A4
+    CA --> C2 & C4 & C6 & C8 & C10 & A3
+    TR --> C1 & C10
+    AU --> A4
+    DSI --> C5 & A3
+    OM --> C5 & A3
+    SR --> C12
+    BR --> C12
+    PU --> C12
 
     classDef nat fill:#0b2a4a,stroke:#071c33,color:#fff
     classDef org fill:#123f6d,stroke:#071c33,color:#fff
@@ -58,6 +64,10 @@ graph LR
     class DSI,OM org
     class SR,BR,PU res
 ```
+
+La matrice de visibilité des données (qui lit quoi) est détaillée dans
+`docs/cvd-workflow.md`, section 7, et implémentée dans
+`apps/coordination/visibility.py`.
 
 ## Trois barrières d'autorisation
 
@@ -70,6 +80,8 @@ flowchart TD
     OBJ -->|non| NF["404 + audit DENIED<br/>(jamais 403 : ne pas confirmer l'existence)"]
     OBJ -->|oui| CAP{"3. Capacité<br/>user.has_capability(...)"}
     CAP -->|non| FORBID["403 + audit DENIED"]
-    CAP -->|oui| SVC["Service métier<br/>workflow + audit + notification"]
+    CAP -->|oui| WF{"4. Pré-requis et quatre yeux<br/>check_transition()"}
+    WF -->|non| REF["Refus listant ce qui manque + audit DENIED"]
+    WF -->|oui| SVC["Service métier<br/>workflow + audit + notification"]
     SVC --> OK["Réponse"]
 ```

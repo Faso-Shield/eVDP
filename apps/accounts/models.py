@@ -69,9 +69,21 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         verbose_name="Rôle",
         help_text="Rôle RBAC. Jamais modifiable par l'utilisateur lui-même.",
     )
+    is_senior_analyst = models.BooleanField(
+        default=False,
+        verbose_name="Analyste senior",
+        help_text="Accorde à un analyste CSIRT la validation des qualifications "
+        "(étape 4), jamais la sienne.",
+    )
     is_active = models.BooleanField(default=True, verbose_name="Compte actif")
     is_staff = models.BooleanField(default=False, verbose_name="Accès à l'administration")
     email_verified = models.BooleanField(default=False, verbose_name="Adresse vérifiée")
+    #: Inscription publique pas encore confirmee par le lien envoye par email.
+    #: Distinct de is_active=False pose par un administrateur : seul un compte
+    #: en attente d'activation peut etre active par ce lien.
+    pending_activation = models.BooleanField(
+        default=False, verbose_name="Activation par email en attente"
+    )
     verification_reminded_on = models.DateField(
         null=True,
         blank=True,
@@ -145,6 +157,8 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
                     "mfa_confirmed_at",
                     "mfa_last_step",
                 ]
+            if self.pk:
+                self.mfa_backup_codes.all().delete()
         return super().save(*args, **kwargs)
 
     # -- Double authentification --------------------------------------------
@@ -161,7 +175,12 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         return self.mfa_required and not (self.mfa_enabled and self.mfa_secret)
 
     def reset_mfa(self):
-        """Revoque l'enrolement : le compte devra en refaire un a la connexion."""
+        """Revoque l'enrolement : le compte devra en refaire un a la connexion.
+
+        Les codes de secours tombent avec lui : ils ouvriraient sinon une
+        session elevee sans aucun authentificateur enregistre.
+        """
+        self.mfa_backup_codes.all().delete()
         self.mfa_enabled = False
         self.mfa_secret = ""
         self.mfa_confirmed_at = None
@@ -179,14 +198,23 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     # -- RBAC ---------------------------------------------------------------
     @property
     def capabilities(self):
-        return capabilities_for(self.role)
+        capabilities = capabilities_for(self.role, senior=self.is_senior_analyst)
+        if self.is_superuser:
+            # Le drapeau Django ouvre l'administration technique, pas le
+            # metier : un superutilisateur n'obtient jamais l'acces au contenu
+            # des dossiers ni un bouton de workflow par ce seul drapeau.
+            capabilities |= capabilities_for(Role.SUPER_ADMIN)
+        return capabilities
 
     def has_capability(self, capability):
         if not self.is_active:
             return False
-        if self.is_superuser:
-            return True
         return capability in self.capabilities
+
+    @property
+    def sees_all_cases(self):
+        """Perimetre national sur le contenu des dossiers (hors super admin)."""
+        return self.has_capability(Capability.VIEW_ALL_CASES)
 
     @property
     def is_national(self):
@@ -249,8 +277,8 @@ class BusinessAccount(User):
 
     class Meta:
         proxy = True
-        verbose_name = "Compte metier"
-        verbose_name_plural = "Comptes metiers et administrateurs"
+        verbose_name = "Compte métier"
+        verbose_name_plural = "Comptes métiers et administrateurs"
 
 
 class ReporterAccount(User):
@@ -310,6 +338,28 @@ class UserToken(TimeStampedModel):
         )
 
 
+class MFABackupCode(TimeStampedModel):
+    """Code de secours a usage unique, si l'authentificateur est perdu.
+
+    Seule l'empreinte est conservee ; le code en clair n'est montre qu'une
+    fois, a sa generation (voir apps.accounts.mfa.generate_backup_codes).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="mfa_backup_codes")
+    code_hash = models.CharField(max_length=64, unique=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "mfa_backup_codes"
+        ordering = ["created_at"]
+        verbose_name = "Code de secours"
+        verbose_name_plural = "Codes de secours"
+
+    def __str__(self):
+        return f"Code de secours - {self.user}"
+
+
 class ApiKey(TimeStampedModel):
     """Cle d'API pour l'integration machine (soumission automatisee).
 
@@ -339,6 +389,7 @@ class ApiKey(TimeStampedModel):
 
 
 __all__ = [
+    "MFABackupCode",
     "User",
     "UserManager",
     "BusinessAccount",

@@ -66,7 +66,7 @@ class VulnerabilityReport(BaseModel):
         on_delete=models.SET_NULL,
         related_name="reports",
     )
-    cvss_vector = models.CharField(max_length=120, blank=True)
+    cvss_vector = models.CharField(max_length=255, blank=True)
     cvss_score = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
     reported_severity = models.CharField(
         max_length=16,
@@ -130,8 +130,8 @@ class VulnerabilityReport(BaseModel):
     class Meta:
         db_table = "vulnerability_reports"
         ordering = ["-created_at"]
-        verbose_name = "Rapport de vulnerabilite"
-        verbose_name_plural = "Rapports de vulnerabilite"
+        verbose_name = "Rapport de vulnérabilité"
+        verbose_name_plural = "Rapports de vulnérabilité"
         indexes = [
             models.Index(fields=["-created_at"]),
             models.Index(fields=["vulnerability_type"]),
@@ -160,10 +160,10 @@ class VulnerabilityReport(BaseModel):
     @property
     def reporter_display(self):
         if self.is_anonymous:
-            return "Declarant anonyme"
+            return "Déclarant anonyme"
         if self.reporter:
             return self.reporter.public_identity()
-        return self.reporter_name or self.reporter_email or "Declarant externe"
+        return self.reporter_name or self.reporter_email or "Déclarant externe"
 
     @property
     def notification_email(self):

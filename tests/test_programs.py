@@ -1,6 +1,7 @@
 """Tests des programmes : annuaire public (recherche, filtres, tri) et
 gestion (creation, edition, coherence de la politique de recompense)."""
 
+import re
 from decimal import Decimal
 
 import pytest
@@ -154,13 +155,14 @@ def test_sort_by_reward_puts_vdp_programs_last(client, organization):
 
 
 def test_sort_by_reports_orders_by_case_count(client, organization, researcher_a):
-    from apps.reports.services import submit_report
     from tests.conftest import build_report
+
+    from .conftest import submit
 
     make_program(organization, "Programme calme")
     busy = make_program(organization, "Programme actif")
-    submit_report(build_report(researcher_a, organization, busy), reporter=researcher_a)
-    submit_report(build_report(researcher_a, organization, busy), reporter=researcher_a)
+    submit(build_report(researcher_a, organization, busy), reporter=researcher_a)
+    submit(build_report(researcher_a, organization, busy), reporter=researcher_a)
 
     response = client.get(reverse("programs:list"), {"sort": "reports"})
     content = response.content.decode()
@@ -452,31 +454,80 @@ def test_unfilled_default_tiers_are_not_shown_as_a_public_reward(
     assert "0 – 0" not in response.content.decode()
 
 
-# ----------------------------------------------- statistiques et hall of fame
-def test_program_detail_shows_trust_stats(client, bounty_case, coordinator):
-    from apps.coordination.services import transition_case
-    from apps.coordination.workflow import CaseStatus
+def test_former_bounty_does_not_show_its_reward_tiers(client, bounty_program):
+    """Repasse en VDP, un programme garde sa politique desactivee pour
+    l'historique : ses montants ne doivent plus etre annonces."""
+    Program.objects.filter(pk=bounty_program.pk).update(
+        program_type=ProgramType.VDP, allows_anonymous_reports=True
+    )
+    bounty_program.refresh_from_db()
+    bounty_program.ensure_reward_policy_consistency()
+    assert bounty_program.reward_policy.is_active is False
 
-    transition_case(bounty_case, CaseStatus.RECEIVED, actor=coordinator)
+    html = client.get(reverse("programs:detail", args=[bounty_program.slug])).content.decode()
+    assert "2000000" not in html.replace(" ", "").replace(" ", "")
+    assert "750000" not in html.replace(" ", "").replace(" ", "")
+
+
+# ----------------------------------------------- statistiques et hall of fame
+def test_program_detail_shows_trust_stats(client, bounty_case):
+    """`bounty_case` a franchi l'accuse de reception (workflow v2)."""
+    assert bounty_case.acknowledged_at is not None
 
     response = client.get(reverse("programs:detail", args=[bounty_case.program.slug]))
     assert response.status_code == 200
     assert response.context["stats"]["total_reports"] == 1
 
 
-def test_program_detail_hall_of_fame_lists_credited_researchers_only(
-    client, bounty_case, coordinator
-):
+def test_program_detail_hall_of_fame_lists_credited_researchers_only(client, bounty_case):
     """Seuls les chercheurs ayant choisi d'etre credites publiquement (et
-    jamais "Chercheur anonyme") apparaissent sur la fiche du programme."""
-    from apps.disclosures.services import create_advisory_from_case, publish_advisory
+    jamais "Chercheur anonyme") apparaissent sur la fiche du programme.
 
-    advisory = create_advisory_from_case(bounty_case, coordinator, summary="Resume public.")
-    advisory.status = "APPROVED"
-    advisory.save(update_fields=["status"])
-    publish_advisory(advisory, coordinator)
+    L'advisory est publie par le chemin du workflow v2 (etapes 9 et 10).
+    """
+    from apps.coordination.workflow import CaseStatus
+
+    from .conftest import advance
+
+    advance(bounty_case, CaseStatus.CLOSED)
 
     response = client.get(reverse("programs:detail", args=[bounty_case.program.slug]))
     assert "bb-hunter" in response.context["hall_of_fame"]
     assert "Chercheur anonyme" not in response.context["hall_of_fame"]
     assert "bb-hunter" in response.content.decode()
+
+
+def test_type_tabs_only_set_type_and_skip_the_stale_hidden_field(client, vdp_program):
+    """Le champ cache "type" porte l'onglet precedent : inclus en plus de
+    celui de l'URL de l'onglet, c'est lui que Django retenait et "Tous" ne
+    levait jamais le filtre."""
+    html = client.get(reverse("programs:list"), {"type": "VDP", "q": "Test"}).content.decode()
+    assert '<input type="hidden" name="type" value="VDP">' in html
+
+    tabs = re.findall(r'hx-get="([^"]*)"\s+hx-include="([^"]*)"', html)
+    assert tabs, "onglets introuvables"
+    base = reverse("programs:list")
+    assert {url for url, _ in tabs} == {
+        f"{base}?type=",
+        f"{base}?type=VDP",
+        f"{base}?type=BUG_BOUNTY",
+    }
+    for _, include in tabs:
+        assert include == "#program-filter-form [name]:not([name='type'])"
+
+
+def test_program_form_is_grouped_by_topic(client_for, coordinator, vdp_program):
+    client = client_for(coordinator)
+    for url in (
+        reverse("programs:create"),
+        reverse("programs:manage", args=[vdp_program.slug]),
+    ):
+        html = client.get(url).content.decode()
+        for section in (
+            "Identification",
+            "Règles et cadre légal",
+            "Réception des signalements",
+        ):
+            assert section in html, (url, section)
+        assert "js/program-form.js" in html
+        assert html.count('name="allows_anonymous_reports"') == 1

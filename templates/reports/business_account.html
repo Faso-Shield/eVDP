@@ -1,0 +1,16 @@
+{% extends "errors/_error.html" %}
+{% block title %}Signalement réservé aux chercheurs{% endblock %}
+{% block code %}403{% endblock %}
+{% block heading %}Signalement réservé aux chercheurs{% endblock %}
+{% block message %}
+  <p>
+    Votre compte est un compte métier : il traite les signalements, il n'en
+    déclare pas. La déclaration d'une vulnérabilité est réservée aux comptes
+    chercheur et chercheur Bug Bounty, ainsi qu'aux signaleurs anonymes.
+  </p>
+  <p class="error-note">
+    Pour signaler vous-même une vulnérabilité découverte à titre personnel,
+    déconnectez-vous : le formulaire public accepte les signalements anonymes.
+  </p>
+{% endblock %}
+{% block illustration %}{% include "errors/_shield.svg.html" %}{% endblock %}

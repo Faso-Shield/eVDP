@@ -70,18 +70,20 @@ publié sans enregistrement préalable était refusé comme absent.
       <div class="btn-row">
         <button class="btn btn-accent" type="submit" name="action" value="save">Enregistrer</button>
       </div>
+      {% if statuses %}
       <hr>
       <div class="filters">
         <div class="form-field">
           <label for="target_status">Nouveau statut</label>
           <select name="target_status" id="target_status">
             {% for value, label in statuses %}
-              <option value="{{ value }}"{% if value == advisory.status %} selected{% endif %}>{{ label }}</option>
+              <option value="{{ value }}">{{ label }}</option>
             {% endfor %}
           </select>
         </div>
         <button class="btn btn-outline" type="submit" name="action" value="status">Enregistrer et appliquer</button>
       </div>
+      {% endif %}
 
       {% if can_publish %}
       <hr>

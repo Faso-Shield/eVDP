@@ -43,14 +43,13 @@ Renseignez au minimum dans `.env` :
 | Variable | Rôle |
 |----------|------|
 | `SECRET_KEY` | Clé de signature Django — **obligatoire**, ≥ 50 caractères |
+| `FIELD_ENCRYPTION_KEY` | Clé Fernet des données de versement chiffrées — **obligatoire** (commande dans `.env.example`) |
 | `POSTGRES_PASSWORD` | Mot de passe PostgreSQL — **obligatoire** |
-| `MINIO_ROOT_PASSWORD` | Mot de passe MinIO — **obligatoire** |
-| `MINIO_SECRET_KEY` | Identique à `MINIO_ROOT_PASSWORD` |
 | `ALLOWED_HOSTS` | Domaines servis (ex. `vdp.exemple.bf`) |
 | `CSRF_TRUSTED_ORIGINS` | Origines complètes (ex. `https://vdp.exemple.bf`) |
 
-> `docker compose` **refuse de démarrer** si `SECRET_KEY`,
-> `POSTGRES_PASSWORD` ou `MINIO_ROOT_PASSWORD` sont absents : c'est
+> `docker compose` **refuse de démarrer** si `SECRET_KEY`, `FIELD_ENCRYPTION_KEY`
+> ou `POSTGRES_PASSWORD` sont absents : c'est
 > volontaire, aucune valeur par défaut de production n'existe.
 
 ### 2.3 Démarrage
@@ -132,7 +131,6 @@ lisibles, et exposition **sur 127.0.0.1 uniquement** de :
 |---------|-----------|
 | Django (direct) | 8000 |
 | Mailpit (emails) | 8025 |
-| MinIO console | 9001 |
 | PostgreSQL | 5432 |
 | Redis | 6379 |
 

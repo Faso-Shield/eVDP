@@ -1,8 +1,40 @@
-{% extends "base.html" %}
+{% extends "errors/_error.html" %}
 {% block title %}Page introuvable{% endblock %}
-{% block container_class %}container-narrow{% endblock %}
-{% block content %}
-<h1>404 — Ressource introuvable</h1>
-<p>La page ou le dossier demandé n'existe pas, ou vous n'êtes pas autorisé à y accéder.</p>
-<a class="btn" href="{% url 'core:home' %}">Retour à l'accueil</a>
+{% block code %}404{% endblock %}
+{% block heading %}Cette page est introuvable{% endblock %}
+{% block message %}
+  <p>
+    La page ou le dossier demandé n'existe pas, a été déplacé, ou n'est pas
+    accessible depuis votre compte.
+  </p>
+  <p class="error-note">
+    Pour protéger les signalements, eVDP ne confirme jamais l'existence d'un
+    dossier hors de votre périmètre : un dossier qui ne vous concerne pas
+    s'affiche comme introuvable.
+  </p>
+{% endblock %}
+{% block detail %}
+  {% if request.path %}
+    <p class="error-path"><span class="muted">Adresse demandée</span> <code>{{ request.path|truncatechars:90 }}</code></p>
+  {% endif %}
+{% endblock %}
+{% block illustration %}
+<svg viewBox="0 0 220 180" width="220" height="180" role="presentation">
+  <defs>
+    <linearGradient id="e404-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#123f6d"/>
+      <stop offset="1" stop-color="#0d7a5f"/>
+    </linearGradient>
+  </defs>
+  <circle cx="110" cy="90" r="78" fill="#e6f4ef"/>
+  <rect x="52" y="44" width="92" height="112" rx="10" fill="#fff" stroke="#b6c4d3" stroke-width="2"/>
+  <rect x="66" y="62" width="52" height="7" rx="3.5" fill="#d9e1ea"/>
+  <rect x="66" y="78" width="64" height="7" rx="3.5" fill="#d9e1ea"/>
+  <rect x="66" y="94" width="40" height="7" rx="3.5" fill="#d9e1ea"/>
+  <rect x="66" y="110" width="58" height="7" rx="3.5" fill="#d9e1ea"/>
+  <circle cx="140" cy="106" r="28" fill="#fff" stroke="url(#e404-g)" stroke-width="8"/>
+  <path d="M130 100 q10 -12 20 0" fill="none" stroke="#123f6d" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="140" cy="114" r="3.5" fill="#123f6d"/>
+  <line x1="160" y1="126" x2="184" y2="150" stroke="url(#e404-g)" stroke-width="11" stroke-linecap="round"/>
+</svg>
 {% endblock %}

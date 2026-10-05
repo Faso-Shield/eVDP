@@ -99,10 +99,12 @@ def test_an_auditor_sees_the_log_but_not_the_drafting(auditor):
     assert "Rédaction d'advisories" not in presents
 
 
-def test_an_organization_user_sees_its_own_views(dsi_alpha):
-    presents = set(libelles(dsi_alpha))
+def test_an_organization_user_sees_its_own_views(dsi_alpha, manager_alpha):
+    presents = set(libelles(manager_alpha))
     assert {"Dossiers", "Organisations", "Mes programmes"} <= presents
     assert "Vue organisation" not in presents, "c'est la ou son tableau de bord mene"
+    # La DSI ne gere plus la fiche de son organisation.
+    assert "Organisations" not in set(libelles(dsi_alpha))
 
 
 def test_a_superuser_sees_everything_including_django_admin(db):
