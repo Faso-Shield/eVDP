@@ -79,6 +79,7 @@ class AuditAction(models.TextChoices):
     BOUNTY_PAYMENT_FAILED = "BOUNTY_PAYMENT_FAILED", "Versement marqué en échec"
     BOUNTY_PROOF_DOWNLOADED = "BOUNTY_PROOF_DOWNLOADED", "Preuve de versement téléchargée"
     EXPORT_GENERATED = "EXPORT_GENERATED", "Export généré"
+    INTEGRITY_CHECK_FAILED = "INTEGRITY_CHECK_FAILED", "Intégrité de message compromise"
     PERMISSION_DENIED = "PERMISSION_DENIED", "Accès refusé"
     SLA_BREACHED = "SLA_BREACHED", "SLA dépassé"
     CSAF_IMPORTED = "CSAF_IMPORTED", "Import CSAF"

@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# Reglages propres a un serveur (Mailpit desactive, AC interne...) :
+# docs/deployment.md, Messagerie.
+docker-compose.override.yml
 *.pem
 *.key
 *.crt

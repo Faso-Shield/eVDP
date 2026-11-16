@@ -1,5 +1,6 @@
 """Pages publiques institutionnelles et sondes d'observabilite."""
 
+import hmac
 import uuid
 
 from django.conf import settings
@@ -343,6 +344,12 @@ def ready(request):
 @never_cache
 def metrics(request):
     """Metriques au format texte Prometheus (exposition interne uniquement)."""
+    expected = getattr(settings, "METRICS_TOKEN", "")
+    if expected:
+        sent = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        if not hmac.compare_digest(sent, expected):
+            return HttpResponse("Forbidden", status=403, content_type="text/plain")
+
     from apps.coordination.models import Case, CaseStatus
     from apps.disclosures.models import Advisory
 

@@ -5,6 +5,11 @@
 #
 # Elle expose les interfaces d'administration UNIQUEMENT sur la boucle locale
 # (127.0.0.1) : elles ne doivent jamais etre joignables depuis le reseau.
+#
+# Ces services ne sont relies qu'a evdp-backend, reseau interne : Docker n'y
+# publie aucun port, et les `ports:` ci-dessous restaient sans effet. Chaque
+# service publie est donc aussi relie a evdp-dev-ports, reseau ordinaire qui
+# ne sert qu'a cette publication (evdp-backend reste interne).
 # =============================================================================
 
 x-dev-env: &dev-env
@@ -26,6 +31,9 @@ services:
       - evdp-media:/app/media
     ports:
       - "127.0.0.1:8000:8000"
+    networks:
+      - evdp-backend
+      - evdp-dev-ports
 
   evdp-worker:
     environment: *dev-env
@@ -38,10 +46,8 @@ services:
     volumes:
       - .:/app
 
-  # Interface de consultation des emails de developpement.
-  evdp-mailpit:
-    ports:
-      - "127.0.0.1:8025:8025"
+  # Mailpit (:8025) est deja publie sur 127.0.0.1 par docker-compose.yml :
+  # le redeclarer ici publierait deux fois le meme port.
 
   # Cache "no-cache" sur /static/ au lieu de l'immutable 30j de prod : en dev,
   # config.settings.dev n'empreinte pas les noms de fichiers (pas de manifest),
@@ -56,7 +62,17 @@ services:
   evdp-db:
     ports:
       - "127.0.0.1:5432:5432"
+    networks:
+      - evdp-backend
+      - evdp-dev-ports
 
   evdp-redis:
     ports:
       - "127.0.0.1:6379:6379"
+    networks:
+      - evdp-backend
+      - evdp-dev-ports
+
+networks:
+  evdp-dev-ports:
+    driver: bridge

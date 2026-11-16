@@ -13,6 +13,7 @@ from pathlib import Path
 
 import environ
 from celery.schedules import crontab
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -97,6 +98,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.core.middleware.RequestContextMiddleware",
+    "apps.core.middleware.RequestIDMiddleware",
     # Apres AuthenticationMiddleware : la session n'est elevee qu'une fois le
     # second facteur valide. Place ici, la regle couvre toute la plateforme,
     # y compris /admin/ qui a sa propre page de connexion.
@@ -169,6 +171,10 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {"NAME": "apps.accounts.validators.UppercaseValidator"},
+    {"NAME": "apps.accounts.validators.LowercaseValidator"},
+    {"NAME": "apps.accounts.validators.SpecialCharacterValidator"},
+    {"NAME": "apps.accounts.validators.DigitValidator"},
 ]
 
 LOGIN_URL = "/login/"
@@ -244,6 +250,9 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 # ---------------------------------------------------------------------------
 # ClamAV - analyse antivirus des pièces jointes
 # ---------------------------------------------------------------------------
+METRICS_TOKEN = env("METRICS_TOKEN", default="")
+MESSAGE_INTEGRITY_KEY = env("MESSAGE_INTEGRITY_KEY", default="")
+
 CLAMAV_HOST = env("CLAMAV_HOST", default="")
 CLAMAV_PORT = env.int("CLAMAV_PORT", default=3310)
 # Doit egaler StreamMaxLength de clamd (25 Mo par defaut) : au-dela, le
@@ -291,6 +300,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.attachments.tasks.sweep_pending_scans",
         "schedule": crontab(minute="*/15"),
     },
+    "evdp-integrity-check": {
+        "task": "apps.coordination.tasks.verify_message_integrity",
+        "schedule": crontab(minute=0, hour=2),
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -302,6 +315,19 @@ EMAIL_PORT = env.int("EMAIL_PORT", default=1025)
 EMAIL_HOST_USER = env("EMAIL_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=False)
+# STARTTLS (port 587) ou TLS des la connexion (port 465) : l'un ou l'autre.
+# Sur le 465 avec EMAIL_USE_TLS, client et serveur s'attendent mutuellement :
+# le delai coupe cette attente au lieu de bloquer le worker qui envoie les
+# notifications.
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=30)
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    # Django ne le refuse qu'au premier envoi : chaque email echouerait en
+    # silence pour l'utilisateur. On le refuse des le demarrage.
+    raise ImproperlyConfigured(
+        "EMAIL_USE_TLS et EMAIL_USE_SSL sont exclusifs : True pour l'un seulement "
+        "(587 : EMAIL_USE_TLS, 465 : EMAIL_USE_SSL)."
+    )
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="eVDP <no-reply@evdp.bf>")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
@@ -312,6 +338,7 @@ SITE_BASE_URL = env("SITE_BASE_URL", default="")
 # ---------------------------------------------------------------------------
 # Securite HTTP
 # ---------------------------------------------------------------------------
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_NAME = "evdp_sessionid"
@@ -328,15 +355,32 @@ X_FRAME_OPTIONS = "DENY"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+DATA_UPLOAD_MAX_NUMBER_FIELDS = env.int("DATA_UPLOAD_MAX_NUMBER_FIELDS", default=200)
+DATA_UPLOAD_MAX_NUMBER_FILES = env.int("DATA_UPLOAD_MAX_NUMBER_FILES", default=20)
+PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_TIMEOUT", default=3600)
 
-# Cartographie : fond de carte. Les tuiles sont chargees par le navigateur,
-# pas par le serveur ; leur origine doit donc figurer dans `img-src`. Pour un
-# fonctionnement hors ligne ou souverain, pointer vers un serveur de tuiles
-# interne ; une URL vide affiche la carte sans fond (regions seules).
-MAP_TILE_URL = env(
-    "EVDP_MAP_TILE_URL", default="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+# Cartographie : fond de carte. Par defaut, les tuiles passent par le proxy
+# Nginx /tiles/ (docker/nginx/conf.d/tiles.inc) : meme origine, donc rien a
+# ajouter a la CSP. Attention a l'ordre {z}/{y}/{x} impose par Esri.
+# Une URL absolue (https://...) est chargee directement par le navigateur et
+# son origine est alors ajoutee a `img-src`. Une URL vide affiche la carte
+# sans fond (regions seules).
+MAP_TILE_URL = env("EVDP_MAP_TILE_URL", default="/tiles/{z}/{y}/{x}")
+MAP_ATTRIBUTION = env(
+    "EVDP_MAP_ATTRIBUTION", default="Imagery &copy; Esri, Maxar, Earthstar Geographics"
 )
-MAP_ATTRIBUTION = env("EVDP_MAP_ATTRIBUTION", default="&copy; contributeurs OpenStreetMap")
+# Fonds supplementaires du selecteur de la carte nationale : un plan, et des
+# noms de lieux transparents superposes au satellite (vue « Hybride »). Une
+# URL vide retire le choix correspondant du selecteur.
+MAP_STREET_URL = env("EVDP_MAP_STREET_URL", default="/tiles/plan/{z}/{y}/{x}")
+MAP_STREET_ATTRIBUTION = env(
+    "EVDP_MAP_STREET_ATTRIBUTION",
+    default="&copy; Esri, HERE, Garmin, contributeurs OpenStreetMap",
+)
+MAP_LABELS_URL = env("EVDP_MAP_LABELS_URL", default="/tiles/noms/{z}/{y}/{x}")
+# Fond affiche a la premiere visite (plan, satellite ou hybride) ; le choix
+# de l'utilisateur est ensuite memorise par son navigateur.
+MAP_DEFAULT_BASEMAP = env("EVDP_MAP_DEFAULT_BASEMAP", default="plan")
 
 
 def _tile_origin(url):
@@ -349,7 +393,10 @@ def _tile_origin(url):
 
 
 MAP_TILE_ORIGIN = _tile_origin(MAP_TILE_URL)
-_IMG_SRC = " ".join(filter(None, ["'self' data:", MAP_TILE_ORIGIN]))
+_TILE_ORIGINS = dict.fromkeys(
+    filter(None, (_tile_origin(url) for url in (MAP_TILE_URL, MAP_STREET_URL, MAP_LABELS_URL)))
+)
+_IMG_SRC = " ".join(["'self' data:", *_TILE_ORIGINS])
 
 CSP_DIRECTIVES = {
     "default-src": "'self'",
@@ -402,10 +449,11 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "eVDP API",
     "DESCRIPTION": (
         "API de la plateforme nationale de divulgation coordonnée de "
-        "vulnérabilités et de Bug Bounty (CYBER-DEF 2)."
+        "vulnérabilités et de Bug Bounty (FASO SHIELD)."
     ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAuthenticated"],
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "COMPONENT_SPLIT_REQUEST": True,
     # Swagger UI et Redoc servis depuis nos fichiers statiques : la CSP de
@@ -440,7 +488,7 @@ SPECTACULAR_SETTINGS = {
 EVDP = {
     "PLATFORM_NAME": "eVDP",
     "PLATFORM_TAGLINE": ("Plateforme nationale de divulgation coordonnee de vulnerabilites"),
-    "PROJECT_CODE": "CYBER-DEF 2",
+    "PROJECT_CODE": "FASO SHIELD",
     "NATIONAL_TEAM": env("EVDP_NATIONAL_TEAM", default="ANSSI-BF / CSIRT National"),
     "CONTACT_EMAIL": env("EVDP_CONTACT_EMAIL", default="vdp@anssi.bf"),
     "CASE_PREFIX": "EVDP",

@@ -1,6 +1,6 @@
 # =============================================================================
 # eVDP - Plateforme nationale de divulgation coordonnee de vulnerabilites
-# Projet CYBER-DEF 2
+# Projet FASO SHIELD
 #
 # Seul Nginx est expose. PostgreSQL et Redis restent sur le reseau interne
 # et ne sont joignables que par les services applicatifs. Les pieces jointes
@@ -24,7 +24,8 @@ x-app-env: &app-env
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est obligatoire}
   POSTGRES_HOST: evdp-db
   POSTGRES_PORT: "5432"
-  REDIS_URL: redis://evdp-redis:6379/0
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-evdp-redis-secret}
+  REDIS_URL: redis://:${REDIS_PASSWORD:-evdp-redis-secret}@evdp-redis:6379/0
   REDIS_HOST: evdp-redis
   REDIS_PORT: "6379"
   # Pieces jointes sur disque (volume evdp-media). Les images MinIO ne sont
@@ -36,6 +37,8 @@ x-app-env: &app-env
   EMAIL_HOST: ${EMAIL_HOST:-evdp-mailpit}
   EMAIL_PORT: ${EMAIL_PORT:-1025}
   EMAIL_USE_TLS: ${EMAIL_USE_TLS:-False}
+  EMAIL_USE_SSL: ${EMAIL_USE_SSL:-False}
+  EMAIL_TIMEOUT: ${EMAIL_TIMEOUT:-30}
   EMAIL_USER: ${EMAIL_USER:-}
   EMAIL_PASSWORD: ${EMAIL_PASSWORD:-}
   DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-eVDP <no-reply@evdp.bf>}
@@ -48,6 +51,8 @@ x-app-env: &app-env
   # Antivirus actif par defaut (service evdp-clamav). Vide : desactive.
   CLAMAV_HOST: ${CLAMAV_HOST-evdp-clamav}
   CLAMAV_STREAM_MAX_LENGTH: ${CLAMAV_STREAM_MAX_LENGTH:-26214400}
+  MESSAGE_INTEGRITY_KEY: ${MESSAGE_INTEGRITY_KEY:-}
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   LOG_FORMAT: ${LOG_FORMAT:-json}
   TIME_ZONE: ${TIME_ZONE:-Africa/Ouagadougou}
@@ -69,6 +74,13 @@ x-app-base: &app-base
       condition: service_healthy
     evdp-redis:
       condition: service_healthy
+  # CIS Docker Benchmark 5.3, 5.12, 5.25, 5.28
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  tmpfs:
+    - /tmp:size=256m
 
 services:
   # ---------------------------------------------------------------- donnees
@@ -93,10 +105,22 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    shm_size: 256m
     deploy:
       resources:
         limits:
           memory: 1g
+          pids: 100
 
   evdp-redis:
     image: redis:7.4-alpine
@@ -108,19 +132,34 @@ services:
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
       --save 900 1
+      --requirepass ${REDIS_PASSWORD:-evdp-redis-secret}
+      --rename-command FLUSHALL ""
+      --rename-command FLUSHDB ""
+      --rename-command DEBUG ""
+      --rename-command CONFIG ""
     volumes:
       - evdp-redis-data:/data
     networks:
       - evdp-backend
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD:-evdp-redis-secret} ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 5
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
     deploy:
       resources:
         limits:
           memory: 384m
+          pids: 50
 
   evdp-mailpit:
     image: axllent/mailpit:v1.21
@@ -130,17 +169,32 @@ services:
       MP_MAX_MESSAGES: "1000"
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    # Interface de consultation des emails : http://127.0.0.1:8025, depuis la
+    # machine qui heberge Docker uniquement (jamais depuis le reseau). Sans
+    # ce port, les emails de l'installation par defaut etaient invisibles.
+    # En production, ce service est retire au profit d'un vrai serveur SMTP
+    # (docs/deployment.md, Messagerie).
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    # evdp-backend est interne : Docker n'y publie aucun port. Le reseau
+    # evdp-mailpit-ui ne sert qu'a rendre l'interface joignable sur 127.0.0.1.
     networks:
       - evdp-backend
+      - evdp-mailpit-ui
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 20s
       timeout: 5s
       retries: 5
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     deploy:
       resources:
         limits:
           memory: 192m
+          pids: 50
 
   evdp-clamav:
     image: clamav/clamav:1.4.6
@@ -150,25 +204,55 @@ services:
       - evdp-clamav-data:/var/lib/clamav
     networks:
       - evdp-backend
+      - evdp-external
     healthcheck:
       test: ["CMD", "clamdscan", "--ping", "1"]
       interval: 60s
       timeout: 10s
       retries: 3
       start_period: 300s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
     deploy:
       resources:
         limits:
           memory: 2g
+          pids: 50
 
   # ------------------------------------------------------------ application
   evdp-web:
     <<: *app-base
     container_name: evdp-web
     command: ["web"]
+    # Les emails partent d'ici (verification d'adresse, reinitialisation,
+    # notifications) : evdp-backend etant interne, evdp-smtp est la seule
+    # sortie vers le serveur SMTP de la structure. Sortie seulement : rien
+    # n'entre par ce reseau, la plateforme reste servie par Nginx. A limiter au
+    # serveur SMTP par le pare-feu de l'hote (docs/deployment.md, Messagerie).
+    networks:
+      - evdp-backend
+      - evdp-smtp
     volumes:
       - evdp-static:/app/staticfiles
       - evdp-media:/app/media
+    # Le premier demarrage applique toutes les migrations puis collecte les
+    # statiques avant de lancer Gunicorn : plus de 2 minutes sur une machine
+    # modeste, au-dela des 40 s de grace du HEALTHCHECK de l'image. Un echec
+    # pendant start_period ne compte pas ; le premier succes rend le
+    # conteneur sain sans attendre la fin de la periode.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 300s
     depends_on:
       evdp-db:
         condition: service_healthy
@@ -178,11 +262,20 @@ services:
       resources:
         limits:
           memory: 1g
+          pids: 200
 
   evdp-worker:
     <<: *app-base
     container_name: evdp-worker
     command: ["worker"]
+    # Les emails partent d'ici (verification d'adresse, reinitialisation,
+    # notifications) : evdp-backend etant interne, evdp-smtp est la seule
+    # sortie vers le serveur SMTP de la structure. Sortie seulement : rien
+    # n'entre par ce reseau, la plateforme reste servie par Nginx. A limiter au
+    # serveur SMTP par le pare-feu de l'hote (docs/deployment.md, Messagerie).
+    networks:
+      - evdp-backend
+      - evdp-smtp
     volumes:
       - evdp-media:/app/media
     healthcheck:
@@ -195,6 +288,7 @@ services:
       resources:
         limits:
           memory: 768m
+          pids: 100
 
   evdp-beat:
     <<: *app-base
@@ -212,6 +306,7 @@ services:
       resources:
         limits:
           memory: 384m
+          pids: 50
 
   # --------------------------------------------------------------- frontal
   evdp-nginx:
@@ -226,10 +321,15 @@ services:
     # refuse immediatement la connexion et le repli IPv4 fonctionne.
     ports:
       - "0.0.0.0:${HTTP_PORT:-80}:80"
+      # Decommentez pour le TLS :
+      # - "0.0.0.0:${HTTPS_PORT:-443}:443"
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
       - evdp-static:/app/staticfiles:ro
+      # Decommentez pour le TLS (certbot --webroot) :
+      # - certbot-www:/var/www/certbot:ro
+      # - ./docker/nginx/certs:/etc/nginx/certs:ro
     networks:
       - evdp-backend
       - evdp-frontend
@@ -241,16 +341,42 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+      - /var/cache/nginx:size=128m
+      - /var/run:size=16m
     deploy:
       resources:
         limits:
           memory: 192m
+          pids: 100
 
 networks:
   evdp-backend:
     driver: bridge
-    internal: false
+    internal: true
   evdp-frontend:
+    driver: bridge
+  evdp-external:
+    driver: bridge
+  # Sortie des emails (evdp-web, evdp-worker), distincte d'evdp-external
+  # (antivirus) : le pare-feu peut la restreindre au seul serveur SMTP sans
+  # couper les mises a jour de signatures.
+  evdp-smtp:
+    driver: bridge
+  # Publication de l'interface Mailpit (voir le service evdp-mailpit).
+  evdp-mailpit-ui:
     driver: bridge
 
 volumes:
@@ -259,3 +385,5 @@ volumes:
   evdp-static:
   evdp-media:
   evdp-clamav-data:
+  # Decommentez pour le TLS (certbot --webroot) :
+  # certbot-www:

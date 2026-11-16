@@ -11,6 +11,12 @@ def _can_report(user):
     return may_report(user)
 
 
+def _basemaps():
+    from apps.dashboard.maps import basemaps
+
+    return basemaps()
+
+
 def evdp_context(request):
     user = getattr(request, "user", None)
     unread = 0
@@ -33,5 +39,9 @@ def evdp_context(request):
         "my_claims_count": len(claims),
         "my_idle_claims_count": sum(1 for entry in claims if entry["idle"]),
         "sidebar_sections": sidebar_sections(user, claims_count=len(claims)),
-        "MAP": {"tiles": settings.MAP_TILE_URL, "attribution": settings.MAP_ATTRIBUTION},
+        "MAP": {
+            "tiles": settings.MAP_TILE_URL,
+            "attribution": settings.MAP_ATTRIBUTION,
+            "basemaps": _basemaps(),
+        },
     }

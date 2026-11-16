@@ -276,6 +276,15 @@ def kanban(request):
     )
 
 
+def _annotate_integrity(message):
+    """Ajoute un attribut ``integrity_verified`` au message pour le gabarit (M1)."""
+    try:
+        message.integrity_verified = message.integrity_ok()
+    except Exception:
+        message.integrity_verified = None
+    return message
+
+
 @login_required
 def case_detail(request, case_id):
     case = _get_case(request, case_id)
@@ -320,7 +329,7 @@ def case_detail(request, case_id):
         "case": case,
         "report": case.report,
         "view": view,
-        "messages_list": visible_messages(case, user),
+        "messages_list": [_annotate_integrity(m) for m in visible_messages(case, user)],
         "timeline": case.timeline.select_related("actor") if view["tracking"] else [],
         "attachments": (
             visible_attachments(case, user).select_related("uploaded_by")

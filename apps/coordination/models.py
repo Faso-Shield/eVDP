@@ -8,8 +8,9 @@ from django.db import models
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.core.fields import EncryptedTextField
 from apps.core.models import BaseModel, TimeStampedModel
-from apps.core.utils import hash_text, next_sequence
+from apps.core.utils import message_mac, next_sequence
 from apps.vulnerabilities.constants import Severity, VulnerabilityType
 
 from .constants import (
@@ -493,7 +494,7 @@ class CaseMessage(BaseModel):
         on_delete=models.SET_NULL,
         related_name="case_messages",
     )
-    body = models.TextField(help_text="Markdown autorisé.")
+    body = EncryptedTextField(help_text="Markdown autorisé.")
     confidentiality = models.CharField(
         max_length=16,
         choices=Confidentiality.choices,
@@ -505,8 +506,10 @@ class CaseMessage(BaseModel):
         max_length=64,
         blank=True,
         editable=False,
-        help_text="SHA-256 du contenu : preuve d'intégrité du fil de discussion.",
+        help_text="HMAC-SHA256 : preuve d'intégrité du message.",
     )
+    # Obsolete : a retirer apres migration (M2). Le chiffrement reel est
+    # assure par EncryptedTextField sur body.
     is_pgp_encrypted = models.BooleanField(default=False)
 
     class Meta:
@@ -519,9 +522,26 @@ class CaseMessage(BaseModel):
     def __str__(self):
         return f"Message {self.pk} - {self.case.case_id}"
 
+    def _mac(self):
+        return message_mac(
+            self.pk,
+            self.case_id,
+            self.author_id,
+            self.confidentiality,
+            self.is_system,
+            self.created_at.isoformat() if self.created_at else "",
+            self.body,
+        )
+
     def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        if is_new:
+            super().save(*args, **kwargs)
+            self.content_hash = self._mac()
+            super().save(update_fields=["content_hash"])
+            return
         if not self.content_hash:
-            self.content_hash = hash_text(self.body)
+            self.content_hash = self._mac()
         return super().save(*args, **kwargs)
 
     def is_visible_to(self, user):
@@ -533,7 +553,9 @@ class CaseMessage(BaseModel):
         return self.confidentiality in readable_channels(self.case, user)
 
     def integrity_ok(self):
-        return self.content_hash == hash_text(self.body)
+        import hmac as _hmac_mod
+
+        return _hmac_mod.compare_digest(self.content_hash, self._mac())
 
 
 class CaseTimelineEvent(BaseModel):

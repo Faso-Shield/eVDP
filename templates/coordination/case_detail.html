@@ -175,6 +175,7 @@
                 {{ message.created_at|date:"d/m/Y H:i" }}
               </span>
             </div>
+            {% if message.integrity_verified == False %}<div class="alert alert-error small mb-1"><strong>Intégrité compromise.</strong> Ce message a été altéré en base de données — il ne correspond plus à sa signature d'origine.</div>{% endif %}
             <div class="msg-body prose">{{ message.body|markdown }}</div>
             {% if message.attachments.exists and view.attachments_download %}
               <div class="small mt-1">

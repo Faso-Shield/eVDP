@@ -5,101 +5,163 @@
 
 {% block hero %}
 <section class="hero">
-  <div class="container">
-    <h1>Vous avez découvert une vulnérabilité ?</h1>
-    <p class="lead">
-      {{ PLATFORM_NAME }} est le point national de confiance permettant de signaler,
-      de manière sécurisée et juridiquement encadrée, une vulnérabilité affectant
-      un service public ou une infrastructure numérique burkinabè.
-    </p>
-    <div class="btn-row mt-2">
-      {% if can_report %}<a class="btn btn-accent btn-lg" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>{% endif %}
-      {% if not user.is_authenticated %}<a class="btn btn-outline btn-lg" href="{% url 'reports:track_lookup' %}">Suivre mon signalement</a>{% endif %}
-      <a class="btn btn-outline btn-lg" href="{% url 'programs:list' %}">Voir les programmes Bug Bounty</a>
-      <a class="btn btn-outline btn-lg" href="{% url 'disclosures:advisory_list' %}">Voir les advisories</a>
-      <a class="btn btn-outline btn-lg" href="{% url 'core:disclosure_policy' %}">Politique de divulgation</a>
+  <div class="container hero-grid">
+    <div>
+      <h1>Vous avez découvert une <span class="hl">vulnérabilité</span> ?</h1>
+      <p class="lead">
+        {{ PLATFORM_NAME }} est le point national de confiance permettant de signaler,
+        de manière sécurisée et juridiquement encadrée, une vulnérabilité affectant
+        un service public ou une infrastructure numérique burkinabè.
+      </p>
+      <div class="btn-row mt-2">
+        {% if can_report %}<a class="btn btn-cta btn-lg btn-arrow" href="{% url 'reports:submit' %}">Signaler une vulnérabilité</a>{% endif %}
+        {% if not user.is_authenticated %}<a class="btn btn-outline btn-lg" href="{% url 'reports:track_lookup' %}">Suivre mon signalement</a>{% endif %}
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat"><strong>{{ stats.cases }}</strong><span>Signalements traités</span></div>
+        <div class="hero-stat"><strong>{{ stats.advisories }}</strong><span>Advisories publiés</span></div>
+        <div class="hero-stat"><strong>{{ stats.programs }}</strong><span>Programmes actifs</span></div>
+        <div class="hero-stat"><strong>{{ stats.researchers }}</strong><span>Chercheurs inscrits</span></div>
+      </div>
+    </div>
+
+    <div class="hero-panel">
+      <h2>Nos engagements</h2>
+      <ul>
+        <li>
+          <span class="icon-tile is-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+          <div><strong>Confidentialité</strong><span>Rapports privés par défaut, chiffrement PGP possible, anonymat respecté.</span></div>
+        </li>
+        <li>
+          <span class="icon-tile is-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span>
+          <div><strong>Cadre juridique</strong><span>Une politique de divulgation protège le chercheur de bonne foi.</span></div>
+        </li>
+        <li>
+          <span class="icon-tile is-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+          <div><strong>Réactivité</strong><span>Accusé de réception sous 72 h, puis échéances suivies à chaque étape.</span></div>
+        </li>
+      </ul>
     </div>
   </div>
 </section>
 {% endblock %}
 
 {% block content %}
-<div class="grid grid-4 mb-3">
-  <div class="stat"><div class="stat-value">{{ stats.cases }}</div><div class="stat-label">Signalements traités</div></div>
-  <div class="stat ok"><div class="stat-value">{{ stats.advisories }}</div><div class="stat-label">Advisories publiés</div></div>
-  <div class="stat"><div class="stat-value">{{ stats.programs }}</div><div class="stat-label">Programmes actifs</div></div>
-  <div class="stat"><div class="stat-value">{{ stats.researchers }}</div><div class="stat-label">Chercheurs inscrits</div></div>
-</div>
-
-<div class="card">
-  <div class="card-header"><h2>Comment ça marche ?</h2></div>
-  <div class="card-body">
-    <div class="steps">
-      <div class="step">
-        <div class="step-num">1</div><h3>Signaler</h3>
-        <p class="small muted">Vous décrivez la vulnérabilité via le formulaire sécurisé ou l'API. Le rapport est privé dès la première seconde.</p>
-      </div>
-      <div class="step">
-        <div class="step-num">2</div><h3>Analyser</h3>
-        <p class="small muted">Le CSIRT accuse réception sous 72 h, qualifie la faille (CVSS, CWE) et détermine sa criticité.</p>
-      </div>
-      <div class="step">
-        <div class="step-num">3</div><h3>Coordonner</h3>
-        <p class="small muted">L'organisation affectée est contactée. Les échanges se déroulent dans une messagerie chiffrée en transit et cloisonnée.</p>
-      </div>
-      <div class="step">
-        <div class="step-num">4</div><h3>Corriger</h3>
-        <p class="small muted">La remédiation est suivie avec des échéances SLA. Le correctif est vérifié avec le chercheur.</p>
-      </div>
-      <div class="step">
-        <div class="step-num">5</div><h3>Publier</h3>
-        <p class="small muted">Un advisory assaini est publié après coordination, en créditant le chercheur selon son choix.</p>
-      </div>
+<section class="section">
+  <div class="section-head">
+    <h2>Comment ça marche ?</h2>
+    <p>Cinq étapes, du signalement à la publication, coordonnées par le CSIRT National.</p>
+  </div>
+  <div class="steps">
+    <div class="step">
+      <span class="step-num">1</span>
+      <span class="icon-tile is-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg></span>
+      <h3>Signaler</h3>
+      <p class="small muted">Vous décrivez la vulnérabilité via le formulaire sécurisé ou l'API. Le rapport est privé dès la première seconde.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">2</span>
+      <span class="icon-tile is-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+      <h3>Analyser</h3>
+      <p class="small muted">Le CSIRT accuse réception sous 72 h, qualifie la faille (CVSS, CWE) et détermine sa criticité.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">3</span>
+      <span class="icon-tile is-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg></span>
+      <h3>Coordonner</h3>
+      <p class="small muted">L'organisation affectée est contactée. Les échanges se déroulent dans une messagerie chiffrée en transit et cloisonnée.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">4</span>
+      <span class="icon-tile is-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0 5 5L22 14l-8 8-2.3-2.3a4 4 0 0 0-5-5L2 10l8-8z"/></svg></span>
+      <h3>Corriger</h3>
+      <p class="small muted">La remédiation est suivie avec des échéances SLA. Le correctif est vérifié avec le chercheur.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">5</span>
+      <span class="icon-tile is-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8"/></svg></span>
+      <h3>Publier</h3>
+      <p class="small muted">Un advisory assaini est publié après coordination, en créditant le chercheur selon son choix.</p>
     </div>
   </div>
-</div>
+</section>
 
-<div class="grid grid-2">
-  <div class="card">
-    <div class="card-header">
-      <h2>Derniers advisories</h2>
-      <a class="btn btn-sm btn-outline" href="{% url 'disclosures:advisory_list' %}">Tout voir</a>
+<section class="section">
+  <div class="section-head">
+    <h2>Nos services en ligne</h2>
+    <p>Programmes, publications et ressources de la divulgation coordonnée, accessibles 24h/24.</p>
+  </div>
+  <div class="grid grid-4">
+    <div class="service-card">
+      <span class="icon-tile is-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg></span>
+      <h3>Programmes VDP et Bug Bounty</h3>
+      <p>Périmètres, règles et récompenses des organisations participantes.</p>
+      <a class="btn btn-accent btn-block" href="{% url 'programs:list' %}">Accéder</a>
     </div>
-    <div class="card-body">
-      {% for advisory in advisories %}
-        <div class="flex-between" style="padding:.5rem 0;border-bottom:1px solid var(--border)">
-          <div>
-            <a href="{{ advisory.get_absolute_url }}"><strong>{{ advisory.advisory_id }}</strong></a>
-            <div class="small muted">{{ advisory.title }}</div>
+    <div class="service-card">
+      <span class="icon-tile is-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>
+      <h3>Advisories publiés</h3>
+      <p>Avis de sécurité assainis, publiés après correction et coordination.</p>
+      <a class="btn btn-accent btn-block" href="{% url 'disclosures:advisory_list' %}">Accéder</a>
+    </div>
+    <div class="service-card">
+      <span class="icon-tile is-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+      <h3>Politique de divulgation</h3>
+      <p>Les règles d'engagement et la protection accordée aux chercheurs.</p>
+      <a class="btn btn-accent btn-block" href="{% url 'core:disclosure_policy' %}">Accéder</a>
+    </div>
+    <div class="service-card">
+      <span class="icon-tile is-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></span>
+      <h3>Clé PGP nationale</h3>
+      <p>Chiffrez vos signalements les plus sensibles avant leur envoi.</p>
+      <a class="btn btn-accent btn-block" href="{% url 'core:pgp_key' %}">Accéder</a>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="grid grid-2">
+    <div class="card card-elevated">
+      <div class="card-header">
+        <h2>Derniers advisories</h2>
+        <a class="btn btn-sm btn-outline" href="{% url 'disclosures:advisory_list' %}">Tout voir</a>
+      </div>
+      <div class="card-body">
+        {% for advisory in advisories %}
+          <div class="flex-between" style="padding:.5rem 0;border-bottom:1px solid var(--border)">
+            <div>
+              <a href="{{ advisory.get_absolute_url }}"><strong>{{ advisory.advisory_id }}</strong></a>
+              <div class="small muted">{{ advisory.title }}</div>
+            </div>
+            <span class="badge {{ advisory.severity|severity_class }}">{{ advisory.get_severity_display }}</span>
           </div>
-          <span class="badge {{ advisory.severity|severity_class }}">{{ advisory.get_severity_display }}</span>
-        </div>
-      {% empty %}
-        <p class="muted">Aucun advisory publié pour le moment.</p>
-      {% endfor %}
+        {% empty %}
+          <p class="muted">Aucun advisory publié pour le moment.</p>
+        {% endfor %}
+      </div>
     </div>
-  </div>
 
-  <div class="card">
-    <div class="card-header">
-      <h2>Programmes ouverts</h2>
-      <a class="btn btn-sm btn-outline" href="{% url 'programs:list' %}">Tout voir</a>
-    </div>
-    <div class="card-body">
-      {% for program in programs %}
-        <div class="flex-between" style="padding:.5rem 0;border-bottom:1px solid var(--border)">
-          <div>
-            <a href="{% url 'programs:detail' program.slug %}"><strong>{{ program.name }}</strong></a>
-            <div class="small muted">{{ program.organization.name }}</div>
+    <div class="card card-elevated">
+      <div class="card-header">
+        <h2>Programmes ouverts</h2>
+        <a class="btn btn-sm btn-outline" href="{% url 'programs:list' %}">Tout voir</a>
+      </div>
+      <div class="card-body">
+        {% for program in programs %}
+          <div class="flex-between" style="padding:.5rem 0;border-bottom:1px solid var(--border)">
+            <div>
+              <a href="{% url 'programs:detail' program.slug %}"><strong>{{ program.name }}</strong></a>
+              <div class="small muted">{{ program.organization.name }}</div>
+            </div>
+            <span class="pill">{{ program.get_program_type_display }}</span>
           </div>
-          <span class="pill">{{ program.get_program_type_display }}</span>
-        </div>
-      {% empty %}
-        <p class="muted">Aucun programme public actif.</p>
-      {% endfor %}
+        {% empty %}
+          <p class="muted">Aucun programme public actif.</p>
+        {% endfor %}
+      </div>
     </div>
   </div>
-</div>
+</section>
 
 <div class="notice notice-secure mt-2">
   <strong>Confidentialité.</strong> Tous les rapports sont privés par défaut et ne

@@ -1,0 +1,10 @@
+# Regles de hadolint (lint du Dockerfile), lues par la CI et en local.
+ignored:
+  # Versions apt non epinglees : l'image applique volontairement les
+  # derniers correctifs de securite Debian a chaque construction. Epingler
+  # les bloquerait, et la construction casserait des que Debian retire
+  # une version.
+  - DL3008
+  # Seul pip lui-meme est mis a jour sans version ; les dependances du
+  # projet sont epinglees par requirements/lock.txt.
+  - DL3013

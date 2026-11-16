@@ -1,7 +1,7 @@
 # Architecture — eVDP
 
 > Plateforme nationale de divulgation coordonnée de vulnérabilités et de
-> gestion de programmes Bug Bounty — projet **CYBER-DEF 2**.
+> gestion de programmes Bug Bounty — projet **FASO SHIELD**.
 
 Ce document décrit l'architecture retenue, les décisions structurantes et
 leurs justifications. Les diagrammes Mermaid sont dans `docs/diagrams/`.
@@ -225,7 +225,7 @@ workflow + audit + notification + SLA.
 | `case_status_history` | `CaseStatusHistory` | Historique des transitions |
 | `case_assignments` | `CaseAssignment` | Prises en charge (une active par rôle) |
 | `case_participants` | `CaseParticipant` | Liste blanche d'accès |
-| `case_messages` | `CaseMessage` | Messagerie, hash d'intégrité |
+| `case_messages` | `CaseMessage` | Messagerie, corps chiffré Fernet, HMAC-SHA256 d'intégrité |
 | `case_timeline_events` | `CaseTimelineEvent` | Chronologie |
 | `sla_policies` / `sla_events` | `SLAPolicy` / `SLAEvent` | Échéances |
 | `attachments` | `attachments.Attachment` | Pièces jointes |
@@ -348,13 +348,14 @@ Case validé
 
 | Couche | Mesures |
 |--------|---------|
-| Bordure (Nginx) | TLS, HSTS, rate limiting, `server_tokens off`, `/media/` interdit, `/metrics/` restreint aux réseaux privés |
+| Bordure (Nginx) | TLS, HSTS, rate limiting (codes 429), `server_tokens off`, `/media/` interdit, `/metrics/` restreint à `127.0.0.1`, en-têtes de sécurité non dupliqués (`proxy_hide_header`) |
 | Transport | Cookies `Secure`+`HttpOnly`+`SameSite`, `SECURE_PROXY_SSL_HEADER` |
 | Application | CSP, Permissions-Policy, `X-Frame-Options: DENY`, CSRF, `no-store` sur les pages sensibles |
 | Authentification | Argon2, validateurs (12 caractères min.), rate limiting, vérification d'email, TOTP obligatoire hors comptes signaleurs |
 | Autorisation | RBAC par capacités, isolation queryset, 404 au lieu de 403 |
 | Données | Markdown assaini (bleach), ORM paramétré, pas de mass assignment (champs explicites) |
 | Fichiers | Extension + MIME + signature binaire, taille bornée, nom opaque, SHA-256, antivirus optionnel |
+| Données au repos | Messages chiffrés Fernet (`EncryptedTextField`), HMAC-SHA256 d'intégrité (`MESSAGE_INTEGRITY_KEY`) |
 | Traçabilité | Journal append-only, refus audités, secrets caviardés |
 
 Voir `docs/security.md` pour le détail et la correspondance OWASP.
@@ -367,7 +368,7 @@ Voir `docs/security.md` pour le détail et la correspondance OWASP.
 |----------|-------|
 | `/health/` | Liveness — le processus répond |
 | `/ready/` | Readiness — base et cache disponibles (503 sinon) |
-| `/metrics/` | Métriques Prometheus, restreint aux réseaux privés |
+| `/metrics/` | Métriques Prometheus, restreint à `127.0.0.1` (Nginx) + jeton Bearer `METRICS_TOKEN` (application) |
 
 Les journaux sont émis en **JSON structuré** (`apps/core/logging.py`) sur
 `stdout`, prêts pour une collecte Loki/ELK. Loggers dédiés : `evdp.audit`,
@@ -411,3 +412,34 @@ et sont couverts par des tests de non-régression.
 `manage.py check --deploy` ne remonte plus que deux avertissements, tous deux
 attendus tant que le TLS n'est pas activé (`SECURE_HSTS_SECONDS`,
 `SECURE_SSL_REDIRECT`) — voir la checklist de `docs/deployment.md`.
+
+---
+
+## 11. Correctifs issus de l'audit de sécurité CISSE
+
+Les 15 constats de l'audit CISSE (2 élevés, 7 moyens, 4 faibles, 2 info) ont
+été traités. Les principaux changements :
+
+| Constat | Sévérité | Correctif |
+|---------|----------|-----------|
+| F1 — ClamAV ne démarre pas (`CHOWN` manquant) | Élevé | `cap_add: CHOWN` ajouté au service `evdp-clamav` |
+| F2 — `/metrics/` exposé sans authentification | Élevé | ACL Nginx restreinte à `127.0.0.1` + jeton Bearer `METRICS_TOKEN` en défense en profondeur |
+| F3 — Code HTTP du rate limiting non explicite | Moyen | `limit_req_status 429` et `limit_conn_status 429` ajoutés à `nginx.conf` |
+| F4 — DRF 3.18.0 (vulnérabilité connue) | Moyen | Mis à jour vers 3.18.2 |
+| F5 — Schéma OpenAPI accessible aux anonymes | Moyen | `/api/schema/`, `/api/docs/`, `/api/redoc/` exigent l'authentification |
+| F6 — En-têtes de sécurité dupliqués | Moyen | `proxy_hide_header` sur les 6 en-têtes renvoyés par Django et Nginx |
+| F7 — `lock.txt` non utilisé comme contrainte pip | Moyen | Dockerfile modifié pour utiliser `lock.txt` comme fichier de contrainte |
+| M1 — Intégrité des messages par hash simple | Moyen | HMAC-SHA256 (`MESSAGE_INTEGRITY_KEY`) sur pk, case, auteur, corps, horodatage |
+| M2 — Corps des messages en clair en base | Moyen | `EncryptedTextField` (Fernet) sur `CaseMessage.body` |
+| T1 — Pas de bloc ACME challenge dans la config TLS | Faible | Location `/.well-known/acme-challenge/` ajoutée à `tls.conf.template` |
+| T2 — Port 443 et volume certbot absents | Faible | Lignes commentées prêtes à décommenter dans `docker-compose.yml` |
+| T3 — Sondes `/health/` et `/ready/` redirigées en HTTPS | Faible | `SECURE_REDIRECT_EXEMPT` ajouté pour ces chemins |
+| T4 — `/static/` sans en-têtes de sécurité | Faible | Include partagé `security_headers.inc` appliqué à `/static/` |
+| T5 — `preload` HSTS avant soumission à hstspreload.org | Info | `SECURE_HSTS_PRELOAD = False`, directive commentée dans Nginx |
+| T6 — `SECURE_REDIRECT_EXEMPT` vide | Info | Ajouté pour `/health/` et `/ready/` |
+
+### Correctif complémentaire (vérification post-audit)
+
+| Constat | Correctif |
+|---------|-----------|
+| M1 — L'attribut d'intégrité `_integrity_ok` posé par la vue `case_detail` commençait par un underscore, interdit dans les templates Django (TemplateSyntaxError) | Renommé en `integrity_verified` dans `coordination/views.py` et `case_detail.html` — 47/47 tests de sécurité passent |

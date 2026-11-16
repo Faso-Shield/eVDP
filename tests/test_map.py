@@ -231,6 +231,28 @@ def test_tile_origin_derivation(url, origine):
     assert _tile_origin(url) == origine
 
 
+# ------------------------------------------------------------ fond de carte
+def test_map_offers_plan_satellite_and_hybrid(client_for, auditor):
+    payload = client_for(auditor).get(DATA).json()
+    fonds = {b["id"]: b for b in payload["basemaps"]}
+
+    assert list(fonds) == ["plan", "satellite", "hybride"]
+    assert payload["default_basemap"] == "plan"
+    # L'hybride est le satellite, avec les noms de lieux par-dessus.
+    assert fonds["hybride"]["tiles"] == fonds["satellite"]["tiles"] == settings.MAP_TILE_URL
+    assert fonds["hybride"]["overlay"] == settings.MAP_LABELS_URL
+    assert "overlay" not in fonds["plan"]
+
+
+def test_a_blank_url_removes_the_basemap(settings):
+    from apps.dashboard.maps import basemaps
+
+    settings.MAP_LABELS_URL = ""
+    assert [b["id"] for b in basemaps()] == ["plan", "satellite"]
+    settings.MAP_STREET_URL = ""
+    assert [b["id"] for b in basemaps()] == ["satellite"]
+
+
 # ------------------------------------------------------- fiche organisation
 def test_manage_page_offers_a_position_picker_and_a_map_link(
     client_for, coordinator, organization
@@ -241,6 +263,9 @@ def test_manage_page_offers_a_position_picker_and_a_map_link(
     body = response.content.decode()
     assert 'id="location-picker-map"' in body
     assert f"{MAP}?org={organization.id}" in body
+    # Meme selecteur de fond que la carte nationale.
+    assert 'id="location-picker-basemaps"' in body
+    assert '"id": "hybride"' in body
 
 
 def test_no_map_link_for_those_who_cannot_open_the_map(client_for, organization):

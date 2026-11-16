@@ -22,8 +22,8 @@ pour les tests).
 ### 2.1 Récupération
 
 ```bash
-git clone https://github.com/wendiouedraogo8-art/evdp.git
-cd evdp
+git clone https://github.com/Faso-Shield/eVDP.git
+cd eVDP
 ```
 
 ### 2.2 Configuration
@@ -32,7 +32,7 @@ cd evdp
 cp .env.example .env
 ```
 
-Générez les deux clés (bibliothèque standard Python uniquement) :
+Générez les clés (bibliothèque standard Python uniquement) :
 
 ```bash
 # SECRET_KEY (≥ 50 caractères)
@@ -40,6 +40,12 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"
 
 # FIELD_ENCRYPTION_KEY : clé Fernet, 44 caractères terminés par « = »
 python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+
+# MESSAGE_INTEGRITY_KEY (HMAC-SHA256 des messages)
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+# METRICS_TOKEN (jeton Bearer pour /metrics/)
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
 Renseignez au minimum dans `.env` :
@@ -49,9 +55,12 @@ Renseignez au minimum dans `.env` :
 | `SECRET_KEY` | Clé de signature Django — **obligatoire**, ≥ 50 caractères |
 | `FIELD_ENCRYPTION_KEY` | Clé Fernet des données de versement chiffrées — **obligatoire**, à ne jamais changer une fois des données enregistrées |
 | `POSTGRES_PASSWORD` | Mot de passe PostgreSQL — **obligatoire** |
+| `MESSAGE_INTEGRITY_KEY` | Clé HMAC-SHA256 des messages — **recommandée**, 64 caractères |
+| `METRICS_TOKEN` | Jeton Bearer pour `/metrics/` — **recommandé**, à reporter dans Prometheus |
 | `SITE_BASE_URL` | Adresse réelle de l'instance (ex. `https://vdp.exemple.bf`) |
 | `ALLOWED_HOSTS` | Domaines servis (ex. `vdp.exemple.bf`) |
 | `CSRF_TRUSTED_ORIGINS` | Origines complètes (ex. `https://vdp.exemple.bf`) |
+| `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS` / `EMAIL_USE_SSL`, `EMAIL_USER`, `EMAIL_PASSWORD`, `DEFAULT_FROM_EMAIL` | Serveur mail de la structure. Par défaut, **Mailpit** : les emails sont gardés sur http://127.0.0.1:8025 et **aucun ne part réellement**, pas même la vérification d'adresse d'un chercheur. En production : [messagerie.md](messagerie.md) |
 
 > `docker compose` **refuse de démarrer** si `SECRET_KEY`, `FIELD_ENCRYPTION_KEY`
 > ou `POSTGRES_PASSWORD` sont absents : c'est
@@ -142,9 +151,17 @@ lisibles, et exposition **sur 127.0.0.1 uniquement** de :
 | Service | Port local |
 |---------|-----------|
 | Django (direct) | 8000 |
-| Mailpit (emails) | 8025 |
 | PostgreSQL | 5432 |
 | Redis | 6379 |
+
+Mailpit (emails, port 8025) est publié sur 127.0.0.1 dans tous les cas, avec
+ou sans cette surcouche : http://127.0.0.1:8025.
+
+Retour au mode normal (réglages de production, ports fermés) :
+
+```bash
+docker compose up -d
+```
 
 ---
 
@@ -225,7 +242,8 @@ docker compose down -v                         # ⚠️ supprime les données
 | CSS absent | `collectstatic` non exécuté | `docker compose restart evdp-web` |
 | Erreur CSRF | Origine absente | Ajouter l'URL complète à `CSRF_TRUSTED_ORIGINS` |
 | Pièce jointe refusée | Extension ou signature interdite | Voir `docs/security.md` §5 |
-| Emails invisibles | Mailpit non exposé | Utiliser la surcouche `docker-compose.dev.yml` |
+| Emails invisibles | Ils sont dans Mailpit, pas dans une vraie boîte | Ouvrir http://127.0.0.1:8025 depuis la machine qui héberge Docker ; Mailpit perd ses messages à chaque redémarrage |
+| http://127.0.0.1:8025 inaccessible | Port 8025 déjà pris, ou navigateur sur une autre machine | `MAILPIT_PORT=8026` dans `.env` puis `docker compose up -d evdp-mailpit` ; Mailpit n'est joignable que localement, par choix |
 | Pas de SLA sur un dossier | Aucune politique SLA | La migration `coordination.0003` en crée une ; vérifier dans l'admin |
 
 Diagnostic complet :

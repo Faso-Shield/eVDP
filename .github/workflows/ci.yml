@@ -89,6 +89,22 @@ jobs:
       - name: Verifier la configuration
         run: python manage.py check
 
+      - name: Verification de deploiement securise
+        # Reglages de production : ceux de test (job) n'activent jamais le
+        # TLS, l'etape echouait donc toujours. Valeurs factices, propres a
+        # ce controle.
+        run: python manage.py check --deploy --fail-level WARNING
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.prod
+          SECRET_KEY: ci-deploy-check-cle-longue-et-variee-0123456789-ABCDEFGHIJKLMNOP
+          FIELD_ENCRYPTION_KEY: Y2ktY2xlLWZlcm5ldC1ub24tdXRpbGlzZWUtZW4tcHI=
+          MESSAGE_INTEGRITY_KEY: ci-cle-hmac-non-utilisee-en-production-0123456789
+          ALLOWED_HOSTS: vdp.exemple.bf
+          CSRF_TRUSTED_ORIGINS: https://vdp.exemple.bf
+          SITE_BASE_URL: https://vdp.exemple.bf
+          SECURE_SSL_REDIRECT: "True"
+          SECURE_HSTS_SECONDS: "31536000"
+
       - name: Suite de tests
         run: pytest --cov=apps --cov-report=xml --cov-report=term-missing -q
 
@@ -115,8 +131,20 @@ jobs:
       - name: Installer les outils
         run: pip install bandit==1.9.4 pip-audit
 
-      - name: Bandit (analyse statique)
+      - name: Bandit (analyse statique SAST)
         run: bandit -r apps config -ll -f screen
+
+      - name: Semgrep (regles Django / OWASP)
+        run: |
+          pip install semgrep
+          semgrep --config "p/django" --config "p/owasp-top-ten" apps/ --error --quiet
+        continue-on-error: true
+
+      - name: Safety (CVE en temps reel)
+        run: |
+          pip install safety
+          safety check -r requirements/base.txt --output text
+        continue-on-error: true
 
       - name: pip-audit (vulnerabilites des dependances)
         # Bloquant : une dependance vulnerable ne doit pas partir en image.
@@ -142,6 +170,43 @@ jobs:
           fi
           echo "Aucun secret detecte."
 
+      - name: Verification OWASP Top 10 (patterns dangereux)
+        run: |
+          set -e
+          echo "Recherche de raw SQL avec interpolation..."
+          if grep -rn 'cursor\.execute\|\.raw(' apps/ --include='*.py' | grep -v '# nosec' | grep -v 'test' | grep '%s\|%(' | head -5; then
+            echo "::warning::Possible raw SQL avec interpolation detectee"
+          fi
+          echo "Recherche de mark_safe sans validation..."
+          if grep -rn 'mark_safe\|SafeData' apps/ --include='*.py' | grep -v 'test' | grep -v '# sanitized' | head -5; then
+            echo "::warning::Usage de mark_safe detecte — verifier la sanitisation"
+          fi
+          echo "Verification OWASP terminee."
+
+      - name: Generation du SBOM (Software Bill of Materials)
+        run: |
+          pip install cyclonedx-bom
+          cyclonedx-py requirements -i requirements/base.txt -o sbom.json --format json
+        continue-on-error: true
+
+      - name: Publier le SBOM
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sbom
+          path: sbom.json
+          retention-days: 30
+
+      - name: Verification des licences
+        run: |
+          pip install pip-licenses
+          pip-licenses --format=table --with-urls --order=license
+          echo "Verification des licences a risque..."
+          if pip-licenses --format=csv | grep -iE 'AGPL|GPL-3|Proprietary' | grep -v 'LGPL'; then
+            echo "::warning::Licence potentiellement incompatible detectee"
+          fi
+        continue-on-error: true
+
   # -------------------------------------------------------- 4. Build Docker
   build:
     name: Construction de l'image
@@ -151,6 +216,12 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v4
+
+      - name: Hadolint (lint Dockerfile)
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: docker/web/Dockerfile
+          failure-threshold: warning
 
       - name: Construire l'image
         uses: docker/build-push-action@v7
@@ -244,6 +315,7 @@ jobs:
             -e DJANGO_SETTINGS_MODULE=config.settings.prod \
             -e SECRET_KEY=ci-secret-key \
             -e FIELD_ENCRYPTION_KEY=Y2ktY2xlLWZlcm5ldC1ub24tdXRpbGlzZWUtZW4tcHI= \
+            -e MESSAGE_INTEGRITY_KEY=ci-cle-hmac-non-utilisee-en-production-0123456789 \
             -e ALLOWED_HOSTS=localhost \
             -e POSTGRES_HOST=evdp-db -e POSTGRES_PASSWORD=ci \
             -e REDIS_URL=redis://localhost:6379/0 \
@@ -256,6 +328,7 @@ jobs:
             -e DJANGO_SETTINGS_MODULE=config.settings.prod \
             -e SECRET_KEY=ci-secret-key \
             -e FIELD_ENCRYPTION_KEY=Y2ktY2xlLWZlcm5ldC1ub24tdXRpbGlzZWUtZW4tcHI= \
+            -e MESSAGE_INTEGRITY_KEY=ci-cle-hmac-non-utilisee-en-production-0123456789 \
             -e ALLOWED_HOSTS=localhost \
             -e POSTGRES_HOST=evdp-db -e POSTGRES_PASSWORD=ci \
             -e REDIS_URL=redis://localhost:6379/0 \

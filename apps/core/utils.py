@@ -1,9 +1,11 @@
 """Utilitaires transverses."""
 
 import hashlib
+import hmac as _hmac
 import secrets
 import string
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -28,6 +30,25 @@ def sha256_hexdigest(chunks):
 
 def hash_text(text):
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def message_mac(*parts):
+    """HMAC-SHA256 couvrant toutes les parties significatives d'un message.
+
+    Sans cle configuree, tombe sur un SHA-256 non keye (mode degrade
+    explicitement journalise). En production, la cle est obligatoire
+    (voir config/settings/prod.py).
+    """
+    key = getattr(settings, "MESSAGE_INTEGRITY_KEY", "") or ""
+    if not key:
+        import logging
+
+        logging.getLogger("evdp.security").warning(
+            "message_mac_degraded: MESSAGE_INTEGRITY_KEY absente, repli SHA-256 non keye"
+        )
+        return hash_text(str(parts))
+    data = "\x1f".join("" if p is None else str(p) for p in parts)
+    return _hmac.new(key.encode(), data.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def next_sequence(model, field, prefix, year=None, width=6):

@@ -41,6 +41,47 @@ HEAT_WEIGHT = {
 RECENT_CASES = 3
 
 
+def basemaps():
+    """Fonds proposes par le selecteur, dans l'ordre d'affichage.
+
+    Un fond dont l'URL est vide (instance hors ligne, fournisseur retire)
+    n'est pas propose ; « Hybride » suppose le satellite et les noms.
+    """
+    satellite = settings.MAP_TILE_URL
+    street = settings.MAP_STREET_URL
+    labels = settings.MAP_LABELS_URL
+    choices = []
+    if street:
+        choices.append(
+            {
+                "id": "plan",
+                "label": "Plan",
+                "tiles": street,
+                "attribution": settings.MAP_STREET_ATTRIBUTION,
+            }
+        )
+    if satellite:
+        choices.append(
+            {
+                "id": "satellite",
+                "label": "Satellite",
+                "tiles": satellite,
+                "attribution": settings.MAP_ATTRIBUTION,
+            }
+        )
+        if labels:
+            choices.append(
+                {
+                    "id": "hybride",
+                    "label": "Hybride",
+                    "tiles": satellite,
+                    "overlay": labels,
+                    "attribution": settings.MAP_ATTRIBUTION,
+                }
+            )
+    return choices
+
+
 def can_view_map(user):
     return user.has_capability(Capability.VIEW_MAP) or user.has_capability(
         Capability.VIEW_ORG_MAP
@@ -248,6 +289,8 @@ def build_map_data(
         "scope": "national" if national else "organization",
         "tiles": settings.MAP_TILE_URL,
         "attribution": settings.MAP_ATTRIBUTION,
+        "basemaps": basemaps(),
+        "default_basemap": settings.MAP_DEFAULT_BASEMAP,
         "organizations": markers,
         "regions": sorted(regions.values(), key=lambda r: -r["total"]),
         "totals": {

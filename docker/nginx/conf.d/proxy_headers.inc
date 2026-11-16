@@ -10,6 +10,7 @@ proxy_set_header X-Real-IP         $remote_addr;
 proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 proxy_set_header X-Forwarded-Host  $http_host;
+proxy_set_header X-Request-ID      $evdp_request_id;
 proxy_set_header Connection        "";
 proxy_redirect off;
 proxy_connect_timeout 10s;
@@ -18,3 +19,12 @@ proxy_read_timeout    60s;
 proxy_buffering on;
 proxy_buffers 16 16k;
 proxy_busy_buffers_size 32k;
+
+# Masquer les en-tetes poses par Django qui sont aussi poses par Nginx
+# (evite les doublons dans la reponse).
+proxy_hide_header X-Request-ID;
+proxy_hide_header X-Content-Type-Options;
+proxy_hide_header X-Frame-Options;
+proxy_hide_header Referrer-Policy;
+proxy_hide_header Cross-Origin-Opener-Policy;
+proxy_hide_header X-Permitted-Cross-Domain-Policies;

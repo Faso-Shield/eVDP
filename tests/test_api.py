@@ -64,8 +64,13 @@ def test_public_endpoints_are_readable(client, vdp_program, organization):
         assert client.get(url).status_code == 200
 
 
-def test_schema_is_served(client):
-    assert client.get("/api/schema/").status_code == 200
+def test_schema_is_served(client_for, researcher_a):
+    assert client_for(researcher_a).get("/api/schema/").status_code == 200
+
+
+@pytest.mark.parametrize("url", ["/api/schema/", "/api/docs/", "/api/redoc/"])
+def test_api_docs_are_refused_to_anonymous(client, url):
+    assert client.get(url).status_code == 403
 
 
 # --------------------------------------------------------------- soumission
@@ -617,10 +622,10 @@ def test_api_lets_a_manager_edit_its_own_program(client_for, manager_alpha, vdp_
 
 
 @pytest.mark.parametrize("url", ["/api/docs/", "/api/redoc/"])
-def test_api_docs_run_under_a_strict_csp(client, url):
+def test_api_docs_run_under_a_strict_csp(client_for, researcher_a, url):
     """La CSP de production (script-src 'self') bloquait les scripts du CDN et
     le script d'amorce inline de Swagger : la page restait blanche."""
-    html = client.get(url).content.decode()
+    html = client_for(researcher_a).get(url).content.decode()
     scripts = re.findall(r"<script([^>]*)>", html)
     assert scripts
     for attrs in scripts:
@@ -629,8 +634,8 @@ def test_api_docs_run_under_a_strict_csp(client, url):
         assert src.group(1).startswith("/"), src.group(1)
 
 
-def test_swagger_bootstrap_script_is_served_separately(client):
-    response = client.get("/api/docs/?script=")
+def test_swagger_bootstrap_script_is_served_separately(client_for, researcher_a):
+    response = client_for(researcher_a).get("/api/docs/?script=")
     assert response.status_code == 200
     assert "javascript" in response["Content-Type"]
     assert "SwaggerUIBundle" in response.content.decode()
@@ -681,14 +686,16 @@ def test_active_api_keys_are_capped(client_for, researcher_a):
     )
 
 
-def test_redoc_runs_without_external_fonts_and_with_its_worker(client, settings):
+def test_redoc_runs_without_external_fonts_and_with_its_worker(
+    client_for, researcher_a, settings
+):
     """Google Fonts et le worker « blob: » de la recherche Redoc etaient
     bloques par la CSP de production : erreurs en console a chaque visite."""
     settings.CSP_DIRECTIVES = {"default-src": "'self'", "script-src": "'self'"}
+    client = client_for(researcher_a)
     response = client.get("/api/redoc/")
     assert "fonts.googleapis" not in response.content.decode()
     assert "worker-src 'self' blob:" in response["Content-Security-Policy"]
-    # L'exception reste propre a Redoc.
     assert "worker-src" not in client.get("/api/docs/")["Content-Security-Policy"]
 
 

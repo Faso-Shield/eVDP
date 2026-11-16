@@ -226,7 +226,7 @@ class Command(BaseCommand):
                     "## eVDP\n\n"
                     "eVDP est la plateforme nationale de divulgation coordonnee de "
                     "vulnerabilites et de gestion des programmes Bug Bounty du "
-                    "Burkina Faso (projet CYBER-DEF 2).\n\n"
+                    "Burkina Faso (projet FASO SHIELD).\n\n"
                     "Elle offre aux chercheurs, aux citoyens et aux professionnels "
                     "un canal officiel, securise et juridiquement encadre pour "
                     "signaler une vulnerabilite affectant un service public ou une "

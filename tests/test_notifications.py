@@ -90,3 +90,60 @@ def test_notify_does_nothing_for_inactive_user(researcher_a):
     assert result is None
     assert len(mail.outbox) == 0
     assert not Notification.objects.filter(recipient=researcher_a, title="X").exists()
+
+
+# ------------------------------------------------------- echec d'envoi
+def _delivery_failures(caplog):
+    return [r for r in caplog.records if r.getMessage() == "email_delivery_failed"]
+
+
+def test_failed_notification_logs_the_smtp_cause(caplog, monkeypatch, researcher_a):
+    """La cause doit figurer au journal : sans elle, seul sendtestemail la montrait."""
+    import smtplib
+
+    def refuse(**kwargs):
+        raise smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted")
+
+    monkeypatch.setattr("apps.notifications.services.send_mail", refuse)
+    with caplog.at_level("WARNING", logger="evdp.notifications"):
+        notify(researcher_a, NotificationKind.ACCOUNT, title="X", body="")
+
+    [record] = _delivery_failures(caplog)
+    assert record.error == "SMTPAuthenticationError"
+    assert record.smtp_code == 535
+    assert "not accepted" in record.smtp_reply
+    assert record.purpose == "notification"
+
+
+def test_refused_recipient_is_logged_without_the_address(caplog, monkeypatch, researcher_a):
+    import smtplib
+
+    def refuse(**kwargs):
+        raise smtplib.SMTPRecipientsRefused({researcher_a.email: (550, b"5.1.1 unknown")})
+
+    monkeypatch.setattr("apps.notifications.services.send_mail", refuse)
+    with caplog.at_level("WARNING", logger="evdp.notifications"):
+        notify(researcher_a, NotificationKind.ACCOUNT, title="X", body="")
+
+    [record] = _delivery_failures(caplog)
+    assert record.smtp_code == [550]
+    assert researcher_a.email not in str(record.__dict__)
+
+
+def test_failed_activation_email_is_logged_not_raised(caplog, monkeypatch, researcher_a):
+    """Avant : fail_silently=True, un echec ne laissait aucune trace."""
+    from apps.accounts.models import TokenPurpose, UserToken
+    from apps.accounts.views import send_activation_email
+
+    def timeout(**kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("django.core.mail.send_mail", timeout)
+    token = UserToken.issue(researcher_a, TokenPurpose.EMAIL_VERIFICATION)
+    with caplog.at_level("WARNING", logger="evdp.notifications"):
+        send_activation_email(researcher_a, token)
+
+    [record] = _delivery_failures(caplog)
+    assert record.purpose == "activation"
+    assert record.error == "TimeoutError"
+    assert record.detail == "timed out"
