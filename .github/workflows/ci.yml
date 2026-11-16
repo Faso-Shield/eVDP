@@ -218,7 +218,7 @@ jobs:
       - uses: docker/setup-buildx-action@v4
 
       - name: Hadolint (lint Dockerfile)
-        uses: hadolint/hadolint-action@v4.0.0
+        uses: hadolint/hadolint-action@v3.5.0
         with:
           dockerfile: docker/web/Dockerfile
           failure-threshold: warning
@@ -315,6 +315,7 @@ jobs:
             -e DJANGO_SETTINGS_MODULE=config.settings.prod \
             -e SECRET_KEY=ci-secret-key \
             -e FIELD_ENCRYPTION_KEY=Y2ktY2xlLWZlcm5ldC1ub24tdXRpbGlzZWUtZW4tcHI= \
+            -e MESSAGE_INTEGRITY_KEY=ci-cle-hmac-non-utilisee-en-production-0123456789 \
             -e ALLOWED_HOSTS=localhost \
             -e POSTGRES_HOST=evdp-db -e POSTGRES_PASSWORD=ci \
             -e REDIS_URL=redis://localhost:6379/0 \
@@ -327,6 +328,7 @@ jobs:
             -e DJANGO_SETTINGS_MODULE=config.settings.prod \
             -e SECRET_KEY=ci-secret-key \
             -e FIELD_ENCRYPTION_KEY=Y2ktY2xlLWZlcm5ldC1ub24tdXRpbGlzZWUtZW4tcHI= \
+            -e MESSAGE_INTEGRITY_KEY=ci-cle-hmac-non-utilisee-en-production-0123456789 \
             -e ALLOWED_HOSTS=localhost \
             -e POSTGRES_HOST=evdp-db -e POSTGRES_PASSWORD=ci \
             -e REDIS_URL=redis://localhost:6379/0 \
