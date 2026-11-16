@@ -49,11 +49,41 @@ sudo -iu evdp
 ## 3. Installation
 
 ```bash
-git clone https://github.com/Faso-Shield/eVDP.git /home/evdp/evdp
+git clone --branch v1.0.0 https://github.com/Faso-Shield/eVDP.git /home/evdp/evdp
 cd /home/evdp/evdp
 cp .env.example .env
 chmod 600 .env
 ```
+
+Remplacez `v1.0.0` par la version livrée : les fichiers de configuration
+(compose, Nginx) correspondent alors exactement à l'image.
+
+### Image de l'application : construite ou publiée
+
+Deux façons d'obtenir l'image de l'application, au choix :
+
+| | Construite sur le serveur (par défaut) | Publiée par la CI (recommandé) |
+|---|---|---|
+| Réglage dans `.env` | rien | `EVDP_IMAGE=ghcr.io/faso-shield/evdp-app:1.0.0` |
+| Obtenir l'image | `docker compose build` (≈ 25 min, accès Internet) | `docker compose pull evdp-web evdp-worker evdp-beat` (quelques minutes) |
+| Démarrer | `docker compose up -d` | `docker compose up -d --no-build` |
+| Image identique à celle testée par la CI | non garanti | oui : construite, testée et scannée une seule fois |
+
+Avec l'image publiée, si le registre est privé, connectez-vous d'abord avec
+un jeton d'accès en lecture (`read:packages`) fourni par l'équipe :
+
+```bash
+docker login ghcr.io -u <compte-github>
+```
+
+Pour vérifier qu'une image correspond au code d'une version (audit) :
+
+```bash
+docker inspect ghcr.io/faso-shield/evdp-app:1.0.0 \
+  -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+```
+
+La valeur affichée est le commit Git dont l'image est issue.
 
 ### Configuration de production
 
@@ -529,6 +559,44 @@ git checkout <commit-precedent>
 docker compose build && docker compose up -d
 ./scripts/restore_db.sh backups/evdp-db-<horodatage>.sql.gz
 ```
+
+### Avec une image publiée
+
+```bash
+cd /home/evdp/evdp
+./scripts/backup_db.sh                 # toujours sauvegarder avant
+git fetch --tags && git checkout v1.0.1
+# dans .env : EVDP_IMAGE=ghcr.io/faso-shield/evdp-app:1.0.1
+docker compose pull evdp-web evdp-worker evdp-beat
+docker compose run --rm evdp-web python manage.py migrate
+docker compose up -d --no-build
+curl -fsS https://vdp.exemple.bf/ready/
+```
+
+Retour arrière : revenir à l'étiquette et à `EVDP_IMAGE` précédentes, puis
+restaurer la base comme ci-dessus.
+
+### Publier une nouvelle version (équipe de développement)
+
+La CI publie l'image dans le registre GitHub (`ghcr.io/faso-shield/evdp-app`)
+quand une **étiquette de version** est poussée, et seulement si tous les
+contrôles sont verts (tests, analyse de sécurité, scan de l'image,
+migrations) :
+
+```bash
+git checkout main && git pull
+git tag -a v1.0.1 -m "eVDP 1.0.1"
+git push origin v1.0.1
+```
+
+| Étiquette | Images publiées |
+|---|---|
+| `v1.0.1` | `evdp-app:1.0.1` et `evdp-app:1.0` |
+| `v1.1.0-rc1` (pré-version, pour essai) | `evdp-app:1.1.0-rc1` seulement |
+
+L'image publiée est celle-là même que la CI vient de construire et de
+scanner : elle n'est pas reconstruite. Le récapitulatif du job
+« Publication de l'image » sur GitHub donne les noms publiés.
 
 ---
 

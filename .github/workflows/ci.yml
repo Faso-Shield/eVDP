@@ -3,6 +3,9 @@ name: CI eVDP
 on:
   push:
     branches: [main, master, develop]
+    # Une etiquette de version (v1.0.0, v1.0.0-rc1...) publie l'image
+    # (job « publish » en fin de fichier).
+    tags: ["v*"]
   pull_request:
     branches: [main, master, develop]
   workflow_dispatch:
@@ -231,6 +234,11 @@ jobs:
           push: false
           load: true
           tags: evdp-app:ci
+          # Tracabilite : commit et version d'origine, lisibles avec
+          # docker inspect sur l'image livree.
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -334,3 +342,52 @@ jobs:
             -e REDIS_URL=redis://localhost:6379/0 \
             --entrypoint python \
             evdp-app:ci manage.py makemigrations --check --dry-run
+
+  # ------------------------------------------- 7. Publication de l'image
+  # Seulement sur une etiquette de version, et seulement si tout le reste
+  # est vert. L'image publiee est celle-la meme qui vient d'etre construite,
+  # verifiee et scannee (artefact du job build) : rien n'est reconstruit.
+  publish:
+    name: Publication de l'image (ghcr.io)
+    runs-on: ubuntu-latest
+    needs: [lint, test, security, build, image-scan, migration-check]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/faso-shield/evdp-app
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Charger l'image verifiee
+        run: docker load -i /tmp/evdp-image.tar
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Etiqueter et publier
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          TAGS="${VERSION}"
+          # Version finale (1.2.3) : aussi 1.2, pour suivre les correctifs.
+          # Une pre-version (1.2.3-rc1) ne porte que son propre numero.
+          if [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            TAGS="${TAGS} ${VERSION%.*}"
+          fi
+          for TAG in ${TAGS}; do
+            docker tag evdp-app:ci "${IMAGE}:${TAG}"
+            docker push "${IMAGE}:${TAG}"
+            echo "Publiee : ${IMAGE}:${TAG}"
+          done
+          {
+            echo "### Image publiee"
+            for TAG in ${TAGS}; do echo "- \`${IMAGE}:${TAG}\`"; done
+          } >> "${GITHUB_STEP_SUMMARY}"

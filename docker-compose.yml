@@ -61,7 +61,12 @@ x-app-base: &app-base
   build:
     context: .
     dockerfile: docker/web/Dockerfile
-  image: evdp-app:latest
+  # Par defaut, l'image construite ici depuis le code. Pour installer une
+  # version publiee par la CI sans rien construire : dans .env,
+  # EVDP_IMAGE=ghcr.io/faso-shield/evdp-app:1.0.0, puis
+  # docker compose pull evdp-web evdp-worker evdp-beat
+  # docker compose up -d --no-build   (docs/deployment.md, §3)
+  image: ${EVDP_IMAGE:-evdp-app:latest}
   restart: unless-stopped
   env_file:
     - path: .env
