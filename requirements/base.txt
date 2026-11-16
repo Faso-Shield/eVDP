@@ -2,7 +2,7 @@
 # Versions verifiees ensemble. requirements/lock.txt contient le gel complet
 # (dependances transitives incluses) utilise par l'image Docker.
 Django==5.2.17
-djangorestframework==3.18.0
+djangorestframework==3.18.2
 django-filter==26.1
 drf-spectacular==0.30.0
 drf-spectacular-sidecar==2026.9.1

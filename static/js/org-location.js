@@ -20,7 +20,14 @@
 
   var map = L.map(box, { minZoom: 5, maxZoom: 18 });
   map.fitBounds(BOUNDS);
-  if (box.dataset.tiles) {
+  // Plan pour trouver la rue, satellite pour viser le batiment : « Hybride »
+  // fait les deux, d'ou ce fond par defaut ici (fonds-carte.js).
+  var choicesEl = document.getElementById("location-picker-basemaps");
+  var choices = choicesEl ? JSON.parse(choicesEl.textContent) : [];
+  var base = window.evdpBasemaps
+    ? window.evdpBasemaps.add(map, choices, { storageKey: "evdp.position.fond", preferred: "hybride" })
+    : null;
+  if (!base && box.dataset.tiles) {
     L.tileLayer(box.dataset.tiles, { attribution: box.dataset.attribution, maxZoom: 18 }).addTo(map);
   }
 

@@ -76,10 +76,17 @@
     legend.addTo(map);
   }
 
+  // Fond de carte et selecteur Plan / Satellite / Hybride (fonds-carte.js).
   function setBaseLayer(payload) {
-    if (baseLayer || !payload.tiles) return;
-    baseLayer = L.tileLayer(payload.tiles, { attribution: payload.attribution, maxZoom: 18 });
-    baseLayer.addTo(map);
+    if (baseLayer) return;
+    baseLayer = window.evdpBasemaps.add(map, payload.basemaps, {
+      storageKey: "evdp.carte.fond",
+      preferred: payload.default_basemap,
+    });
+    if (!baseLayer && payload.tiles) {
+      baseLayer = L.tileLayer(payload.tiles, { attribution: payload.attribution, maxZoom: 18 });
+      baseLayer.addTo(map);
+    }
   }
 
   function clearLayer() {

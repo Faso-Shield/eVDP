@@ -134,3 +134,42 @@ def refresh_priorities():
         if case.refresh_priority() != before:
             updated += 1
     return updated
+
+
+@shared_task(name="apps.coordination.tasks.verify_message_integrity")
+def verify_message_integrity():
+    """Verifie l'integrite HMAC de tous les messages (M1).
+
+    Tache nocturne : chaque message est re-verifie. Les falsifications
+    detectees sont journalisees dans le logger de securite et dans
+    l'audit trail.
+    """
+    from .models import CaseMessage
+
+    integrity_logger = logging.getLogger("evdp.security")
+    total = 0
+    tampered = 0
+
+    for msg in CaseMessage.objects.select_related("case").iterator():
+        total += 1
+        if not msg.integrity_ok():
+            tampered += 1
+            integrity_logger.critical(
+                "message_integrity_failure",
+                extra={
+                    "message_id": str(msg.pk),
+                    "case_id": msg.case.case_id,
+                    "author_id": str(msg.author_id),
+                },
+            )
+            log_action(
+                AuditAction.INTEGRITY_CHECK_FAILED,
+                obj=msg.case,
+                message_id=str(msg.pk),
+            )
+
+    integrity_logger.info(
+        "message_integrity_sweep",
+        extra={"total": total, "tampered": tampered},
+    )
+    return {"total": total, "tampered": tampered}

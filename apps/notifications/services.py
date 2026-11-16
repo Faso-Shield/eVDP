@@ -6,6 +6,7 @@ qu'une action est disponible dans l'espace authentifie.
 """
 
 import logging
+import smtplib
 
 from django.conf import settings
 from django.core.mail import send_mail
@@ -207,10 +208,41 @@ def _send_email(email, subject_tpl, body_tpl, context, notification):
         if notification is not None:
             notification.emailed_at = timezone.now()
             notification.save(update_fields=["emailed_at", "updated_at"])
-    except Exception:
-        logger.warning(
-            "email_delivery_failed", extra={"recipient_domain": email.split("@")[-1]}
-        )
+    except Exception as exc:
+        log_delivery_failure(email, exc)
+
+
+def _failure_details(exc):
+    """Cause d'un echec d'envoi, lisible sans l'adresse du destinataire.
+
+    Le refus de destinataires est le seul cas ou le message de l'exception
+    reprend les adresses : on n'en garde que les codes SMTP.
+    """
+    details = {"error": type(exc).__name__}
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        details["smtp_code"] = sorted({code for code, _ in exc.recipients.values()})
+    elif isinstance(exc, smtplib.SMTPResponseException):
+        reply = exc.smtp_error
+        if isinstance(reply, bytes):
+            reply = reply.decode("utf-8", "replace")
+        details["smtp_code"] = exc.smtp_code
+        details["smtp_reply"] = str(reply)[:200]
+    else:
+        # Reseau, TLS, delai : « timed out », « CERTIFICATE_VERIFY_FAILED »...
+        details["detail"] = str(exc)[:200]
+    return details
+
+
+def log_delivery_failure(email, exc, purpose="notification"):
+    """Journalise un email non remis : sa cause, jamais son contenu."""
+    logger.warning(
+        "email_delivery_failed",
+        extra={
+            "purpose": purpose,
+            "recipient_domain": (email or "").split("@")[-1],
+            **_failure_details(exc),
+        },
+    )
 
 
 def notify_many(recipients, kind, **kwargs):

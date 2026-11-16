@@ -271,6 +271,6 @@ docker compose exec evdp-web python manage.py shell -c \
 | Dossier bloqué dans un état | Vérifier les transitions autorisées dans la fiche ; la machine à états peut exiger une étape intermédiaire |
 | SLA non calculé | Vérifier qu'une politique SLA par défaut existe |
 | Pièce jointe `PENDING` indéfiniment | ClamAV non configuré : le statut passe à `SKIPPED` après analyse |
-| Emails non reçus | Vérifier `EMAIL_HOST` et les logs `evdp-web` |
+| Emails non reçus | Chercher `email_delivery_failed` dans `docker compose logs evdp-web evdp-worker` : la ligne donne la cause (`error`, `smtp_code`). Tableau des causes : [messagerie.md, §6](messagerie.md#6-surveillance-et-dépannage) |
 | Advisory refusé à la publication | Le résumé public est obligatoire et le statut doit être `APPROVED` ou `SCHEDULED` |
 | Chercheur ne voit pas son dossier | Vérifier qu'il en est bien le déclarant ou un participant |

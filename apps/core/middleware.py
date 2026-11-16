@@ -1,6 +1,7 @@
 """Middlewares transverses eVDP."""
 
 import threading
+import uuid
 
 from django.conf import settings
 
@@ -36,8 +37,30 @@ class RequestContextMiddleware:
             _request_local.request = None
 
 
+class RequestIDMiddleware:
+    """Propage un identifiant unique par requete (NIST AU-3, tracabilite).
+
+    L'ID est lu depuis l'en-tete X-Request-ID pose par Nginx, ou genere
+    a defaut. Il est expose dans la reponse et accessible partout via
+    get_current_request().META.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        request_id = request.META.get("HTTP_X_REQUEST_ID") or uuid.uuid4().hex
+        request.META["HTTP_X_REQUEST_ID"] = request_id
+        response = self.get_response(request)
+        response["X-Request-ID"] = request_id
+        return response
+
+
 class SecurityHeadersMiddleware:
-    """Ajoute CSP, Permissions-Policy et les en-tetes de durcissement."""
+    """Ajoute CSP, Permissions-Policy et les en-tetes de durcissement.
+
+    Conformite : OWASP Secure Headers, FASO SHIELD v2.0 section 5.1.
+    """
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -53,9 +76,11 @@ class SecurityHeadersMiddleware:
             response["Permissions-Policy"] = self.permissions_policy
         response.setdefault("X-Content-Type-Options", "nosniff")
         response.setdefault("Cross-Origin-Resource-Policy", "same-origin")
-        # Les reponses applicatives ne doivent jamais etre mises en cache par
-        # un intermediaire : elles peuvent contenir des donnees de case.
-        if request.path.startswith(("/dashboard", "/cases", "/api", "/attachments")):
+        response.setdefault("X-Permitted-Cross-Domain-Policies", "none")
+        response.setdefault("Cross-Origin-Embedder-Policy", "require-corp")
+        if request.path.startswith(
+            ("/dashboard", "/cases", "/api", "/attachments", "/admin", "/bounty", "/audit")
+        ):
             response["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
             response["Pragma"] = "no-cache"
         return response

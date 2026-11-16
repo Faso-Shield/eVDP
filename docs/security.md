@@ -147,6 +147,24 @@ l'identifiant ni le contenu du dossier original.
 - Les emails de notification ne contiennent **aucun** détail technique : ils annoncent la disponibilité d'une information dans l'espace authentifié.
 - Les métadonnées d'audit caviardent automatiquement toute clé contenant `password`, `token`, `secret`, `key`, `authorization`, `cookie`.
 
+### Chiffrement et intégrité des messages
+
+Les corps des messages (`CaseMessage.body`) sont chiffrés au repos par
+**Fernet** (`EncryptedTextField`) : la colonne SQL ne contient que du
+chiffré (préfixe `gAAAAA`). Le déchiffrement est transparent pour les vues
+et le code métier.
+
+Chaque message porte un **HMAC-SHA256** (`content_hash`) calculé sur l'ensemble
+`(pk, case_id, author_id, confidentiality, is_system, created_at, body)` à
+la création, à l'aide de la clé `MESSAGE_INTEGRITY_KEY`. `integrity_ok()`
+permet de vérifier qu'aucun champ n'a été altéré en base. Dans le gabarit
+`case_detail.html`, le résultat est exposé sous l'attribut `integrity_verified`
+(la convention Django interdit les noms commençant par un underscore dans les
+templates).
+
+> **Important :** un champ chiffré Fernet est non déterministe ; il ne doit
+> jamais être utilisé dans un `filter()`, un `search_fields` ou un index.
+
 ---
 
 ## 5. Pièces jointes
@@ -187,7 +205,7 @@ les plus sensibles de la plateforme.
 | Mesure | Détail |
 |--------|--------|
 | CSP | `default-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'` ; en production `script-src 'self'` sans inline |
-| HSTS | 1 an, `includeSubDomains`, `preload` (production) |
+| HSTS | 1 an, `includeSubDomains` (production) ; `preload` désactivé tant que le domaine n'est pas soumis à hstspreload.org |
 | X-Frame-Options | `DENY` |
 | Referrer-Policy | `strict-origin-when-cross-origin` |
 | Permissions-Policy | Géolocalisation, micro, caméra, paiement, USB désactivés |
@@ -260,13 +278,13 @@ de la protection anti-abus. **La supervision doit alerter sur ces deux
 | Risque | Traitement |
 |--------|------------|
 | A01 Broken Access Control | Isolation queryset + objet + capacité, 404 au lieu de 403, refus audités, tests dédiés |
-| A02 Cryptographic Failures | Argon2, TLS, cookies sécurisés, aucune clé privée stockée, SHA-256 d'intégrité |
+| A02 Cryptographic Failures | Argon2, TLS, cookies sécurisés, aucune clé privée stockée, HMAC-SHA256 d'intégrité des messages, chiffrement Fernet au repos (messages, données de versement) |
 | A03 Injection | ORM exclusivement, Markdown assaini, validation stricte des entrées |
 | A04 Insecure Design | Privé par défaut, machine à états déclarative, séparation proposer/approuver/payer |
 | A05 Security Misconfiguration | En-têtes complets, `DEBUG=False`, secrets externalisés, images épinglées |
 | A06 Vulnerable Components | `pip-audit` et Trivy en CI, versions figées dans `requirements/` |
 | A07 Auth Failures | Rate limiting, verrouillage de compte via limitation, messages neutres, vérification d'email |
-| A08 Data Integrity Failures | Hash des messages, audit append-only, dépendances figées |
+| A08 Data Integrity Failures | HMAC-SHA256 des messages (`MESSAGE_INTEGRITY_KEY`), audit append-only, dépendances figées et verrouillées (`lock.txt`) |
 | A09 Logging Failures | Journal d'audit complet, logs JSON, échecs de connexion et refus tracés |
 | A10 SSRF | Aucune requête sortante déclenchée par une URL utilisateur |
 
@@ -277,10 +295,12 @@ de la protection anti-abus. **La supervision doit alerter sur ces deux
 1. **Superviser** `cache_unavailable` et `throttle_backend_unavailable` (fail-open, §8).
 2. **Ne jamais** exécuter `seed_demo` en production : il crée des comptes à mot de passe connu.
 3. **Activer le TLS** et passer `SECURE_SSL_REDIRECT=True` et `SECURE_HSTS_SECONDS=31536000`.
-4. **Restreindre `/metrics/`** — la configuration Nginx fournie le limite déjà aux réseaux privés.
+4. **Restreindre `/metrics/`** — la configuration Nginx le limite à `127.0.0.1` ; un jeton Bearer (`METRICS_TOKEN`) est vérifié par l'application en défense en profondeur.
 5. **Activer ClamAV** en production : sans lui, les pièces jointes sont marquées `SKIPPED` et restent téléchargeables.
-6. **Chiffrer les sauvegardes** : elles contiennent l'intégralité des rapports non corrigés.
-7. **Faire tourner les clés d'API** et révoquer celles inutilisées.
+6. **Générer `MESSAGE_INTEGRITY_KEY`** — clé HMAC-SHA256 de 64 caractères signant chaque message ; sans elle, `integrity_ok()` est dégradé.
+7. **Générer `METRICS_TOKEN`** — jeton Bearer exigé par `/metrics/` ; le renseigner aussi dans le job Prometheus.
+8. **Chiffrer les sauvegardes** : elles contiennent l'intégralité des rapports non corrigés.
+9. **Faire tourner les clés d'API** et révoquer celles inutilisées.
 
 ---
 

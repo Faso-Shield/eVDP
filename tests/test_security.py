@@ -23,10 +23,32 @@ def test_security_headers_present(client):
     assert response["Referrer-Policy"] == "strict-origin-when-cross-origin"
 
 
+def test_cross_domain_policy_header(client):
+    response = client.get("/")
+    assert response.get("X-Permitted-Cross-Domain-Policies") == "none"
+
+
+def test_cross_origin_embedder_policy(client):
+    response = client.get("/")
+    assert response.get("Cross-Origin-Embedder-Policy") == "require-corp"
+
+
+def test_cross_origin_resource_policy(client):
+    response = client.get("/")
+    assert response.get("Cross-Origin-Resource-Policy") == "same-origin"
+
+
 def test_sensitive_pages_are_not_cacheable(client_for, researcher_a, case_alpha):
     client = client_for(researcher_a)
     response = client.get(f"/cases/{case_alpha.case_id}/")
     assert "no-store" in response["Cache-Control"]
+
+
+def test_admin_pages_not_cacheable(client_for):
+    admin_user = make_superuser()
+    client = client_for(admin_user)
+    response = client.get("/admin/")
+    assert "no-store" in response.get("Cache-Control", "")
 
 
 def test_security_txt_is_served(client):
@@ -306,6 +328,40 @@ def test_successful_login_resets_the_counter(client, settings):
     assert hit("login", "198.51.100.7", "2/5m")[0]
     reset("login", "198.51.100.7")
     assert hit("login", "198.51.100.7", "2/5m")[0]
+
+
+# -------------------------------------------------------- request ID (NIST AU-3)
+def test_request_id_header_present(client):
+    response = client.get("/")
+    assert response.get("X-Request-ID")
+
+
+def test_request_id_propagated_from_nginx(client):
+    response = client.get("/", HTTP_X_REQUEST_ID="test-trace-12345")
+    assert response["X-Request-ID"] == "test-trace-12345"
+
+
+# ----------------------------------------- validateurs de mot de passe (ASVS)
+def test_password_requires_uppercase():
+    from django.core.exceptions import ValidationError
+
+    from apps.accounts.validators import UppercaseValidator
+
+    v = UppercaseValidator()
+    with pytest.raises(ValidationError):
+        v.validate("nocapitals123!")
+    v.validate("HasCapital123!")
+
+
+def test_password_requires_special_char():
+    from django.core.exceptions import ValidationError
+
+    from apps.accounts.validators import SpecialCharacterValidator
+
+    v = SpecialCharacterValidator()
+    with pytest.raises(ValidationError):
+        v.validate("NoSpecialChars1A")
+    v.validate("HasSpecial!1A")
 
 
 # ------------------------------------------------------ durcissements divers

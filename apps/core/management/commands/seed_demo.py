@@ -123,7 +123,9 @@ class Command(BaseCommand):
             ("Administrateur", "admin@evdp.bf"),
             ("Coordinateur national", "coordinateur@anssi.bf"),
             ("Analyste CSIRT", "analyste@csirt.bf"),
+            ("Agent de triage", "triage@csirt.bf"),
             ("DSI ministere", "dsi@sante.gov.bf"),
+            ("Responsable ADMDEMO", "responsable@education.gov.bf"),
             ("Chercheur", "researcher@demo.bf"),
             ("Chercheur Bug Bounty", "bugbounty@demo.bf"),
             ("Auditeur", "auditeur@evdp.bf"),
@@ -165,7 +167,7 @@ class Command(BaseCommand):
                     "## eVDP\n\n"
                     "eVDP est la plateforme nationale de divulgation coordonnée de "
                     "vulnérabilités et de gestion des programmes Bug Bounty du "
-                    "Burkina Faso (projet CYBER-DEF 2).\n\n"
+                    "Burkina Faso (projet FASO SHIELD).\n\n"
                     "Elle offre aux chercheurs, aux citoyens et aux professionnels "
                     "un canal officiel, securise et juridiquement encadré pour "
                     "signaler une vulnérabilité affectant un service public ou une "

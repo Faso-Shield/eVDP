@@ -1,7 +1,7 @@
 [project]
 name = "evdp"
 version = "1.0.0"
-description = "Plateforme nationale de divulgation coordonnee de vulnerabilites et de Bug Bounty (CYBER-DEF 2)"
+description = "Plateforme nationale de divulgation coordonnee de vulnerabilites et de Bug Bounty (FASO SHIELD)"
 requires-python = ">=3.12"
 
 # -----------------------------------------------------------------------------

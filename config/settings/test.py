@@ -13,6 +13,7 @@ from .base import *  # noqa: F401,F403,E402
 
 DEBUG = False
 ALLOWED_HOSTS = ["*", "testserver"]
+SITE_BASE_URL = "http://testserver"
 
 # Hachage rapide : les tests ne verifient pas la robustesse d'Argon2.
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

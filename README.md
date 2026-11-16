@@ -2,7 +2,7 @@
 
 **Plateforme nationale de divulgation coordonnée de vulnérabilités et de
 gestion de programmes Bug Bounty**
-Projet **CYBER-DEF 2** — ANSSI-BF / CSIRT National
+Projet **FASO SHIELD** — ANSSI-BF / CSIRT National
 
 ---
 
@@ -124,6 +124,11 @@ La plateforme est disponible sur **http://localhost/**.
 | Documentation API | http://localhost/api/docs/ | Authentifié |
 | Sonde de vivacité | http://localhost/health/ | Public |
 | Sonde de disponibilité | http://localhost/ready/ | Public |
+| Emails envoyés (Mailpit) | http://127.0.0.1:8025/ | Machine hôte uniquement |
+
+Par défaut, aucun email ne part réellement : ils sont tous gardés dans
+Mailpit. Pour un vrai serveur mail, voir
+[docs/messagerie.md](docs/messagerie.md).
 
 ### Mode développement
 
@@ -131,8 +136,8 @@ La plateforme est disponible sur **http://localhost/**.
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
-Expose en plus, **uniquement sur 127.0.0.1** : Mailpit (`:8025`),
-PostgreSQL (`:5432`), Redis (`:6379`), Django (`:8000`).
+Expose en plus, **uniquement sur 127.0.0.1** : PostgreSQL (`:5432`),
+Redis (`:6379`), Django (`:8000`).
 
 ### Vérification
 
@@ -328,6 +333,7 @@ Voir **[docs/api.md](docs/api.md)**.
 | [PLAN.md](PLAN.md) | État d'avancement, critères d'acceptation |
 | [docs/installation.md](docs/installation.md) | Installation détaillée |
 | [docs/deployment.md](docs/deployment.md) | Déploiement en production, TLS |
+| [docs/messagerie.md](docs/messagerie.md) | Configuration de la messagerie, pas à pas |
 | [docs/security.md](docs/security.md) | Modèle de menaces, OWASP, durcissement |
 | [docs/api.md](docs/api.md) | Référence API |
 | [docs/cvd-workflow.md](docs/cvd-workflow.md) | Processus de divulgation coordonnée |
@@ -340,7 +346,7 @@ Voir **[docs/api.md](docs/api.md)**.
 
 ## Licence et contexte
 
-Développé dans le cadre du projet **CYBER-DEF 2** pour l'écosystème national de
+Développé dans le cadre du projet **FASO SHIELD** pour l'écosystème national de
 cybersécurité du Burkina Faso.
 
 Cette plateforme s'inspire **conceptuellement** des processus de coordination

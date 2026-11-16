@@ -1,10 +1,11 @@
 """Cles PGP : analyse cote serveur, cle nationale geree dans l'application,
 chiffrement et dechiffrement proposes dans le navigateur."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.audit.models import AuditAction, AuditLog
 from apps.core import pgp
@@ -13,6 +14,23 @@ from apps.core.models import NationalPGPKey
 from . import pgp_fixtures as keys
 
 pytestmark = pytest.mark.django_db
+
+EXPIRING_AT = datetime.fromisoformat(keys.EXPIRING_AT.replace("Z", "+00:00"))
+
+
+@pytest.fixture
+def before_expiring_key_expiry(monkeypatch):
+    """Fige l'heure 10 jours avant l'expiration de EXPIRING_KEY.
+
+    La cle de test porte une date d'expiration fixe (signee, non modifiable) :
+    sans horloge figee, elle finit par expirer et les tests qui la supposent
+    « bientot expiree » echouent selon la date d'execution. 10 jours avant :
+    encore valide, et dans la fenetre d'alerte (pgp.EXPIRY_WARNING_DAYS).
+    """
+    frozen = EXPIRING_AT - timedelta(days=10)
+    assert timedelta(0) < EXPIRING_AT - frozen <= timedelta(days=pgp.EXPIRY_WARNING_DAYS)
+    monkeypatch.setattr(timezone, "now", lambda: frozen)
+    return frozen
 
 
 # ------------------------------------------------------------- analyse
@@ -30,10 +48,9 @@ def test_fingerprint_matches_openpgpjs(blob, fingerprint, version):
     assert info.version == version
 
 
-def test_expiration_is_read_from_the_self_signature():
-    expected = datetime.fromisoformat(keys.EXPIRING_AT.replace("Z", "+00:00"))
+def test_expiration_is_read_from_the_self_signature(before_expiring_key_expiry):
     info = pgp.inspect_public_key(keys.EXPIRING_KEY)
-    assert info.expires_at == expected
+    assert info.expires_at == EXPIRING_AT
     assert not info.is_expired
     assert pgp.inspect_public_key(keys.VALID_KEY).expires_at is None
 
@@ -81,7 +98,7 @@ def test_only_key_managers_publish_the_national_key(client_for, coordinator, ana
     assert pgp.active_national_key().fingerprint == keys.VALID_FINGERPRINT
 
 
-def test_expiring_key_alerts_its_managers(coordinator):
+def test_expiring_key_alerts_its_managers(coordinator, before_expiring_key_expiry):
     from apps.accounts.tasks import warn_national_pgp_key_expiry
     from apps.notifications.models import Notification
 

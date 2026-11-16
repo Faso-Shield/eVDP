@@ -18,13 +18,20 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /wheels
-COPY requirements/base.txt requirements/base.txt
+COPY requirements/base.txt requirements/lock.txt requirements/
 RUN python -m pip install --upgrade pip \
-    && pip wheel --wheel-dir /wheels/dist -r requirements/base.txt
+    && pip wheel --wheel-dir /wheels/dist \
+       -r requirements/base.txt -c requirements/lock.txt
 
 
 # -----------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm AS runtime
+
+LABEL org.opencontainers.image.title="eVDP" \
+      org.opencontainers.image.description="Plateforme nationale de divulgation coordonnee de vulnerabilites" \
+      org.opencontainers.image.vendor="ANSSI-BF / CSIRT National" \
+      org.opencontainers.image.source="https://github.com/Faso-Shield/eVDP" \
+      org.opencontainers.image.licenses="Proprietary"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -49,9 +56,10 @@ RUN groupadd --gid 10001 evdp \
 WORKDIR /app
 
 COPY --from=builder /wheels/dist /wheels/dist
-COPY requirements/base.txt /tmp/base.txt
-RUN pip install --no-index --find-links=/wheels/dist -r /tmp/base.txt \
-    && rm -rf /wheels /tmp/base.txt
+COPY requirements/base.txt requirements/lock.txt /tmp/
+RUN pip install --no-index --find-links=/wheels/dist \
+        -r /tmp/base.txt -c /tmp/lock.txt \
+    && rm -rf /wheels /tmp/base.txt /tmp/lock.txt
 
 COPY --chown=evdp:evdp . /app
 

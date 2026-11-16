@@ -45,7 +45,7 @@ def initials(value):
     """
     acronym = (getattr(value, "acronym", "") or "").strip()
     if acronym:
-        return acronym[:4].upper()
+        return acronym.upper()
     name = str(getattr(value, "name", value) or "").strip()
     words = [word for word in name.split() if len(word) > 2]
     if not words:

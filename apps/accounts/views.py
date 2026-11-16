@@ -124,21 +124,26 @@ def send_activation_email(user, token):
     from django.conf import settings
     from django.core.mail import send_mail
 
-    from apps.notifications.services import _absolute
+    from apps.notifications.services import _absolute, log_delivery_failure
 
     link = _absolute(reverse("accounts:verify_email", args=[token.token]))
-    send_mail(
-        subject="[eVDP] Activez votre compte",
-        message=(
-            "Votre compte eVDP a été créé. Confirmez votre adresse email pour "
-            f"l'activer :\n\n{link}\n\nCe lien est valable 24 heures. Si vous "
-            "n'êtes pas à l'origine de cette inscription, ignorez ce message : "
-            "le compte ne sera jamais activé."
-        ),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-        fail_silently=True,
-    )
+    # Un echec ne doit pas faire echouer l'inscription (le lien peut etre
+    # redemande), mais il doit laisser une trace : sans elle, un serveur SMTP
+    # mal configure empechait toute activation sans que personne le sache.
+    try:
+        send_mail(
+            subject="[eVDP] Activez votre compte",
+            message=(
+                "Votre compte eVDP a été créé. Confirmez votre adresse email pour "
+                f"l'activer :\n\n{link}\n\nCe lien est valable 24 heures. Si vous "
+                "n'êtes pas à l'origine de cette inscription, ignorez ce message : "
+                "le compte ne sera jamais activé."
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+        )
+    except Exception as exc:
+        log_delivery_failure(user.email, exc, purpose="activation")
 
 
 @rate_limited("activation")

@@ -52,6 +52,10 @@ case "${ROLE}" in
             --graceful-timeout 30 \
             --max-requests 1000 \
             --max-requests-jitter 100 \
+            --limit-request-line 8190 \
+            --limit-request-fields 50 \
+            --limit-request-field_size 8190 \
+            --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}" \
             --access-logfile - \
             --error-logfile - \
             --capture-output

@@ -19,8 +19,8 @@ def test_registration_creates_researcher_with_profile(client):
             "email": "nouveau@test.bf",
             "full_name": "Nouveau Chercheur",
             "role": Role.SECURITY_RESEARCHER,
-            "password1": "MotDePasseTresSolide2026",
-            "password2": "MotDePasseTresSolide2026",
+            "password1": "MotDePasse!Solide2026",
+            "password2": "MotDePasse!Solide2026",
             "pseudonym": "nouveau",
             "identity_mode": "PSEUDONYM",
             "accept_policy": "on",
@@ -42,8 +42,8 @@ def test_registration_refuses_privileged_role(client):
             "email": "pirate@test.bf",
             "full_name": "Pirate",
             "role": Role.SUPER_ADMIN,
-            "password1": "MotDePasseTresSolide2026",
-            "password2": "MotDePasseTresSolide2026",
+            "password1": "MotDePasse!Solide2026",
+            "password2": "MotDePasse!Solide2026",
             "identity_mode": "PSEUDONYM",
             "accept_policy": "on",
         },
@@ -58,8 +58,8 @@ def test_registration_does_not_leak_existing_account(client, researcher_a):
             "email": researcher_a.email,
             "full_name": "Doublon",
             "role": Role.SECURITY_RESEARCHER,
-            "password1": "MotDePasseTresSolide2026",
-            "password2": "MotDePasseTresSolide2026",
+            "password1": "MotDePasse!Solide2026",
+            "password2": "MotDePasse!Solide2026",
             "identity_mode": "PSEUDONYM",
             "accept_policy": "on",
         },
@@ -161,8 +161,8 @@ REGISTRATION = {
     "email": "activation@test.bf",
     "full_name": "A Activer",
     "role": Role.SECURITY_RESEARCHER,
-    "password1": "MotDePasseTresSolide2026",
-    "password2": "MotDePasseTresSolide2026",
+    "password1": "MotDePasse!Solide2026",
+    "password2": "MotDePasse!Solide2026",
     "identity_mode": "PSEUDONYM",
     "accept_policy": "on",
 }
@@ -183,7 +183,7 @@ def test_account_stays_inactive_until_its_email_is_confirmed(client, mailoutbox)
     assert "_auth_user_id" not in client.session
     client.post(
         reverse("accounts:login"),
-        {"username": "activation@test.bf", "password": "MotDePasseTresSolide2026"},
+        {"username": "activation@test.bf", "password": "MotDePasse!Solide2026"},
     )
     assert "_auth_user_id" not in client.session
 

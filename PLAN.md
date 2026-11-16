@@ -1,4 +1,4 @@
-# PLAN — eVDP (CYBER-DEF 2)
+# PLAN — eVDP (FASO SHIELD)
 
 État d'avancement du développement de la plateforme nationale de divulgation
 coordonnée de vulnérabilités et de gestion de programmes Bug Bounty.

@@ -110,8 +110,9 @@ def test_message_requires_the_claim(case_alpha, triager):
     with pytest.raises(PermissionDenied):
         post_message(case_alpha, triager, "Note", confidentiality=Confidentiality.INTERNAL)
     claim(case_alpha, triager)
-    post_message(case_alpha, triager, "Note", confidentiality=Confidentiality.INTERNAL)
-    assert case_alpha.messages.filter(body="Note").exists()
+    msg = post_message(case_alpha, triager, "Note", confidentiality=Confidentiality.INTERNAL)
+    assert msg.pk is not None
+    assert case_alpha.messages.filter(pk=msg.pk).exists()
 
 
 def test_qualification_requires_the_claim(case_alpha, analyst):
