@@ -5,7 +5,11 @@
 ## 1. Cible
 
 Serveur Linux (Debian 12 / Ubuntu 22.04 LTS ou supérieur), 4 vCPU, 8 Go de
-RAM, 100 Go de disque, Docker Engine ≥ 24 et Compose v2.
+RAM, 100 Go de disque, Docker Engine ≥ 24 et Compose v2, heure synchronisée
+(NTP : la double authentification des administrateurs en dépend).
+
+Première installation depuis un paquet de livraison : suivez
+[installation-pas-a-pas.md](installation-pas-a-pas.md).
 
 ---
 
@@ -83,6 +87,10 @@ docker login ghcr.io -u <compte-github>
 
 ### Installation depuis un paquet de livraison
 
+> Pas à pas complet, avec le résultat attendu de chaque commande et un
+> dépannage : **[installation-pas-a-pas.md](installation-pas-a-pas.md)**.
+> Ce qui suit en est le résumé.
+
 Le paquet `eVDP-<version>/` contient le code (`1-code-source/`), l'image de
 l'application et toutes les images tierces (`2-images-docker/`), les guides
 (`3-guides/`), une fiche de livraison et le fichier `SHA256SUMS.txt`. Ni
@@ -93,16 +101,17 @@ cd eVDP-1.0.0
 sha256sum -c SHA256SUMS.txt           # chaque ligne doit finir par OK
 docker load -i 2-images-docker/evdp-app-1.0.0.tar.gz
 docker load -i 2-images-docker/images-tierces-1.0.0.tar.gz
-unzip 1-code-source/eVDP-1.0.0-source.zip -d /home/evdp
+unzip 1-code-source/eVDP-1.0.0-source.zip -d /home/evdp   # ou : python3 -m zipfile -e <zip> /home/evdp
 cd /home/evdp/eVDP-1.0.0
-cp .env.example .env
-chmod 600 .env
+bash scripts/preparer_env.sh --adresse vdp.exemple.bf
 ```
 
-Ajoutez ensuite `EVDP_IMAGE=ghcr.io/faso-shield/evdp-app:1.0.0` dans `.env`,
-renseignez la configuration (ci-dessous), puis démarrez avec
-`docker compose up -d --no-build` (§5). Sur réseau isolé, voir aussi la mise
-à jour des signatures antivirus (§6).
+Le script crée `.env` : tous les secrets (générés par l'image eVDP, sans
+Python ni Internet sur le serveur), le mot de passe Redis aux quatre endroits
+qui l'utilisent, l'adresse du serveur et `EVDP_IMAGE`. Complétez la
+messagerie (ci-dessous), puis démarrez avec `docker compose up -d --no-build`
+(§5). Sur réseau isolé, voir aussi la mise à jour des signatures antivirus
+(§6).
 
 Pour vérifier qu'une image correspond au code d'une version (audit) :
 
