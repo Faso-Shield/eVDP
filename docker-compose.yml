@@ -142,12 +142,17 @@ services:
       --rename-command FLUSHDB ""
       --rename-command DEBUG ""
       --rename-command CONFIG ""
+    # Mot de passe lu par redis-cli (contrôle de santé). Sans cette variable,
+    # le conteneur ne connaît pas REDIS_PASSWORD : le contrôle n'aboutissait
+    # qu'avec le mot de passe par défaut.
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-evdp-redis-secret}
     volumes:
       - evdp-redis-data:/data
     networks:
       - evdp-backend
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD:-evdp-redis-secret} ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 5

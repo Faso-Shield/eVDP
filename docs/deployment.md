@@ -444,7 +444,14 @@ docker compose exec evdp-web python manage.py seed_reference
 docker compose exec evdp-web python manage.py check --deploy
 ```
 
-`check --deploy` doit être exempt d'avertissement.
+Avec une image publiée (`EVDP_IMAGE`, §3), remplacez les deux premières
+lignes par `docker compose pull evdp-web evdp-worker evdp-beat` puis
+`docker compose up -d --no-build`.
+
+Une fois HTTPS activé (§4), `check --deploy` doit être exempt
+d'avertissement. Tant que la plateforme est servie en HTTP, quatre
+avertissements sont attendus : `security.W004`, `W008`, `W012` et `W016`
+(HSTS, redirection HTTPS, cookies `Secure`).
 
 `seed_reference` charge le référentiel CWE, la politique SLA par défaut,
 les textes de la plateforme et les organisations réelles (ANSSI-BF, CSIRT
