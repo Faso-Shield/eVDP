@@ -332,6 +332,7 @@ Voir **[docs/api.md](docs/api.md)**.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Décisions d'architecture, modèle de données |
 | [PLAN.md](PLAN.md) | État d'avancement, critères d'acceptation |
 | [docs/installation.md](docs/installation.md) | Installation détaillée |
+| [docs/installation-pas-a-pas.md](docs/installation-pas-a-pas.md) | Installation depuis un paquet de livraison, étape par étape |
 | [docs/deployment.md](docs/deployment.md) | Déploiement en production, TLS |
 | [docs/messagerie.md](docs/messagerie.md) | Configuration de la messagerie, pas à pas |
 | [docs/security.md](docs/security.md) | Modèle de menaces, OWASP, durcissement |
