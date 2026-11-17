@@ -58,23 +58,51 @@ chmod 600 .env
 Remplacez `v1.0.0` par la version livrée : les fichiers de configuration
 (compose, Nginx) correspondent alors exactement à l'image.
 
+Avec un paquet de livraison (réseau isolé), le code n'est pas cloné : voir
+[Installation depuis un paquet de livraison](#installation-depuis-un-paquet-de-livraison).
+
 ### Image de l'application : construite ou publiée
 
-Deux façons d'obtenir l'image de l'application, au choix :
+Trois façons d'obtenir l'image de l'application, au choix :
 
-| | Construite sur le serveur (par défaut) | Publiée par la CI (recommandé) |
-|---|---|---|
-| Réglage dans `.env` | rien | `EVDP_IMAGE=ghcr.io/faso-shield/evdp-app:1.0.0` |
-| Obtenir l'image | `docker compose build` (≈ 25 min, accès Internet) | `docker compose pull evdp-web evdp-worker evdp-beat` (quelques minutes) |
-| Démarrer | `docker compose up -d` | `docker compose up -d --no-build` |
-| Image identique à celle testée par la CI | non garanti | oui : construite, testée et scannée une seule fois |
+| | Construite sur le serveur (par défaut) | Publiée par la CI (recommandé) | Paquet de livraison (hors ligne) |
+|---|---|---|---|
+| Réglage dans `.env` | rien | `EVDP_IMAGE=ghcr.io/faso-shield/evdp-app:1.0.0` | `EVDP_IMAGE=ghcr.io/faso-shield/evdp-app:1.0.0` |
+| Obtenir l'image | `docker compose build` (≈ 25 min, accès Internet) | `docker compose pull evdp-web evdp-worker evdp-beat` (quelques minutes) | `docker load -i` (voir ci-dessous) |
+| Démarrer | `docker compose up -d` | `docker compose up -d --no-build` | `docker compose up -d --no-build` |
+| Image identique à celle testée par la CI | non garanti | oui : construite, testée et scannée une seule fois | oui, vérifiable par empreinte SHA-256 |
 
 Avec l'image publiée, si le registre est privé, connectez-vous d'abord avec
-un jeton d'accès en lecture (`read:packages`) fourni par l'équipe :
+**votre propre** jeton d'accès en lecture (`read:packages`), après que
+l'équipe a donné à votre compte GitHub l'accès en lecture au paquet. Un
+jeton ne se partage pas : il est lié au compte qui l'a créé.
 
 ```bash
 docker login ghcr.io -u <compte-github>
 ```
+
+### Installation depuis un paquet de livraison
+
+Le paquet `eVDP-<version>/` contient le code (`1-code-source/`), l'image de
+l'application et toutes les images tierces (`2-images-docker/`), les guides
+(`3-guides/`), une fiche de livraison et le fichier `SHA256SUMS.txt`. Ni
+Internet ni compte GitHub ne sont nécessaires.
+
+```bash
+cd eVDP-1.0.0
+sha256sum -c SHA256SUMS.txt           # chaque ligne doit finir par OK
+docker load -i 2-images-docker/evdp-app-1.0.0.tar.gz
+docker load -i 2-images-docker/images-tierces-1.0.0.tar.gz
+unzip 1-code-source/eVDP-1.0.0-source.zip -d /home/evdp
+cd /home/evdp/eVDP-1.0.0
+cp .env.example .env
+chmod 600 .env
+```
+
+Ajoutez ensuite `EVDP_IMAGE=ghcr.io/faso-shield/evdp-app:1.0.0` dans `.env`,
+renseignez la configuration (ci-dessous), puis démarrez avec
+`docker compose up -d --no-build` (§5). Sur réseau isolé, voir aussi la mise
+à jour des signatures antivirus (§6).
 
 Pour vérifier qu'une image correspond au code d'une version (audit) :
 
@@ -465,35 +493,39 @@ Idempotente, sans risque de la relancer.
 
 ---
 
-## 6. Antivirus (recommandé)
+## 6. Antivirus
 
-Ajoutez à `docker-compose.yml` :
+L'antivirus ClamAV est **intégré** : le service `evdp-clamav` fait partie de
+`docker-compose.yml` et `.env.example` contient déjà
+`CLAMAV_HOST=evdp-clamav`. Rien à ajouter.
 
-```yaml
-  evdp-clamav:
-    image: clamav/clamav:1.4
-    container_name: evdp-clamav
-    restart: unless-stopped
-    volumes:
-      - evdp-clamav-data:/var/lib/clamav
-    networks:
-      - evdp-backend
-    healthcheck:
-      test: ["CMD", "clamdscan", "--ping", "1"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 300s
-    deploy:
-      resources:
-        limits:
-          memory: 2g
+Chaque pièce jointe déposée est analysée. Si `CLAMAV_HOST` est laissé vide
+(déconseillé), les pièces jointes sont marquées `SKIPPED` : l'absence
+d'analyse est tracée, mais le fichier reste téléchargeable.
+
+Le premier démarrage de ClamAV prend jusqu'à 5 minutes (chargement des
+signatures, environ 2 Go de mémoire).
+
+### Mise à jour des signatures
+
+Le conteneur lance `freshclam`, qui vérifie les signatures une fois par jour
+sur Internet (d'où le réseau `evdp-external`). Contrôle :
+
+```bash
+docker exec evdp-clamav clamscan --version
 ```
 
-Puis `CLAMAV_HOST=evdp-clamav` dans `.env`.
+La date affichée est celle de la dernière base de signatures.
 
-Sans ce service, les pièces jointes sont marquées `SKIPPED` : l'absence
-d'analyse est tracée, mais le fichier reste téléchargeable.
+**Sur un réseau isolé**, sans accès Internet, les signatures restent celles
+fournies avec l'image, datées de sa construction, et vieillissent. Prévoyez
+l'une de ces solutions :
+
+- un miroir interne des signatures, indiqué à `freshclam`
+  (`PrivateMirror` dans `freshclam.conf`) ;
+- une mise à jour périodique : copier les fichiers `main.cvd`, `daily.cvd`
+  et `bytecode.cvd`, récupérés sur une machine connectée, dans le volume
+  `evdp-clamav-data`, puis `docker compose restart evdp-clamav`.
 
 ---
 
